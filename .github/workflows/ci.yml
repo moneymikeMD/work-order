@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.x'
+      - run: pip install --quiet pyyaml
+      - name: Parse every JSON and YAML file
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          import yaml
+
+          failures = []
+          for path in sorted(pathlib.Path('.').rglob('*')):
+              if '.git/' in str(path) or not path.is_file():
+                  continue
+              try:
+                  if path.suffix == '.json':
+                      json.loads(path.read_text())
+                  elif path.suffix in ('.yml', '.yaml'):
+                      yaml.safe_load(path.read_text())
+                  else:
+                      continue
+              except Exception as exc:
+                  failures.append(f'{path}: {exc}')
+              else:
+                  print(f'ok {path}')
+
+          if failures:
+              print('\n'.join(failures), file=sys.stderr)
+              sys.exit(1)
+          PY
+      - name: Compile every Python file
+        run: python -m compileall -q .
