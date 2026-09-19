@@ -1,0 +1,17 @@
+{
+  "name": "work-order-jira",
+  "version": "0.1.0",
+  "description": "Jira binding for the work-order ticket-as-contract specification.",
+  "author": {
+    "name": "Mike Garrett"
+  },
+  "homepage": "https://github.com/moneymikeMD/work-order",
+  "license": "MIT",
+  "keywords": ["work-order", "jira", "tickets"],
+  "dependencies": [
+    {
+      "name": "work-order",
+      "version": "^0.1"
+    }
+  ]
+}
