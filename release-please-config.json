@@ -17,7 +17,9 @@
           "path": ".claude-plugin/plugin.json",
           "jsonpath": "$.version"
         }
-      ]
+      ],
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
     },
     "plugins/work-order-jira": {
       "release-type": "simple",
@@ -30,7 +32,9 @@
           "path": ".claude-plugin/plugin.json",
           "jsonpath": "$.version"
         }
-      ]
+      ],
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
     }
   }
 }
