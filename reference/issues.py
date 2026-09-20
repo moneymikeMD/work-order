@@ -3,6 +3,9 @@
 
     issues.py lint     <dir>   errors that make a ticket unworkable
     issues.py waves    <dir>   parallel execution plan + worktree commands
+    issues.py preflight <dir>  files two or more startable tickets would
+                                write, before the wave is dispatched; exit 0
+                                no collisions, 1 collisions found, 2 no plan
     issues.py board    <dir>   what is where
     issues.py next     <dir>   tickets startable right now
     issues.py scope    <ticket-id> <base-ref> [<dir>]
@@ -11,6 +14,16 @@
                                 all declared, 1 any UNDECLARED, 2 unresolved
                                 ticket or ref
     issues.py selftest         run built-in fixture checks, no <dir> needed
+
+    --landing serial | parallel        (`waves` and `preflight` only)
+        Which landing path this wave will use. Default `serial`: branches
+        merge one at a time behind a lock, so two tickets appending the same
+        file produce a small merge and `appends` overlap stays a warning.
+        `parallel`: nothing serialises the merges, so a shared `appends`
+        path collides exactly the way a shared `touches` path does and
+        splits the wave. The mode is an input because the planner cannot
+        infer it, and assuming the serialised one is what put five pull
+        requests into DIRTY on 2026-09-19.
 
 A ticket with no executor (missing/None/empty) is never startable: it is
 excluded from `next` and from every wave in `waves`, and shown in `board`
@@ -744,9 +757,22 @@ def epic_label(t, rollup):
     return f"  epic {key} ({status}){(' ' + title) if title else ''}"
 
 
-def waves(tickets, root):
+def _claims(t, landing):
+    """The paths a ticket claims for a wave slot. Under `serial` landing only
+    `touches` claims one; under `parallel` an `appends` path does too, because
+    no lock serialises the merges that made appending safe."""
+    paths = list(t.get("touches") or [])
+    if landing == "parallel":
+        paths += list(t.get("appends") or [])
+    return paths
+
+
+def _plan_waves(tickets, landing="serial"):
+    """Group the dispatchable tickets into waves, without printing anything.
+    Returns {waves, stalled, unresolvable, no_progress, deferred_ids, by_id}.
+    waves() renders this and preflight() counts it, so the two can never
+    disagree about what a wave is."""
     by_id = {t["id"]: t for t in tickets if t.get("id")}
-    rollup = compute_epic_rollup(tickets)
     # Deferred tickets are dropped from `pending` so they never count as a
     # stalled dependency; their ids stay in by_id so dependents still resolve.
     deferred_ids = {t["id"] for t in tickets if is_deferred(t)}
@@ -761,15 +787,15 @@ def waves(tickets, root):
 
     remaining = list(pending)
     done = {t["id"] for t in tickets if t["_stage"] in DONE}
-    wave_no = 0
-    stalled_on_deferral = []
+    plan, stalled, unresolvable, no_progress = [], [], [], False
 
     while remaining:
         ready = [t for t in remaining
                  if all(d in done or resolved(d) for d in (t.get("blocked_by") or []))]
         if not ready:
-            # Two stuck cases print identically: a real cycle (exit 1) vs blocked
-            # only by a deferral (exit 0). Fixpoint, since deferral is transitive.
+            # Two stuck cases are distinguished here and print differently in
+            # waves(): a real cycle (exit 1) vs blocked only by a deferral
+            # (exit 0). Fixpoint, since deferral is transitive.
             blocked_via_deferral = set()
             changed = True
             while changed:
@@ -784,32 +810,42 @@ def waves(tickets, root):
                         blocked_via_deferral.add(t["id"])
                         changed = True
 
-            unresolved_tickets = [t for t in remaining if t["id"] not in blocked_via_deferral]
-            if unresolved_tickets:
-                print("  cycle or unresolvable dependency among: "
-                      + ", ".join(t["id"] for t in unresolved_tickets))
-                return 1
-
-            # Blocked purely by a deferral, not a cycle — report and stop.
-            stalled_on_deferral = [t for t in remaining]
+            unresolvable = [t for t in remaining if t["id"] not in blocked_via_deferral]
+            if not unresolvable:
+                stalled = list(remaining)
             break
 
         wave, deferred, claimed = [], [], []
-        # Sort by numeric id so the first-come touches tie-break does not depend
-        # on the source's iteration order (files ascending, Jira newest-first).
+        # Sort by numeric id so the first-come tie-break does not depend on
+        # the source's iteration order (files ascending, Jira newest-first).
         ready = sorted(ready, key=lambda t: _numeric_id(t["id"]))
         for t in ready:
-            # Only `touches` gates a wave; `appends` is ignored (see lint()).
-            paths = t.get("touches") or []
+            paths = _claims(t, landing)
             if any(overlap(p, c) for p in paths for c in claimed):
                 deferred.append(t)
             else:
                 wave.append(t)
                 claimed.extend(paths)
 
-        wave_no += 1
+        plan.append(wave)
+        if not wave:
+            no_progress = True
+            break
+        for t in wave:
+            done.add(t["id"])
+        remaining = deferred + [t for t in remaining if t not in wave and t not in deferred]
+
+    return {"waves": plan, "stalled": stalled, "unresolvable": unresolvable,
+            "no_progress": no_progress, "deferred_ids": deferred_ids, "by_id": by_id}
+
+
+def waves(tickets, root, landing="serial"):
+    rollup = compute_epic_rollup(tickets)
+    plan = _plan_waves(tickets, landing)
+    by_id, deferred_ids = plan["by_id"], plan["deferred_ids"]
+
+    for wave_no, wave in enumerate(plan["waves"], 1):
         agents = [t for t in wave if t.get("executor") == "agent"]
-        others = [t for t in wave if t.get("executor") != "agent"]
         print(f"\nWave {wave_no} — {len(wave)} ticket(s), "
               f"{len(agents)} agent-workable in parallel")
         for t in wave:
@@ -820,17 +856,18 @@ def waves(tickets, root):
             for t in agents:
                 print(f"      git worktree add ../wt-{t['id'].lower()} -b {t['id'].lower()}")
 
-        for t in wave:
-            done.add(t["id"])
-        remaining = deferred + [t for t in remaining if t not in wave and t not in deferred]
-        if not wave:
-            print("  no progress possible")
-            return 1
+    if plan["no_progress"]:
+        print("  no progress possible")
+        return 1
+    if plan["unresolvable"]:
+        print("  cycle or unresolvable dependency among: "
+              + ", ".join(t["id"] for t in plan["unresolvable"]))
+        return 1
 
-    if stalled_on_deferral:
+    if plan["stalled"]:
         print("\nBlocked by a deferred dependency (not a cycle — resolves once "
               "the date passes):")
-        for t in stalled_on_deferral:
+        for t in plan["stalled"]:
             direct = [d for d in (t.get("blocked_by") or []) if d in deferred_ids]
             if direct:
                 labels = ", ".join(
@@ -842,6 +879,94 @@ def waves(tickets, root):
 
     print("\n  * needs a human   ~ agent works it, human finishes it")
     return 0
+
+
+def _decl_paths(t):
+    """Every path a ticket declares, paired with the field it was declared in."""
+    return ([(p, "touches") for p in (t.get("touches") or [])]
+            + [(p, "appends") for p in (t.get("appends") or [])])
+
+
+_GLOB_META = re.compile(r"[*?\[]")
+
+
+def _hotspot_key(x, y):
+    """One heading for a colliding glob pair: the more literal side, so
+    `reference/*` and `reference/issues.py` read as one hotspot, not two."""
+    xg, yg = bool(_GLOB_META.search(x)), bool(_GLOB_META.search(y))
+    if xg != yg:
+        return y if xg else x
+    return min(x, y)
+
+
+def startable_now(tickets):
+    """The tickets a dispatcher could hand out right now — wave 1 as it would
+    be if nothing collided. Same exclusions waves() applies (a deferred, epic,
+    or executor-less ticket is never dispatched) plus every blocked_by already
+    resolved."""
+    by_id = {t["id"]: t for t in tickets if t.get("id")}
+    done = {t["id"] for t in tickets if t["_stage"] in DONE}
+    return [t for t in tickets
+            if t["_stage"] in WORKABLE and not is_deferred(t)
+            and not t.get("_is_epic") and has_executor(t)
+            and all(d in done or by_id.get(d, {}).get("_stage") in RESOLVING
+                    for d in (t.get("blocked_by") or []))]
+
+
+def preflight(tickets, root, landing="serial"):
+    """Report every file two or more startable tickets would write, before the
+    wave is dispatched rather than after the pull requests go DIRTY. Returns 0
+    when nothing collides under `landing`, 1 when something does, and 2 when
+    no wave plan exists at all — so a caller can tell "collisions found" from
+    "the planner broke"."""
+    ready = startable_now(tickets)
+
+    hotspots = {}
+    for i, a in enumerate(ready):
+        for b in ready[i + 1:]:
+            for x, kx in _decl_paths(a):
+                for y, ky in _decl_paths(b):
+                    if not overlap(x, y):
+                        continue
+                    h = hotspots.setdefault(
+                        _hotspot_key(x, y),
+                        {"ids": set(), "kinds": set(), "hard": False})
+                    h["ids"].update((a["id"], b["id"]))
+                    h["kinds"].update((kx, ky))
+                    if kx == "touches" and ky == "touches":
+                        h["hard"] = True
+
+    plans = {}
+    for mode in ("serial", "parallel"):
+        p = _plan_waves(tickets, mode)
+        if p["unresolvable"] or p["no_progress"]:
+            stuck = ", ".join(t["id"] for t in p["unresolvable"]) or "(no progress)"
+            print(f"issues.py: no {mode} wave plan — cycle or unresolvable "
+                  f"dependency among: {stuck}", file=sys.stderr)
+            return 2
+        plans[mode] = p
+
+    print(f"preflight — {len(ready)} startable ticket(s), landing={landing}")
+    collisions = 0
+    for key in sorted(hotspots):
+        h = hotspots[key]
+        # A touches overlap collides under either landing path. Anything
+        # reached through `appends` collides only when nothing serialises the
+        # merges — which is the whole distinction this verb exists to make.
+        blocking = h["hard"] or landing == "parallel"
+        collisions += 1 if blocking else 0
+        kinds = "+".join(sorted(h["kinds"]))
+        ids = ", ".join(sorted(h["ids"], key=_numeric_id))
+        print(f"  {'COLLISION' if blocking else 'warn     '}  {key}  "
+              f"via {kinds} — {ids}")
+    if not hotspots:
+        print("  no file is written by more than one startable ticket")
+
+    print(f"\n  waves: {len(plans['serial']['waves'])} under serial landing, "
+          f"{len(plans['parallel']['waves'])} under parallel")
+    print(f"\n{len(hotspots)} shared file(s), {collisions} collision(s) under "
+          f"{landing} landing")
+    return 1 if collisions else 0
 
 
 def board(tickets, root):
@@ -903,7 +1028,11 @@ def nxt(tickets, root):
     return 0
 
 
-CMDS = {"lint": lint, "waves": waves, "board": board, "next": nxt}
+CMDS = {"lint": lint, "waves": waves, "board": board, "next": nxt,
+        "preflight": preflight}
+# Commands that take --landing. Everything else rejects the flag rather than
+# accepting it and quietly planning for the wrong landing path.
+LANDING_CMDS = ("waves", "preflight")
 
 
 def _no_executor_fixture():
@@ -1014,6 +1143,7 @@ def selftest():
     failures.extend(_scope_selftest())
     failures.extend(_jira_fixture_selftest())
     failures.extend(_notes_md_selftest())
+    failures.extend(_preflight_selftest())
 
     if failures:
         print("SELFTEST FAILED")
@@ -1027,7 +1157,9 @@ def selftest():
           "awaiting-deployment is not dispatched but still resolves a "
           "blocked_by; a cross-project blocker is external, not missing; "
           "a comma-separated touches line is rejected; load_files excludes "
-          "a .notes.md suffix but not a notes-in-slug id")
+          "a .notes.md suffix but not a notes-in-slug id; a shared `appends` "
+          "file splits a wave under --landing parallel and only warns under "
+          "serial, and preflight exits 0/1/2")
     return 0
 
 
@@ -1205,6 +1337,107 @@ def _notes_md_selftest():
     return failures
 
 
+def _preflight_fixture(hard=False):
+    """The 2026-09-19 wave in miniature: three tickets that touch different
+    files and all append one shared `docs/decisions.md`. Serial landing packs
+    them into a single wave and the shared append is a small merge; parallel
+    landing has no lock, so the first merge wins and the rest go DIRTY. With
+    hard=True a fourth ticket collides on `touches` instead, which is a
+    collision under either landing path."""
+    base = {"created": "2026-01-01", "updated": "2026-01-01", "tags": [],
+            "blocked_by": [], "human_steps": [], "epic": None,
+            "defer_until": None, "_is_epic": False, "_body": "",
+            "executor": "agent", "verify": "true", "_stage": "open"}
+
+    def t(n, touches, appends):
+        return dict(base, id=f"ZZ-{n}", title=f"preflight fixture {n}",
+                    _path=f"ZZ-{n}", touches=touches, appends=appends)
+
+    out = [t(910, ["reference/a.py"], ["docs/decisions.md"]),
+           t(911, ["reference/b.py"], ["docs/decisions.md"]),
+           t(912, ["reference/c.py"], ["docs/decisions.md"])]
+    if hard:
+        out.append(t(913, ["reference/a.py"], []))
+    return out
+
+
+def _preflight_selftest():
+    """WO-041: a shared `appends` path is benign only because landing is
+    serialized, and the planner has to be told which landing path a wave will
+    use instead of assuming the safe one."""
+    import io
+    import contextlib
+    failures = []
+
+    def run(fn, tickets, **kw):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = fn(tickets, "selftest", **kw)
+        return code, buf.getvalue()
+
+    soft = _preflight_fixture()
+    s, p = _plan_waves(soft, "serial"), _plan_waves(soft, "parallel")
+
+    if len(s["waves"]) != 1:
+        failures.append(f"waves: serial landing put three appenders into "
+                        f"{len(s['waves'])} waves, want 1 (today's behaviour)")
+    if len(p["waves"]) <= len(s["waves"]):
+        failures.append(f"waves: parallel landing did not split a shared "
+                        f"`appends` file — {len(p['waves'])} waves vs "
+                        f"{len(s['waves'])} serial")
+    if p["waves"] and len(p["waves"][0]) != 1:
+        failures.append(f"waves: parallel wave 1 holds {len(p['waves'][0])} "
+                        f"tickets that all append one file, want 1")
+    if (sorted(t["id"] for w in s["waves"] for t in w)
+            != sorted(t["id"] for w in p["waves"] for t in w)):
+        failures.append("waves: landing mode changed WHICH tickets are "
+                        "scheduled, not just when — it must only reorder")
+
+    code, out = run(preflight, soft, landing="serial")
+    if code != 0:
+        failures.append(f"preflight: serial landing exited {code} on an "
+                        f"appends-only overlap, want 0 (a warning)")
+    if "docs/decisions.md" not in out:
+        failures.append(f"preflight: serial run did not name the shared "
+                        f"file: {out!r}")
+    if "COLLISION" in out:
+        failures.append(f"preflight: serial run called an appends overlap a "
+                        f"COLLISION: {out!r}")
+
+    code, out = run(preflight, soft, landing="parallel")
+    if code != 1:
+        failures.append(f"preflight: parallel landing exited {code} on an "
+                        f"appends overlap, want 1")
+    hot = next((l for l in out.splitlines() if "docs/decisions.md" in l), "")
+    if "COLLISION" not in hot:
+        failures.append(f"preflight: docs/decisions.md not flagged COLLISION "
+                        f"under parallel landing: {out!r}")
+    missing = [i for i in ("ZZ-910", "ZZ-911", "ZZ-912") if i not in hot]
+    if missing:
+        failures.append(f"preflight: hotspot line omits {missing}: {hot!r}")
+    if "under serial landing" not in out or "under parallel" not in out:
+        failures.append(f"preflight: wave count under each landing mode not "
+                        f"reported: {out!r}")
+
+    code, out = run(preflight, _preflight_fixture(hard=True), landing="serial")
+    if code != 1:
+        failures.append(f"preflight: a `touches` overlap exited {code} under "
+                        f"serial landing, want 1")
+    if "via touches —" not in out:
+        failures.append(f"preflight: touches overlap not labelled "
+                        f"'via touches': {out!r}")
+
+    cyc = [dict(soft[0], blocked_by=["ZZ-911"]), dict(soft[1], blocked_by=["ZZ-910"])]
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        code, _ = run(preflight, cyc, landing="serial")
+    if code != 2:
+        failures.append(f"preflight: an unresolvable dependency exited "
+                        f"{code}, want 2 — 'the planner broke' must not read "
+                        f"as 'collisions found'")
+    return failures
+
+
 def parse_args(argv):
     """issues.py <cmd> [dir] [--source files|jira] [--jira-api PATH]
     [--jira-project KEY] [--fixture PATH]. Flags may appear in any order
@@ -1215,7 +1448,15 @@ def parse_args(argv):
     `scope <ticket-id> <base-ref> [<dir>|--source jira]` takes two leading
     positionals instead of one: the ticket id, then the base ref for
     `git diff --name-only <base-ref>...HEAD`. A third positional (files
-    source only) is the ticket directory, same as every other command."""
+    source only) is the ticket directory, same as every other command.
+
+    `--landing serial|parallel` applies to `waves` and `preflight`; any other
+    command rejects it rather than planning for a landing path it does not
+    use. `--help` prints this and exits 0, so the flag list is discoverable
+    without reading the file."""
+    if len(argv) > 1 and argv[1] in ("-h", "--help", "help"):
+        print(__doc__)
+        sys.exit(0)
     if len(argv) < 2 or (argv[1] not in CMDS and argv[1] not in ("selftest", "scope")):
         print(__doc__)
         sys.exit(2)
@@ -1225,6 +1466,7 @@ def parse_args(argv):
     source = os.environ.get("ISSUES_SOURCE", "files")
     jira_api = os.environ.get("ISSUES_JIRA_API")
     fixture = None
+    landing = "serial"
     positional = []
 
     i = 0
@@ -1252,12 +1494,25 @@ def parse_args(argv):
                 die("--fixture needs a path")
             fixture = rest[i + 1]
             i += 2
+        elif a == "--landing":
+            if i + 1 >= len(rest):
+                die("--landing needs a value (serial or parallel)")
+            landing = rest[i + 1]
+            i += 2
+        elif a in ("-h", "--help"):
+            print(__doc__)
+            sys.exit(0)
         else:
             positional.append(a)
             i += 1
 
     if source not in ("files", "jira"):
         die(f"--source must be 'files' or 'jira' (got '{source}')")
+
+    if landing not in ("serial", "parallel"):
+        die(f"--landing must be 'serial' or 'parallel' (got '{landing}')")
+    if landing != "serial" and cmd not in LANDING_CMDS:
+        die(f"--landing applies to {' and '.join(LANDING_CMDS)} only, not '{cmd}'")
 
     if cmd == "scope":
         if len(positional) < 2:
@@ -1268,18 +1523,18 @@ def parse_args(argv):
         if source == "files" and not root:
             print(__doc__)
             sys.exit(2)
-        return cmd, source, root, jira_api, fixture, (ticket_id, base_ref)
+        return cmd, source, root, jira_api, fixture, landing, (ticket_id, base_ref)
 
     root = positional[0].rstrip("/") if positional else None
     if cmd != "selftest" and source == "files" and not root:
         print(__doc__)
         sys.exit(2)
 
-    return cmd, source, root, jira_api, fixture, None
+    return cmd, source, root, jira_api, fixture, landing, None
 
 
 def main(argv):
-    cmd, source, root, jira_api, fixture, scope_args = parse_args(argv)
+    cmd, source, root, jira_api, fixture, landing, scope_args = parse_args(argv)
     if cmd == "selftest":
         return selftest()
     if source == "jira":
@@ -1292,6 +1547,8 @@ def main(argv):
         ticket_id, base_ref = scope_args
         cwd = root if source == "files" else None
         return scope(ticket_id, base_ref, tickets, cwd=cwd)
+    if cmd in LANDING_CMDS:
+        return CMDS[cmd](tickets, label, landing=landing)
     return CMDS[cmd](tickets, label)
 
 
