@@ -29,8 +29,8 @@ KNOWN_FIELDS = {
 def _load_validator():
     """Load decision-list/validate.py as a module, located relative to this
     file rather than the caller's cwd, so emit.py works from any directory."""
-    repo_root = Path(__file__).resolve().parents[4]
-    validate_path = repo_root / "decision-list" / "validate.py"
+    plugin_root = Path(__file__).resolve().parents[2]
+    validate_path = plugin_root / "decision-list" / "validate.py"
     spec = importlib.util.spec_from_file_location("decision_list_validate", validate_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

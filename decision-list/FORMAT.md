@@ -8,7 +8,7 @@ format that crosses that seam, so both halves can be built and tested against
 a written contract rather than against each other.
 
 A decision list is one JSON document. `decision-list/validate.py` checks it
-against this document; `plugins/work-order/skills/emit-tickets/` consumes a
+against this document; `skills/emit-tickets/` consumes a
 valid one and emits tickets.
 
 ## Why JSON, and why a separate field per concern
@@ -104,11 +104,11 @@ JSON-shaped.
 
 ## Emitting tickets
 
-`plugins/work-order/skills/emit-tickets/` consumes a valid decision list and
+`skills/emit-tickets/` consumes a valid decision list and
 writes one ticket file per decision into an output directory:
 
 ```
-python3 plugins/work-order/skills/emit-tickets/emit.py \
+python3 skills/emit-tickets/emit.py \
   decision-list/examples/worked-example.json --out /tmp/out/
 ```
 

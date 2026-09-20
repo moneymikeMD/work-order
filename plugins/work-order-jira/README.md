@@ -1,6 +1,6 @@
 # work-order-jira
 
-The Jira binding for the [work-order](../../SPEC.md) ticket-as-contract
+The Jira binding for the [work-order](https://github.com/moneymikeMD/work-order/blob/main/SPEC.md) ticket-as-contract
 specification: a normative mapping of the contract onto Jira Cloud
 company-managed projects, the provider that runs tickets against it, and a
 provisioner that creates a conforming Space.

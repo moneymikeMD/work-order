@@ -4,12 +4,6 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "plugins/work-order": {
-      "release-type": "simple",
-      "component": "work-order",
-      "tag-separator": "--",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         {
@@ -17,9 +11,7 @@
           "path": ".claude-plugin/plugin.json",
           "jsonpath": "$.version"
         }
-      ],
-      "bump-minor-pre-major": true,
-      "initial-version": "0.1.0"
+      ]
     },
     "plugins/work-order-jira": {
       "release-type": "simple",

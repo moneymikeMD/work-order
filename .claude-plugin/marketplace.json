@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "work-order",
-      "source": "./plugins/work-order",
+      "source": "./",
       "description": "The work-order ticket-as-contract specification, reference implementation, file binding, and conformance validator."
     },
     {
