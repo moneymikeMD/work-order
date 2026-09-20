@@ -8,11 +8,14 @@
                                 no collisions, 1 collisions found, 2 no plan
     issues.py board    <dir>   what is where
     issues.py next     <dir>   tickets startable right now
-    issues.py scope    <ticket-id> <base-ref> [<dir>]
+    issues.py scope    <ticket-id> <base-ref> [<dir>] [--repo PATH]
                                 classify git diff --name-only <base-ref>...HEAD
-                                paths vs the ticket's touches/appends; exit 0
-                                all declared, 1 any UNDECLARED, 2 unresolved
-                                ticket or ref
+                                paths, run in --repo (default: cwd), vs the
+                                ticket's touches/appends -- a leading
+                                <repo-name>/ component is stripped from each
+                                glob, scoped to --repo's basename, before
+                                matching; exit 0 all declared, 1 any
+                                UNDECLARED, 2 unresolved ticket or ref
     issues.py selftest         run built-in fixture checks, no <dir> needed
 
     --landing serial | parallel        (`waves` and `preflight` only)
@@ -504,6 +507,29 @@ def overlap(a, b):
     return a == b or fnmatch(a, b) or fnmatch(b, a)
 
 
+def _strip_repo_prefix(globs, repo):
+    """Drop a leading `<repo>/` component from each glob that has one, so a
+    ~/code-relative touches/appends entry (`work-order/SPEC.md`) compares
+    against a single-repo `git diff`'s repo-relative paths (`SPEC.md`). A
+    glob for a different repo is returned unchanged and therefore never
+    matches — stripping is scoped to `repo` so a `night-watchman/` glob
+    never matches inside `work-order`."""
+    if not repo:
+        return list(globs)
+    prefix = f"{repo}/"
+    return [g[len(prefix):] if g.startswith(prefix) else g for g in globs]
+
+
+def overlap_declared(ticket, path, repo=None):
+    """Is `path` (repo-relative, as `git diff` in a single checkout emits
+    it) declared in ticket's touches or appends, once each glob's leading
+    `<repo>/` component is stripped, scoped to `repo`?"""
+    touches = _strip_repo_prefix(ticket.get("touches") or [], repo)
+    appends = _strip_repo_prefix(ticket.get("appends") or [], repo)
+    return (any(overlap(path, g) for g in touches) or
+            any(overlap(path, g) for g in appends))
+
+
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -541,12 +567,15 @@ def _where(t, root):
     return path
 
 
-def scope(ticket_id, base_ref, tickets, cwd=None):
-    """Classify every path in `git diff --name-only <base_ref>...HEAD`
-    against ticket_id's touches/appends globs (the same overlap() matcher
-    lint() uses for collision detection). Prints one "<class>\tpath" line
-    per changed path and returns 0 when every path is declared, 1 when any
-    path is UNDECLARED, 2 when the ticket or ref cannot be resolved.
+def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
+    """Classify every path in `git diff --name-only <base_ref>...HEAD`,
+    run in `cwd` (the repo checkout being diffed — never the ticket
+    directory, which is not a git repo), against ticket_id's touches/appends
+    globs via overlap_declared(). Prints one "<class>\tpath" line per
+    changed path and returns 0 when every path is declared, 1 when any path
+    is UNDECLARED, 2 when the ticket or ref cannot be resolved. `repo`
+    scopes the `<repo>/` prefix stripped from touches/appends before
+    matching; if omitted, it is the basename of `cwd` (or the process cwd).
     Adapted from mattpocock/skills code-review (spec axis), 2026-09-14."""
     ticket = next((t for t in tickets if t.get("id") == ticket_id), None)
     if ticket is None:
@@ -567,8 +596,12 @@ def scope(ticket_id, base_ref, tickets, cwd=None):
               file=sys.stderr)
         return 2
     paths = [p for p in (proc.stdout or "").splitlines() if p]
-    touches = ticket.get("touches") or []
-    appends = ticket.get("appends") or []
+    effective_repo = repo
+    if effective_repo is None:
+        effective_repo = os.path.basename(
+            os.path.abspath(cwd or os.getcwd()).rstrip(os.sep))
+    touches = _strip_repo_prefix(ticket.get("touches") or [], effective_repo)
+    appends = _strip_repo_prefix(ticket.get("appends") or [], effective_repo)
     undeclared = 0
     for path in paths:
         if any(overlap(path, g) for g in touches):
@@ -1448,7 +1481,15 @@ def parse_args(argv):
     `scope <ticket-id> <base-ref> [<dir>|--source jira]` takes two leading
     positionals instead of one: the ticket id, then the base ref for
     `git diff --name-only <base-ref>...HEAD`. A third positional (files
-    source only) is the ticket directory, same as every other command.
+    source only) is the ticket directory, same as every other command — it
+    is where tickets are loaded from, and is NOT a git repo, so it is never
+    used as `git diff`'s cwd.
+
+    `--repo PATH` (scope only) is the checkout `git diff` runs in and whose
+    basename scopes the `<repo>/` prefix stripped from touches/appends
+    before matching. Defaults to the current directory when omitted, so
+    `issues.py scope <id> <base-ref>` run from inside the repo being
+    reviewed needs no flag.
 
     `--landing serial|parallel` applies to `waves` and `preflight`; any other
     command rejects it rather than planning for a landing path it does not
@@ -1467,6 +1508,7 @@ def parse_args(argv):
     jira_api = os.environ.get("ISSUES_JIRA_API")
     fixture = None
     landing = "serial"
+    repo_path = None
     positional = []
 
     i = 0
@@ -1499,6 +1541,11 @@ def parse_args(argv):
                 die("--landing needs a value (serial or parallel)")
             landing = rest[i + 1]
             i += 2
+        elif a == "--repo":
+            if i + 1 >= len(rest):
+                die("--repo needs a path")
+            repo_path = rest[i + 1]
+            i += 2
         elif a in ("-h", "--help"):
             print(__doc__)
             sys.exit(0)
@@ -1513,6 +1560,8 @@ def parse_args(argv):
         die(f"--landing must be 'serial' or 'parallel' (got '{landing}')")
     if landing != "serial" and cmd not in LANDING_CMDS:
         die(f"--landing applies to {' and '.join(LANDING_CMDS)} only, not '{cmd}'")
+    if repo_path is not None and cmd != "scope":
+        die(f"--repo applies to scope only, not '{cmd}'")
 
     if cmd == "scope":
         if len(positional) < 2:
@@ -1523,18 +1572,18 @@ def parse_args(argv):
         if source == "files" and not root:
             print(__doc__)
             sys.exit(2)
-        return cmd, source, root, jira_api, fixture, landing, (ticket_id, base_ref)
+        return cmd, source, root, jira_api, fixture, landing, (ticket_id, base_ref), repo_path
 
     root = positional[0].rstrip("/") if positional else None
     if cmd != "selftest" and source == "files" and not root:
         print(__doc__)
         sys.exit(2)
 
-    return cmd, source, root, jira_api, fixture, landing, None
+    return cmd, source, root, jira_api, fixture, landing, None, repo_path
 
 
 def main(argv):
-    cmd, source, root, jira_api, fixture, landing, scope_args = parse_args(argv)
+    cmd, source, root, jira_api, fixture, landing, scope_args, repo_path = parse_args(argv)
     if cmd == "selftest":
         return selftest()
     if source == "jira":
@@ -1545,8 +1594,11 @@ def main(argv):
         label = root
     if cmd == "scope":
         ticket_id, base_ref = scope_args
-        cwd = root if source == "files" else None
-        return scope(ticket_id, base_ref, tickets, cwd=cwd)
+        # cwd is the checkout git diff runs in: --repo when given, else the
+        # process's own cwd. NEVER `root` -- in files mode that is the
+        # ticket directory (e.g. ~/code/issues), which is not a git repo
+        # and made every `scope` call here exit 128.
+        return scope(ticket_id, base_ref, tickets, cwd=repo_path)
     if cmd in LANDING_CMDS:
         return CMDS[cmd](tickets, label, landing=landing)
     return CMDS[cmd](tickets, label)
