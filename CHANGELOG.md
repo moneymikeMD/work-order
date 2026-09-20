@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0](https://github.com/moneymikeMD/work-order/compare/v1.2.0...v1.3.0) (2026-09-20)
+
+
+### Features
+
+* **conformance:** a second validator written without the reference implementation ([#22](https://github.com/moneymikeMD/work-order/issues/22)) ([3431395](https://github.com/moneymikeMD/work-order/commit/3431395f7472613bc46e20b43ee89e84d36c5ae7))
+* **conformance:** validate a Jira-tracked set from recorded API responses ([#26](https://github.com/moneymikeMD/work-order/issues/26)) ([7c8b5e0](https://github.com/moneymikeMD/work-order/commit/7c8b5e0409ec1209f469de43298980411cecc914))
+* **plugin:** publish the work-order plugin from the repository root ([#25](https://github.com/moneymikeMD/work-order/issues/25)) ([980add8](https://github.com/moneymikeMD/work-order/commit/980add828241031fe47513150068c13d194cb6f2))
+* **reference:** tell the wave planner which landing path a wave will use ([#21](https://github.com/moneymikeMD/work-order/issues/21)) ([f9432f6](https://github.com/moneymikeMD/work-order/commit/f9432f62de35d8dae58795a8ce82634ca5bca70f))
+
+
+### Bug Fixes
+
+* **reference:** strip the repo-name prefix so scope() classifies a single-repo diff ([#24](https://github.com/moneymikeMD/work-order/issues/24)) ([99d6aa3](https://github.com/moneymikeMD/work-order/commit/99d6aa3675557d6139157892a1139193241963c0))
+
 ## [1.2.0](https://github.com/moneymikeMD/work-order/compare/v1.1.0...v1.2.0) (2026-09-20)
 
 
