@@ -10,7 +10,7 @@ written first even though the specification it binds is substrate-neutral.
 
 ## Status of this document
 
-Binds specification version **0.1** (`VERSION-spec`), profile **`unattended`**:
+Binds specification version **0.2** (`VERSION-spec`), profile **`unattended`**:
 this binding states a representation for every field and every lifecycle
 position the specification names at any profile.
 
@@ -44,10 +44,17 @@ directly inside exactly one of those subdirectories. Nesting a ticket deeper is
 not a conforming layout: the position is the directory, and a ticket two levels
 down has two candidate answers.
 
-[FILE-2] `minimal` — The stage directory names MUST be exactly `open/`,
-`in-progress/`, `awaiting-deployment/`, `completed/` and `cancelled/`. A
-directory MAY be absent while it is empty, and an implementation MUST treat an
-absent directory as empty rather than as an error.
+[FILE-2] `minimal` — The stage directory names MUST be exactly `triage/`,
+`open/`, `in-progress/`, `awaiting-deployment/`, `deferred/`, `completed/` and
+`cancelled/`, one per lifecycle position of `[SPEC.md MUST-25]`. A directory MAY
+be absent while it is empty, and an implementation MUST treat an absent
+directory as empty rather than as an error.
+
+`open/` keeps its name and its meaning. Specification 0.2 added two positions
+either side of it — `triage/` before, `deferred/` beside — and renamed nothing:
+the position `open` is the ready-to-work position it always was, and a set that
+predates 0.2 needs no directory moved. What 0.2 changed for an existing set is
+that two positions it had nowhere to put now have a directory each.
 
 That is a statement about directories, not about positions: an absent
 `awaiting-deployment/` means no ticket is in that position right now, and
@@ -78,11 +85,29 @@ marker, tag or second file may restate its position. A field and a location
 eventually disagree, and then neither can be trusted: each reader consults
 whichever supports what they already believe.
 
-All five positions of `[SPEC.md MUST-25]` are represented, one directory each,
-as `[SPEC.md MUST-42]` requires of a binding, and `[FILE-5]` is the single
+All seven positions of `[SPEC.md MUST-25]` are represented, one directory
+each, as `[SPEC.md MUST-42]` requires of a binding, and `[FILE-5]` is the single
 representation it names to satisfy `[SPEC.md MUST-26]`. That includes
 `awaiting-deployment/` as a position distinct from `completed/`, per
 `[SPEC.md MUST-27]`.
+
+[FILE-16] `minimal` — A ticket file created on request MUST be written into
+`triage/`, which is the entry state of `[SPEC.md MUST-46]`. Moving it to `open/`
+is the assertion that the rest of the contract is now in the file, and in this
+substrate that assertion is a rename — there is no field to set and nothing else
+to write.
+
+[FILE-17] `minimal` — A ticket in `deferred/` MUST carry `defer_until` in its
+frontmatter, per `[SPEC.md MUST-47]`. The directory says the ticket is parked;
+the field says until when, and a `deferred/` ticket without one is the case this
+binding cannot distinguish from an abandoned ticket.
+
+Nothing moves a ticket out of `deferred/` on its own here. A file tree has no
+scheduler, so the date is read by whatever lists the set, and in the
+reference implementation it is `issues.py` refusing to call the ticket
+startable until the date has passed. A substrate that does have a scheduler —
+the Jira binding, where a global automation moves the issue — is where the
+transition happens without a person.
 
 [FILE-7] `full` — A lifecycle transition MUST be performed as a **rename** of
 the ticket file from one stage directory to another. A copy-then-delete, or a
@@ -235,9 +260,15 @@ and is the executable account of it: `lint`, `board`, `next`, `waves` and
 `lint` gates on the errors that make a ticket unworkable — a missing `id`,
 `title`, `created`, `updated` or `verify`, an `executor` outside the three
 values, `mixed` without `human_steps`, an unresolvable or self-referential
-`blocked_by`, a `defer_until` that is not an ISO date, a duplicated id, a
-cancelled ticket with no `outcome`, an `agent`/`mixed` ticket with no `touches`,
-and two simultaneously startable tickets that own the same path.
+`blocked_by`, a `defer_until` that is not an ISO date, a `deferred/` ticket with
+no `defer_until` (`[FILE-17]`), a duplicated id, a cancelled ticket with no
+`outcome`, an `agent`/`mixed` ticket with no `touches`, and two simultaneously
+startable tickets that own the same path.
+
+A ticket in `triage/` is held only to `id`, `title`, `created` and `updated`,
+per `[SPEC.md MUST-46]`. Linting the entry state against the whole contract
+would report every newly written ticket as broken, which is the opposite of what
+the entry state is for.
 
 It reports, without gating, the cases that are usually a mistake and sometimes
 deliberate: no `executor`, a shared `appends` path, a completed ticket whose
@@ -250,8 +281,10 @@ is a different program.
 ## 6. Examples
 
 [`examples/`](examples/) is a complete six-ticket set in this binding, one
-ticket in each of the five positions, that `reference/issues.py lint` reports
-with zero errors and zero warnings. It is the executable half of this document:
+ticket in each of five of the seven positions, that `reference/issues.py lint`
+reports with zero errors and zero warnings. `triage/` and `deferred/` are absent
+from it, which `[FILE-2]` reads as "no ticket is in that position right now" and
+not as an omission. It is the executable half of this document:
 
 - `open/EX-001` — the ordinary shape: `agent`, owned paths, a `verify` naming
   what fails today.

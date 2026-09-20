@@ -1,10 +1,16 @@
 #!/bin/bash
 #
 # provision.sh — create or converge a Jira Space that conforms to the
-# work-order specification at the `full` profile: the project, the five
+# work-order specification at the `full` profile: the project, the seven
 # lifecycle statuses and their validators, the seven custom fields, and
 # those fields on every screen the project's issue types use. Each step is
 # idempotent; a re-run converges.
+#
+# Step 5 also retargets the workflow's INITIAL transition — the Create
+# transition Jira runs when an issue is made — at the entry state, Triage.
+# The project template points it at To Do, so a Space provisioned without that
+# step creates every issue at the ready-to-work position and skips triage.
+# That is what left all 58 issues of one import with no readable position.
 #
 # Usage:
 #   provision.sh --dry-run --project KEY [--name "Name"]
@@ -70,7 +76,7 @@ RULES_PATH=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
-            sed -n '3,44p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,50p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --project)
             [ $# -ge 2 ] || die "--project needs a KEY"
@@ -173,7 +179,9 @@ EOF
     # own --dry-run, so calling it here would issue real credentialed GETs.
     echo "5. would run (announced, not invoked here):"
     echo "   $WORKFLOW_APPLY $PROJECT_KEY --http $HTTP --rules $RULES_PATH --yes"
-    echo "   statuses: Open, In Progress, Awaiting Deployment, Completed, Cancelled"
+    echo "   statuses: Triage, Open, In Progress, Awaiting Deployment, Deferred, Completed, Cancelled"
+    echo "   the ready-to-work position binds to Open ([JIRA-15]); the template's own To Do and Done are read-only aliases and are never provisioned"
+    echo "   create transition: the initial transition (the one Jira runs on create) would be retargeted at the entry state, Triage, which the project template points at To Do ([JIRA-12])"
     echo "   validators: from $RULES_PATH"
     echo
     echo "4. would add each field to every screen of the project's issue-type screen scheme (screen and tab ids are only knowable from a live read):"
@@ -194,7 +202,7 @@ if [ "$ASSUME_YES" != "1" ]; then
         warn "no --yes and no terminal to confirm on — refusing to provision a Jira Space unattended. Re-run with --yes."
         exit 3
     fi
-    warn "About to provision Jira Space '$PROJECT_KEY' (\"$PROJECT_NAME\"): create-or-verify the project, apply five statuses and their validators, create seven custom fields, and add them to every project screen. Proceed? [y/N]"
+    warn "About to provision Jira Space '$PROJECT_KEY' (\"$PROJECT_NAME\"): create-or-verify the project, apply seven statuses and their validators, retarget the create transition at the entry state, create seven custom fields, and add them to every project screen. Proceed? [y/N]"
     ANSWER=""
     IFS= read -r ANSWER < /dev/tty || die "could not read the confirmation"
     case "$ANSWER" in
@@ -512,5 +520,5 @@ ensure_fields
 add_fields_to_screens
 apply_workflow
 echo
-echo "Jira Space '$PROJECT_KEY' now conforms to work-order at the 'full' profile. Custom fields:"
+echo "Jira Space '$PROJECT_KEY' now conforms to work-order at the 'full' profile: seven lifecycle statuses, the create transition targeting Triage, and these custom fields:"
 print_field_table

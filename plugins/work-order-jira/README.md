@@ -56,11 +56,15 @@ nothing. Rehearse on a throwaway key before pointing it at a Space that matters:
 it creates a project, seven site-wide custom fields, and statuses and
 validators on a shared workflow.
 
+It also retargets the workflow's create transition at `Triage`, the entry
+state. The Jira template points it at `To Do`, so a Space provisioned without
+that step creates every issue already ready to work — see `[JIRA-12]`.
+
 ## Running tickets
 
 ```sh
 ./provider.sh fetch PROJ-12
-./provider.sh position PROJ-12                    # -> in-progress
+./provider.sh position PROJ-12                    # -> in-progress; exit 4 if unmapped
 ./provider.sh transition PROJ-12 awaiting-deployment
 ./provider.sh comment PROJ-12 -                   # body on stdin
 ./provider.sh create PROJ Task "What will be true when this is done"

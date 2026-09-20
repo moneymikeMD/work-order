@@ -68,6 +68,9 @@ both in turn.
 **Startable** — a ticket that may be picked up right now, defined precisely by
 `[MUST-21]`.
 
+**Entry state** — the lifecycle position a ticket occupies when it is
+written, before it is a contract: `triage`.
+
 **Terminal** — a lifecycle position from which a ticket does not move again:
 `completed` or `cancelled`.
 
@@ -105,8 +108,9 @@ large as the set filters nothing.
 This section is the reason the specification exists. Everything else describes
 how work is organised; this describes how work is proven.
 
-[MUST-7] `minimal` — Every ticket whose lifecycle position is not `cancelled`
-MUST carry `verify`.
+[MUST-7] `minimal` — Every ticket whose lifecycle position is not `triage` and
+not `cancelled` MUST carry `verify`. `triage` is excused by `[MUST-46]`: a
+ticket there is not yet a contract.
 
 [MUST-8] `minimal` — `verify` MUST state the command or sequence of commands
 that proves the work is done, and the result that counts as passing.
@@ -206,9 +210,14 @@ the set. An unresolvable identifier MUST be reported as an error.
 transitively.
 
 [MUST-21] `full` — A ticket is **startable** exactly when its lifecycle
-position is `open` and every ticket named in its `blocked_by` has reached a
-terminal position. An implementation MUST NOT present any other ticket as
-available to pick up.
+position is `open`, every ticket named in its `blocked_by` has reached a
+terminal position, and it carries no `defer_until` still in the future. An
+implementation MUST NOT present any other ticket as available to pick up.
+
+The three other positions a live ticket can occupy are each excluded for their
+own reason: `triage` because the ticket is not yet a contract (`[MUST-46]`),
+`deferred` because its own date has not passed (`[MUST-47]`), and
+`in-progress` because somebody already picked it up.
 
 ## 5. Executor
 
@@ -250,9 +259,32 @@ person runs instead of prose they follow.
 Status is a **position in a lifecycle**, not an opinion recorded in a field. The
 positions are fixed; how a substrate represents them is a binding's concern.
 
-[MUST-25] `minimal` — An implementation MUST represent five lifecycle
-positions: `open`, `in-progress`, `awaiting-deployment`, `completed` and
-`cancelled`. `completed` and `cancelled` are terminal.
+[MUST-25] `minimal` — An implementation MUST represent seven lifecycle
+positions, in this order: `triage`, `open`, `in-progress`,
+`awaiting-deployment`, `deferred`, `completed` and `cancelled`. `triage` is the
+entry state. `completed` and `cancelled` are terminal.
+
+| Position | Is |
+| --- | --- |
+| `triage` | written, not yet a contract — the entry state (`[MUST-46]`) |
+| `open` | a contract, ready to be picked up |
+| `in-progress` | somebody has it |
+| `awaiting-deployment` | landed, not yet running (`[MUST-27]`) |
+| `deferred` | parked until a date, not until an event (`[MUST-47]`) |
+| `completed` | terminal |
+| `cancelled` | terminal (`[MUST-28]`) |
+
+`open` is the position `[MUST-21]` turns on, and it has one definition: a ticket
+that is ready to be worked on; it meets the set's criteria as something that is
+startable. It is reached when the contract is written, not when somebody intends
+to start it.
+
+Five of these were in version 0.1 of this document. `triage` and `deferred` were
+not, and both were already running in the practice this specification was
+extracted from — measured on its prototype project on 2026-09-20, `triage` held
+the second-largest share of the set. A specification that omits a position its
+own prototype runs is not describing a simpler lifecycle; it is describing one
+that does not exist.
 
 [MUST-26] `minimal` — A ticket's lifecycle position MUST have exactly one
 representation. No second field, location or marker may also carry it.
@@ -278,6 +310,30 @@ considered and not why it lost, so they derive it again.
 
 [MUST-29] `full` — A ticket whose premise turns out to be false MUST be
 cancelled rather than removed. The false premise is the part worth keeping.
+
+[MUST-46] `minimal` — `triage` is the **entry state**: the position a ticket
+occupies when it is written and before it is a contract. A ticket at `triage`
+MUST NOT be presented as startable, and no requirement of this document other
+than `[MUST-1]`, `[MUST-3]` and `[MUST-4]` binds a ticket while it is there.
+
+This is what `triage` is for. A ticket written on request has an identity, a
+title and a date; it does not yet have a verification capable of failing, a
+boundary, or a settled set of owned paths. Without an entry state the ticket is
+either instantly non-conforming or instantly workable, and both are wrong: the
+first makes the set red for doing the ordinary thing, and the second hands an
+executor a contract nobody wrote. `triage` is the interval in which the rest of
+this document is satisfied, and leaving it is the assertion that it has been.
+
+[MUST-47] `minimal` — A ticket at `deferred` MUST carry `defer_until`, and MUST
+NOT be presented as startable. `deferred` is the one position whose exit is
+time-based rather than caused by work: a ticket leaves it for `open` when
+`defer_until` has passed.
+
+A parked ticket carrying no date is indistinguishable from an abandoned one,
+and it is nobody's job to look at it again. `defer_until` is what makes
+`deferred` a position rather than a hole — it states when the ticket becomes
+workable, which is what lets something other than a person move it back out.
+`deferred` is not terminal and does not satisfy a `blocked_by`.
 
 [SHOULD-10] `full` — A lifecycle transition SHOULD be recorded together with
 the change that caused it, or on its own. Batching a transition with unrelated
@@ -349,7 +405,8 @@ names are reserved by this specification, so that two implementations do not
 give one name two meanings.
 
 `defer_until` — an RFC 3339 full-date before which the ticket is not startable,
-regardless of `blocked_by`.
+regardless of `blocked_by`. It is required of a ticket at `deferred`
+(`[MUST-47]`) and permitted at any other position.
 
 `epic` — the identifier of a grouping the ticket belongs to.
 
@@ -398,8 +455,8 @@ contradicts the core.
 [MUST-41] `minimal` — A binding MUST state, for every field it supports, the
 concrete representation that field takes in its substrate.
 
-[MUST-42] `minimal` — A binding MUST represent all five lifecycle positions of
-`[MUST-25]`, and MUST name the single representation it uses to satisfy
+[MUST-42] `minimal` — A binding MUST represent all seven lifecycle positions
+of `[MUST-25]`, and MUST name the single representation it uses to satisfy
 `[MUST-26]`.
 
 [MUST-43] `minimal` — A binding MUST state each core requirement it cannot
@@ -425,6 +482,11 @@ a new profile, a new reserved field name, prose that narrows nothing.
 
 **PATCH** — editorial only, with no normative effect.
 
+While the version cap recorded in WO-060 is in force, a change this section
+makes MAJOR is released as a MINOR instead, and the demotion is stated in the
+change's own prose rather than carried as a marker. The cap is lifted by the
+owner of this document, not by this section.
+
 [MUST-45] `minimal` — A requirement identifier MUST NOT be renumbered or
 reused. A withdrawn requirement MUST remain in the document, marked withdrawn,
 so that an existing citation stays readable.
@@ -448,7 +510,7 @@ shorter than they are.
 | `touches` | `full`, for `agent` and `mixed` | Paths this ticket owns |
 | `appends` | optional | Shared paths that merge without reasoning |
 | `human_steps` | `full`, when `mixed` | What the person does, and where automation stops |
-| `defer_until` | optional, reserved | Date before which it is not startable |
+| `defer_until` | `minimal`, in `deferred`; otherwise optional | Date before which it is not startable |
 | `epic` | optional, reserved | Identifier of a grouping |
 
 ## Appendix B: an illustrative ticket

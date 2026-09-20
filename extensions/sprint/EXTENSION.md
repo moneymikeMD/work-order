@@ -23,9 +23,10 @@ work; a sprint groups by timing and does.
 ## Relationship to `blocked_by` and startability
 
 Sprint membership adds no new blocking semantics. `startable` is defined
-exactly by `[MUST-21]` — lifecycle position `open` and every identifier in
-`blocked_by` (`[MUST-18]`–`[MUST-20]`) at a terminal position — and this
-extension leaves that computation untouched. A ticket in a later sprint that
+exactly by `[MUST-21]` — lifecycle position `open`, every identifier in
+`blocked_by` (`[MUST-18]`–`[MUST-20]`) at a terminal position, and no
+`defer_until` still in the future — and this extension leaves that computation
+untouched. A ticket in a later sprint that
 must wait on one in an earlier sprint is expressed the ordinary way: as an
 edge in `blocked_by`. Sprint order is never read as an implicit dependency; an
 implementation MUST NOT infer a `blocked_by` edge from sprint membership or

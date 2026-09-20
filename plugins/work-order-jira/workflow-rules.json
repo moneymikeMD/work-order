@@ -7,9 +7,62 @@
     "  {status:<name>} -> the status id, resolved via GET /statuses/search",
     "Names are matched exactly and case-sensitively; a placeholder that resolves to zero or several matches is fatal.",
     "Parameter shapes for both ruleKeys were recorded from live Jira Cloud responses: fixtures/workflows.bulkget.rules-after.txt.",
-    "Which work-order requirement each rule serves is stated in BINDING.md."
+    "Which work-order requirement each rule serves is stated in BINDING.md.",
+    "Triage is the entry state and deliberately carries NO validator: a ticket is not yet a contract there ([JIRA-13]).",
+    "Open is the ready-to-work position. To Do is its read-only alias ([JIRA-15]) and is never provisioned, so the To Do rule below applies only where the Jira project template already left that transition: the deferral automation uses it, and an ungated alias would be a way around the gate."
   ],
   "transitions": [
+    {
+      "name": "Open",
+      "validators": [
+        {
+          "ruleKey": "system:validate-field-value",
+          "parameters": {
+            "ruleType": "fieldRequired",
+            "fieldsRequired": "{field:verify}",
+            "ignoreContext": "true",
+            "errorMessage": "verify is required to leave triage for the ready-to-work position (work-order MUST-7, per JIRA-13)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "To Do",
+      "validators": [
+        {
+          "ruleKey": "system:validate-field-value",
+          "parameters": {
+            "ruleType": "fieldRequired",
+            "fieldsRequired": "{field:verify}",
+            "ignoreContext": "true",
+            "errorMessage": "verify is required to reach the ready-to-work position (work-order MUST-7, per JIRA-13)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Deferred",
+      "validators": [
+        {
+          "ruleKey": "system:validate-field-value",
+          "parameters": {
+            "ruleType": "fieldRequired",
+            "fieldsRequired": "{field:defer_until}",
+            "ignoreContext": "true",
+            "errorMessage": "defer_until is required to defer: without it nothing says when the ticket comes back (work-order MUST-47, per JIRA-14)"
+          }
+        },
+        {
+          "ruleKey": "system:validate-field-value",
+          "parameters": {
+            "ruleType": "fieldRequired",
+            "fieldsRequired": "{field:verify}",
+            "ignoreContext": "true",
+            "errorMessage": "verify is required to defer, so the automation that returns this issue to To Do can satisfy that transition unattended (work-order MUST-7, per JIRA-14)"
+          }
+        }
+      ]
+    },
     {
       "name": "In Progress",
       "validators": [

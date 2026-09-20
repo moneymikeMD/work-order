@@ -52,7 +52,7 @@ they carry no `self` links for the same reason.
 | Directory | Is |
 | --- | --- |
 | `conforming/` | the six tickets of `fixtures/conforming/`, as Jira issues; passes at all three profiles |
-| `violates-MUST-25-unmapped-status/` | one issue in `Triage`, a status with no lifecycle position (`[JIRA-3]`) |
+| `violates-MUST-25-unmapped-status/` | one issue in `Build Broken`, a status with no lifecycle position (`[JIRA-3]`) |
 | `violates-MUST-31-no-boundary/` | one issue whose description has no out-of-scope heading |
 | `violates-MUST-40-claim-mismatch/` | a project description claiming a profile the set was not validated at |
 

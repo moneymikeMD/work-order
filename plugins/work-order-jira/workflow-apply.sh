@@ -1,11 +1,13 @@
 #!/bin/bash
 #
-# workflow-apply.sh — provisioning step 3: put the five lifecycle statuses of
+# workflow-apply.sh — provisioning step 3: put the seven lifecycle statuses of
 # work-order MUST-25, a GLOBAL transition into each, and the validators in
 # workflow-rules.json onto a company-managed Jira project's own copy of the
-# "simplified scrum classic" template workflow, which ships only
-# To Do / In Progress / Done. Idempotent: "already complete" exits 0 doing
-# nothing.
+# "simplified scrum classic" template workflow, which ships only To Do /
+# In Progress / Done, none of which this script writes. It also retargets the
+# workflow's INITIAL transition — the one Jira runs on create — at the entry
+# state, Triage, which the template points at To Do ([JIRA-12]). Idempotent:
+# "already complete" exits 0 doing nothing.
 #
 # Usage:
 #   workflow-apply.sh PROJECT_KEY [--http PATH] [--rules PATH]
@@ -45,19 +47,29 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$DIR/lib/common.sh"
 
-TARGET_STATUS_LIST='Open
+# The seven statuses BINDING.md section 3 binds, in lifecycle order. The
+# template's own `To Do` and `Done` are NOT here: they are read-only aliases
+# ([JIRA-15]), so this script neither adds nor writes them.
+TARGET_STATUS_LIST='Triage
+Open
 In Progress
 Awaiting Deployment
+Deferred
 Completed
 Cancelled'
 # Caller-assigned ids for the transitions this script may ADD, matched per name
 # to the ids night-watchman's own provisioner uses, so a project either tool has
 # touched converges instead of colliding. 21 is the template's own In Progress.
-TARGET_TRANSITION_IDS='51
+TARGET_TRANSITION_IDS='41
+51
 21
 61
+71
 81
 91'
+# The entry state of work-order MUST-46. The initial transition is retargeted
+# here, and it must be one of TARGET_STATUS_LIST above.
+ENTRY_STATUS_NAME='Triage'
 
 PROJECT_KEY=""
 HTTP=""
@@ -160,11 +172,26 @@ read_workflow() {
         || die "workflow/search returned no id.entityId for '$WORKFLOW_NAME' — cannot build an update request without it"
 }
 
+# entry_status_id — the site's id for ENTRY_STATUS_NAME, taken from the ids
+# resolve_status_ids already read by name. Empty output plus 1 if the name is
+# not in TARGET_STATUS_LIST, which is a bug in this file, not in the site.
+entry_status_id() {
+    local n
+    n=$(printf '%s\n' "$TARGET_STATUS_LIST" | grep -nxF "$ENTRY_STATUS_NAME" | cut -d: -f1) || return 1
+    [ -n "$n" ] || return 1
+    list_nth "$RESOLVED_STATUS_IDS" "$n"
+}
+
 workflow_status_names()     { printf '%s' "$WORKFLOW_JSON" | jq -r '.values[0].statuses[].name'; }
 workflow_transition_names() { printf '%s' "$WORKFLOW_JSON" | jq -r '.values[0].transitions[].name'; }
 
 MISSING_STATUS_NAMES=""
 MISSING_TRANSITION_NAMES=""
+# Non-empty when the initial transition points somewhere other than the entry
+# state; the value is the status id it must be repointed at.
+INITIAL_RETARGET_TO=""
+INITIAL_TRANSITION_ID=""
+INITIAL_TRANSITION_TO=""
 
 # check_transition_id_collisions — die if an id this run would ADD is already
 # held under a different name. Only the missing set is checked: a transition
@@ -201,6 +228,31 @@ compute_missing() {
 $TARGET_STATUS_LIST
 EOF
     check_transition_id_collisions
+    compute_initial_retarget
+}
+
+# compute_initial_retarget — read the workflow's one initial transition and
+# decide whether it already targets the entry state ([JIRA-12]). Both the
+# transition id and the status id are per-site, so neither is written down:
+# the transition is found by its type and the status by its name.
+compute_initial_retarget() {
+    local want line
+    want=$(entry_status_id) \
+        || die "'$ENTRY_STATUS_NAME' is not in this script's target status list — the entry state must be one of the statuses it provisions"
+    [ -n "$want" ] || die "could not resolve the entry state '$ENTRY_STATUS_NAME' to a status id on this site"
+    line=$(printf '%s' "$WORKFLOW_JSON" | jq -r '
+        [.values[0].transitions[] | select(((.type // "") | ascii_downcase) == "initial")] as $i
+        | if ($i | length) == 1 then "\($i[0].id)\t\($i[0].to // "")" else "" end') \
+        || die "could not read the initial transition from workflow '$WORKFLOW_NAME'"
+    [ -n "$line" ] \
+        || die "workflow '$WORKFLOW_NAME' does not have exactly one transition of type 'initial' — refusing to guess which one Jira runs on create"
+    INITIAL_TRANSITION_ID="${line%%$'\t'*}"
+    INITIAL_TRANSITION_TO="${line#*$'\t'}"
+    if [ "$INITIAL_TRANSITION_TO" = "$want" ]; then
+        INITIAL_RETARGET_TO=""
+    else
+        INITIAL_RETARGET_TO="$want"
+    fi
 }
 
 RESOLVED_RULES_JSON="[]"
@@ -287,6 +339,7 @@ build_update_body() {
         --arg missingStatusNamesNL "$MISSING_STATUS_NAMES" \
         --arg missingTransitionNamesNL "$MISSING_TRANSITION_NAMES" \
         --argjson missingRules "$MISSING_RULES_JSON" \
+        --arg initialRetargetTo "$INITIAL_RETARGET_TO" \
         '
         def lines: split("\n") | map(select(length > 0));
         ( $targetNamesNL | lines ) as $allNames
@@ -304,7 +357,7 @@ build_update_body() {
         | [ $resolved[] | select(.name as $n | $missingTransitionNames | index($n) != null)
             | { id: .transitionId, name: .name, type: "GLOBAL", toStatusReference: .id }
           ] as $transition_additions
-        | if ($status_additions | length) == 0 and ($transition_additions | length) == 0 and ($missingRules | length) == 0
+        | if ($status_additions | length) == 0 and ($transition_additions | length) == 0 and ($missingRules | length) == 0 and ($initialRetargetTo | length) == 0
           then error("build_update_body: computed additions are EMPTY — the caller must check \"already complete\" before calling this")
           else . end
         | ($bulkget.workflows[] | select(.name == $wfname)) as $wf
@@ -315,7 +368,13 @@ build_update_body() {
                 version: $version,
                 statuses: ($wf.statuses + ($status_additions | map({statusReference}))),
                 transitions: (($wf.transitions + $transition_additions)
-                    | map(. as $t
+                    | map(
+                        # Assign into the key that is already there rather than
+                        # rebuilding the object: /workflows/update replaces a
+                        # transition wholesale, and reshaping one strips its rules.
+                        (if ($initialRetargetTo | length) > 0 and (((.type // "") | ascii_downcase) == "initial")
+                         then .toStatusReference = $initialRetargetTo else . end)
+                        | . as $t
                         | [$missingRules[] | select(.name == $t.name) | .validators[]] as $add
                         | if ($add | length) > 0 then .validators = ((.validators // []) + $add) else . end))
             } ]
@@ -355,12 +414,13 @@ validate_update_body() {
 assert_readback() {
     read_workflow
     compute_missing
-    if [ -z "$MISSING_STATUS_NAMES" ] && [ -z "$MISSING_TRANSITION_NAMES" ]; then
-        echo "read-back confirms: every target status and transition is present."
+    if [ -z "$MISSING_STATUS_NAMES" ] && [ -z "$MISSING_TRANSITION_NAMES" ] && [ -z "$INITIAL_RETARGET_TO" ]; then
+        echo "read-back confirms: every target status and transition is present, and the create transition targets the entry state $ENTRY_STATUS_NAME."
         return 0
     fi
     [ -z "$MISSING_STATUS_NAMES" ] || warn "still missing statuses: $(printf '%s' "$MISSING_STATUS_NAMES" | tr '\n' ',' | sed 's/,$//')"
     [ -z "$MISSING_TRANSITION_NAMES" ] || warn "still missing transitions: $(printf '%s' "$MISSING_TRANSITION_NAMES" | tr '\n' ',' | sed 's/,$//')"
+    [ -z "$INITIAL_RETARGET_TO" ] || warn "the create transition ($INITIAL_TRANSITION_ID) still targets status $INITIAL_TRANSITION_TO, not the entry state $ENTRY_STATUS_NAME ($INITIAL_RETARGET_TO)"
     die "the workflow update did not take effect as expected"
 }
 
@@ -405,8 +465,8 @@ if [ -n "$RULES_PATH" ]; then
     check_rule_transitions
 fi
 
-if [ -z "$RULES_PATH" ] && [ -z "$MISSING_STATUS_NAMES" ] && [ -z "$MISSING_TRANSITION_NAMES" ]; then
-    echo "already complete: workflow '$WORKFLOW_NAME' carries every target status and transition (matched by name and id only)."
+if [ -z "$RULES_PATH" ] && [ -z "$MISSING_STATUS_NAMES" ] && [ -z "$MISSING_TRANSITION_NAMES" ] && [ -z "$INITIAL_RETARGET_TO" ]; then
+    echo "already complete: workflow '$WORKFLOW_NAME' carries every target status and transition, and the create transition already targets the entry state $ENTRY_STATUS_NAME (matched by name and id only)."
     exit 0
 fi
 
@@ -428,8 +488,8 @@ BULKGET_WF_ID=$(printf '%s' "$BULKGET" | jq -r --arg n "$WORKFLOW_NAME" '[.workf
 
 if [ -n "$RULES_PATH" ]; then
     compute_missing_rules "$BULKGET"
-    if [ -z "$MISSING_STATUS_NAMES" ] && [ -z "$MISSING_TRANSITION_NAMES" ] && [ "$MISSING_RULES_JSON" = "[]" ]; then
-        echo "already complete: workflow '$WORKFLOW_NAME' carries every target status, transition and validator: 0 changes."
+    if [ -z "$MISSING_STATUS_NAMES" ] && [ -z "$MISSING_TRANSITION_NAMES" ] && [ -z "$INITIAL_RETARGET_TO" ] && [ "$MISSING_RULES_JSON" = "[]" ]; then
+        echo "already complete: workflow '$WORKFLOW_NAME' carries every target status, transition and validator, and the create transition targets the entry state $ENTRY_STATUS_NAME: 0 changes."
         exit 0
     fi
 fi
@@ -437,6 +497,7 @@ fi
 echo "workflow '$WORKFLOW_NAME' is missing:"
 [ -z "$MISSING_STATUS_NAMES" ]     || echo "  statuses:    $(printf '%s' "$MISSING_STATUS_NAMES" | tr '\n' ',' | sed 's/,$//')"
 [ -z "$MISSING_TRANSITION_NAMES" ] || echo "  transitions: $(printf '%s' "$MISSING_TRANSITION_NAMES" | tr '\n' ',' | sed 's/,$//')"
+[ -z "$INITIAL_RETARGET_TO" ]      || echo "  create transition: id $INITIAL_TRANSITION_ID (type initial) targets status $INITIAL_TRANSITION_TO, not the entry state $ENTRY_STATUS_NAME (status $INITIAL_RETARGET_TO) — would retarget it ([JIRA-12])"
 if [ "$MISSING_RULES_JSON" != "[]" ]; then
     printf '%s' "$MISSING_RULES_JSON" | jq -r '.[] | "  validators:  \(.name): \([.validators[].ruleKey] | join(", "))"' \
         || die "could not summarise the missing validators"
