@@ -10,11 +10,37 @@ groups them into named profiles, a file binding for tickets that live as
 Markdown on disk, and a separately versioned Jira binding for teams whose
 tickets live in a tracker instead.
 
-## Status
+## Install
 
-Early. The specification text, the conformance validator and the bindings are
-tracked as separate pieces of work. This repository currently holds its
-scaffolding only.
+```
+/plugin marketplace add moneymikeMD/work-order
+/plugin install work-order@work-order
+```
+
+The marketplace publishes the `work-order` plugin from this repository's root,
+so installing it copies the whole tree — a Claude Code plugin install carries
+exactly the subtree its marketplace entry names and nothing else. The Jira
+binding installs separately as `work-order-jira@work-order`.
+
+## What installing it gets you
+
+| Path | What it is |
+| --- | --- |
+| `SPEC.md` | The specification text, versioned independently by `VERSION-spec`. |
+| `reference/issues.py` | The reference implementation. |
+| `bindings/file/` | The file binding: tickets as Markdown on disk, with worked examples. |
+| `conformance/` | The conformance validator and the fixtures that prove it fails. |
+| `decision-list/` | The decision-list format and its schema validator. |
+| `extensions/sprint/` | The sprint mechanism, as an optional extension. |
+| `skills/emit-tickets/` | Turns a validated decision list into ticket files. |
+| `plugins/work-order-jira/` | The Jira binding, published as its own plugin. |
+
+## Versions
+
+Three numbers move independently. `VERSION-spec` is the specification's own
+version. `version.txt` is this repository's release version, and the
+`work-order` plugin ships at that same number because the plugin is this
+repository. `plugins/work-order-jira/` carries its own.
 
 ## License
 

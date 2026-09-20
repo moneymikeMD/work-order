@@ -28,11 +28,27 @@ how the repository itself is worked.
 every pull request. It parses every JSON and YAML file in the tree and compiles
 every Python file. `validate` is the required status check on `main`.
 
+## Packaging
+
+A Claude Code marketplace plugin installs exactly the subtree its
+`marketplace.json` `source` names and nothing else. So the `work-order` plugin
+publishes from `./` — this repository *is* the plugin, and `.claude-plugin/`
+holds both `marketplace.json` and `plugin.json`. Anything the plugin claims to
+ship must therefore live in the tree, not merely be referenced by it.
+
+`plugins/work-order-jira/` stays a subtree plugin because everything it needs
+is inside it.
+
 ## Releases
 
-`release-please` maintains `CHANGELOG.md`, `version.txt` and
-`.release-please-manifest.json` through a release PR. Nothing in those three
-files is edited by hand.
+`release-please` maintains `CHANGELOG.md`, `version.txt`,
+`.claude-plugin/plugin.json`'s version and `.release-please-manifest.json`
+through a release PR. Nothing in those files is edited by hand.
+
+The `work-order` plugin is versioned by the repository's own release, because
+the repository is the plugin: it moved from its own `work-order--v0.2.0` line
+onto `version.txt`'s line at 1.2.0. Only `work-order-jira` still carries a
+separate `work-order-jira--vX.Y.Z` tag.
 
 Known quirk: a commit pushed with the default `GITHUB_TOKEN` does not trigger
 other workflows, so the release PR's rebases do not re-run CI and its checks go
