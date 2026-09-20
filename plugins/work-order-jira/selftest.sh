@@ -155,6 +155,17 @@ case "$M:$P" in
     POST:/field/*/context/*/option) echo '{}' ;;
     GET:/field/*/context) echo '{"values":[{"id":"10100","isGlobalContext":true}]}' ;;
     PUT:/field/*) echo '{}' ;;
+    GET:/field/search*)
+        # provision.sh reads /field/search beside /field, because /field omits
+        # a custom field with no screen context. The stub mirrors whatever
+        # scenario /field is serving, so a field the scenario hides stays
+        # hidden here too and still gets created.
+        case "${WO_TEST_FIELDS:-live}" in
+            all) fx field.list.txt | jq -c --argjson add "$ADDED_FIELDS" \
+                     '{values: ((. + $add) | map(select(.custom == true))), isLast: true}' ;;
+            *)   fx field.list.txt | jq -c \
+                     '{values: (map(select(.custom == true))), isLast: true}' ;;
+        esac ;;
     GET:/field)
         case "${WO_TEST_FIELDS:-live}" in
             all) fx field.list.txt | jq -c --argjson add "$ADDED_FIELDS" '. + $add' ;;
