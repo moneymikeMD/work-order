@@ -147,10 +147,16 @@ def parse_frontmatter(text):
 
 
 def load_files(root):
-    """The original filesystem source: issues/<stage>/*.md."""
+    """The original filesystem source: issues/<stage>/*.md. Excludes a
+    `<id>.notes.md` progress note by suffix (see `[FILE-4]` of the file
+    binding) so a ticket legitimately named e.g. `T-009-notes-format.md`
+    still loads. Excluded here, not in `lint`, so `board`/`waves`/`next`
+    see the same set."""
     tickets = []
     for stage in STAGES:
         for path in sorted(globmod.glob(os.path.join(root, stage, "*.md"))):
+            if path.endswith(".notes.md"):
+                continue
             fm, body = parse_frontmatter(open(path).read())
             fm["_path"], fm["_stage"], fm["_body"] = path, stage, body
             tickets.append(fm)
@@ -1007,6 +1013,7 @@ def selftest():
 
     failures.extend(_scope_selftest())
     failures.extend(_jira_fixture_selftest())
+    failures.extend(_notes_md_selftest())
 
     if failures:
         print("SELFTEST FAILED")
@@ -1019,7 +1026,8 @@ def selftest():
           "classifies touches/appends/UNDECLARED and exits 0/1/2; "
           "awaiting-deployment is not dispatched but still resolves a "
           "blocked_by; a cross-project blocker is external, not missing; "
-          "a comma-separated touches line is rejected")
+          "a comma-separated touches line is rejected; load_files excludes "
+          "a .notes.md suffix but not a notes-in-slug id")
     return 0
 
 
@@ -1165,6 +1173,35 @@ def _scope_selftest():
         if code != 2:
             failures.append(f"scope: unresolved-ref case exited {code}, want 2")
 
+    return failures
+
+
+def _notes_md_selftest():
+    """load_files() must exclude a `<id>.notes.md` progress note by suffix
+    (see `[FILE-4]`, WO-046) without swallowing a ticket whose slug merely
+    contains "notes". Built as real files on disk, since this exercises the
+    glob in load_files() directly rather than the in-memory ticket shape the
+    other fixtures use."""
+    failures = []
+    minimal = ("---\nid: {id}\ntitle: {id} fixture\ncreated: 2026-01-01\n"
+               "updated: 2026-01-01\nexecutor: agent\ntouches:\n  - x\n"
+               "verify: |\n  true\n---\n")
+
+    with tempfile.TemporaryDirectory() as root:
+        stage_dir = os.path.join(root, "open")
+        os.makedirs(stage_dir)
+        with open(os.path.join(stage_dir, "T-001-thing.md"), "w") as f:
+            f.write(minimal.format(id="T-001"))
+        with open(os.path.join(stage_dir, "T-001.notes.md"), "w") as f:
+            f.write("## 2026-01-01\nprogress note, no frontmatter\n")
+        with open(os.path.join(stage_dir, "T-009-notes-format.md"), "w") as f:
+            f.write(minimal.format(id="T-009"))
+
+        ids = sorted(t.get("id") for t in load_files(root))
+        if ids != ["T-001", "T-009"]:
+            failures.append(f"load_files: expected ids ['T-001', 'T-009'], "
+                             f"got {ids} — .notes.md suffix exclusion or "
+                             f"notes-in-slug loading is broken")
     return failures
 
 

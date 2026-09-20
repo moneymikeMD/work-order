@@ -46,11 +46,10 @@ attribute. Known defects travel with it and are fixed in follow-up tickets
 rather than in the move — `lint` under `--source jira` and the `scope` verb's
 handling of repository-prefixed globs are the two known areas.
 
-One divergence is worth knowing before you hit it: the loader reads every
-`*.md` in a stage directory, so a `<id>.notes.md` progress note beside a ticket
-is read as a ticket and reported as `no id`. `[FILE-4]` of the file binding says
-a `.notes.md` file is not a ticket; until the loader agrees, keep progress notes
-out of a directory you lint.
+The loader excludes a `<id>.notes.md` progress note by its file suffix, per
+`[FILE-4]` of the file binding — every consumer (`lint`, `board`, `waves`,
+`next`) sees the same ticket set, and a ticket legitimately named e.g.
+`T-009-notes-format.md` still loads.
 
 `lint` is not the conformance validator. It answers "can this set be worked
 on", not "does this set conform to `SPEC.md` at profile X".
