@@ -45,14 +45,19 @@ not a conforming layout: the position is the directory, and a ticket two levels
 down has two candidate answers.
 
 [FILE-2] `minimal` — The stage directory names MUST be exactly `open/`,
-`in-progress/`, `awaiting-deployment/`, `completed/` and `cancelled/`. A set MAY
-omit a directory it has never used, and an implementation MUST treat an absent
-directory as empty rather than as an error.
+`in-progress/`, `awaiting-deployment/`, `completed/` and `cancelled/`. A
+directory MAY be absent while it is empty, and an implementation MUST treat an
+absent directory as empty rather than as an error.
+
+That is a statement about directories, not about positions: an absent
+`awaiting-deployment/` means no ticket is in that position right now, and
+`[SPEC.md MUST-27]` still requires a ticket to occupy it before `completed`.
 
 [FILE-3] `minimal` — A ticket file's name MUST begin with the ticket's `id` and
 MUST end `.md`. Anything between is a slug for readers and carries no meaning.
 An implementation MUST resolve a ticket by the `id` in its frontmatter and MUST
-NOT depend on the rest of the name.
+NOT depend on the rest of the name. A progress note (`[FILE-4]`) shares both the
+prefix and the suffix and is not a ticket.
 
 The slug exists so that a directory listing is readable, and the prefix exists
 so that `ls open/WO-004*` finds one file. A tool that resolves `<id>.md`
@@ -64,9 +69,9 @@ a progress note, not a ticket, and MUST NOT be read as one. See `[FILE-14]`.
 
 ## 2. Lifecycle: the directory is the position
 
-[FILE-5] `minimal` — The single representation of a ticket's lifecycle position,
-as `[SPEC.md MUST-26]` requires exactly one of, is **the stage directory
-containing the ticket's file**.
+[FILE-5] `minimal` — The one representation of a ticket's lifecycle position,
+which `[SPEC.md MUST-26]` requires there to be exactly one of, is **the stage
+directory containing the ticket's file**.
 
 [FILE-6] `minimal` — A ticket MUST NOT carry a `status` field, and no index,
 marker, tag or second file may restate its position. A field and a location
@@ -126,7 +131,7 @@ set MUST NOT depend on any other YAML construct:
 
 | Form | Syntax | Yields |
 | --- | --- | --- |
-| Scalar | `key: value` | a string, with one layer of surrounding quotes stripped |
+| Scalar | `key: value` | a string; surrounding quotes are stripped |
 | Inline list | `key: [a, b]` | a list, split on commas |
 | Block list | `key:` then `  - item` lines | a list, empty when no items follow |
 | Block scalar | `key: \|` then lines indented two spaces | a string, dedented and stripped |
@@ -230,12 +235,13 @@ and is the executable account of it: `lint`, `board`, `next`, `waves` and
 `lint` gates on the errors that make a ticket unworkable — a missing `id`,
 `title`, `created`, `updated` or `verify`, an `executor` outside the three
 values, `mixed` without `human_steps`, an unresolvable or self-referential
-`blocked_by`, a duplicated id, a cancelled ticket with no `outcome`, an
-`agent`/`mixed` ticket with no `touches`, and two simultaneously startable
-tickets that own the same path. It reports, without gating, the cases that are
-usually a mistake and sometimes deliberate: no `executor`, a shared `appends`
-path, a completed ticket whose blockers are not, and a body that cites a
-conversation.
+`blocked_by`, a `defer_until` that is not an ISO date, a duplicated id, a
+cancelled ticket with no `outcome`, an `agent`/`mixed` ticket with no `touches`,
+and two simultaneously startable tickets that own the same path.
+
+It reports, without gating, the cases that are usually a mistake and sometimes
+deliberate: no `executor`, a shared `appends` path, a completed ticket whose
+blockers are not, and a body that cites a conversation.
 
 `lint` is not the conformance validator. It answers "can this set be worked
 on"; a conformance claim against `SPEC.md`'s numbered requirements and profiles
