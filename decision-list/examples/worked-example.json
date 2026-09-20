@@ -1,0 +1,30 @@
+{
+  "decision_list_version": "0.1.0",
+  "source": "decision-list/FORMAT.md worked example",
+  "decisions": [
+    {
+      "id": "EX-001",
+      "title": "Add a usage example to the widget README",
+      "problem": "widget/README.md documents every flag but shows no example invocation, so a new reader has to piece one together from the flag list before running the tool once.",
+      "solution": "Add a fenced code block under a new '## Example' heading, placed directly after '## Usage', showing the single most common invocation.",
+      "rationale": [
+        {
+          "choice": "One example, one heading, placed right after Usage.",
+          "rejected": [
+            "A full tutorial section: too much weight for a five-minute documentation gap.",
+            "An example per flag: turns a small fix into an open-ended documentation project."
+          ]
+        }
+      ],
+      "out_of_scope": "Rewriting the flag reference table, or adding examples for any other command in the repo.",
+      "executor": "agent",
+      "tags": ["docs", "widget"],
+      "blocked_by": [],
+      "touches": ["widget/README.md"],
+      "appends": [],
+      "verify": "grep -c '^## Example' widget/README.md",
+      "verify_fails_today": "widget/README.md has no '## Example' heading today, so the grep exits 1.",
+      "created": "2026-09-19"
+    }
+  ]
+}

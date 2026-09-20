@@ -1,0 +1,26 @@
+{
+  "decision_list_version": "0.1.0",
+  "source": "decision-list/FORMAT.md invalid example — missing verify",
+  "decisions": [
+    {
+      "id": "EX-002",
+      "title": "Add a usage example to the widget README",
+      "problem": "widget/README.md documents every flag but shows no example invocation.",
+      "solution": "Add a fenced code block under a new '## Example' heading.",
+      "rationale": [
+        {
+          "choice": "One example, one heading.",
+          "rejected": ["A full tutorial section."]
+        }
+      ],
+      "out_of_scope": "Rewriting the flag reference table.",
+      "executor": "agent",
+      "tags": ["docs", "widget"],
+      "blocked_by": [],
+      "touches": ["widget/README.md"],
+      "appends": [],
+      "verify_fails_today": "widget/README.md has no '## Example' heading today.",
+      "created": "2026-09-19"
+    }
+  ]
+}
