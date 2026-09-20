@@ -2,14 +2,46 @@
 # shellcheck disable=SC2034  # WO_JIRA_KEY_ERR is read by sourcing scripts, never here
 #
 # common.sh — the shell helpers every script in this binding shares: failure
-# reporting, a scratch-file pool, list membership, and the two Jira value
-# shapes (issue key, comment ADF document). Source it, never execute it.
+# reporting, a scratch-file pool, list membership, the Jira value shapes
+# (issue key, ADF document), and the one table of the custom fields this
+# binding defines. Source it, never execute it.
 #
 # Targets bash 3.2 (macOS /bin/bash): no associative arrays, no ${var^^}, no
 # readarray.
 #
 # Convention: a fallible helper prints NOTHING and returns non-zero; the
 # caller decides how to die.
+
+# The custom fields this binding defines, as parallel newline-separated lists
+# in one table order (bash 3.2 has no associative arrays). provision.sh creates
+# them, provider.sh populates them, and both read this table, so the two cannot
+# drift. A field's name is also the ticket key it carries.
+WO_JIRA_FIELD_NAMES='touches
+executor
+verify
+human_steps
+appends
+defer_until
+outcome'
+WO_JIRA_FIELD_TYPE_KEYS='com.atlassian.jira.plugin.system.customfieldtypes:textarea
+com.atlassian.jira.plugin.system.customfieldtypes:select
+com.atlassian.jira.plugin.system.customfieldtypes:textarea
+com.atlassian.jira.plugin.system.customfieldtypes:textarea
+com.atlassian.jira.plugin.system.customfieldtypes:textarea
+com.atlassian.jira.plugin.system.customfieldtypes:datepicker
+com.atlassian.jira.plugin.system.customfieldtypes:textarea'
+# executor's searcherKey is multiselectsearcher, not selectsearcher: a select
+# field's PUT with selectsearcher is HTTP 400, measured live.
+WO_JIRA_FIELD_SEARCHER_KEYS='com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
+com.atlassian.jira.plugin.system.customfieldtypes:multiselectsearcher
+com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
+com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
+com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
+com.atlassian.jira.plugin.system.customfieldtypes:daterange
+com.atlassian.jira.plugin.system.customfieldtypes:textsearcher'
+WO_JIRA_EXECUTOR_OPTIONS='agent
+human
+mixed'
 
 WO_JIRA_TMPDIR=""
 
@@ -45,6 +77,9 @@ tmpclean() {
 
 # in_list VALUE NEWLINE_LIST — true when VALUE is one whole line of the list.
 in_list() { printf '%s\n' "$2" | grep -qxF "$1"; }
+
+# list_nth LIST N — print line N (1-based) of a newline-separated list.
+list_nth() { printf '%s\n' "$1" | sed -n "${2}p"; }
 
 WO_JIRA_KEY_ERR=""
 
@@ -92,18 +127,25 @@ require_issue_key() {
     return 0
 }
 
-# jira_comment_body TEXT — print the ADF document Jira Cloud's v3 comment
-# endpoint requires, one paragraph per input line. Returns jq's status.
-jira_comment_body() {
+# jira_adf_doc TEXT — print the Atlassian Document Format document Jira
+# Cloud's v3 API requires wherever rich text is written: one paragraph per
+# input line. A `textarea` custom field rejects a plain string.
+jira_adf_doc() {
     jq -cn --arg t "$1" '{
-        body: {
-            type: "doc", version: 1,
-            content: ($t | gsub("\r"; "") | sub("\n+$"; "") | split("\n") | map(
-                if . == "" then {type: "paragraph", content: []}
-                else {type: "paragraph", content: [{type: "text", text: .}]} end
-            ))
-        }
+        type: "doc", version: 1,
+        content: ($t | gsub("\r"; "") | sub("\n+$"; "") | split("\n") | map(
+            if . == "" then {type: "paragraph", content: []}
+            else {type: "paragraph", content: [{type: "text", text: .}]} end
+        ))
     }'
+}
+
+# jira_comment_body TEXT — print the body the v3 comment endpoint requires.
+# Returns jq's status.
+jira_comment_body() {
+    local doc
+    doc=$(jira_adf_doc "$1") || return 1
+    jq -cn --argjson body "$doc" '{body: $body}'
 }
 
 # table HEADER — read tab-separated rows on stdin, print them aligned under

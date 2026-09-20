@@ -38,6 +38,17 @@ line, then the body. `.json` files are bodies alone.
 | `issue.transitions.json` | `GET /issue/<key>/transitions` response |
 | `issue.status.json` | `GET /issue/<key>?fields=status` response |
 
+## Requests, not responses
+
+Two files here are inputs rather than recordings, and are marked as such
+because the rule above is what makes the rest of this directory worth
+trusting.
+
+| Fixture | Is |
+| --- | --- |
+| `ticket-full.json` | a decision list (`decision-list/FORMAT.md`) carrying every field `provider.sh create --ticket` writes, so the selftest can prove each one survives a create and a fetch. `decision-list/validate.py` accepts it |
+| `ticket-minimal.json` | one bare decision object, most fields absent, and a `blocked_by` the create path declares it does not write |
+
 ## Provenance
 
 These were captured during the night-watchman work that this binding was

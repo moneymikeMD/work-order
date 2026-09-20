@@ -174,6 +174,11 @@ the overlap on its own.
 **`[MUST-16]` — an `appends` overlap MUST be reported as a warning.** Same
 reason, same place.
 
+**`[MUST-18]` — `blocked_by` written at create time.** A Jira issue link names
+an issue that must already exist, so the first pass over a ticket set cannot
+carry the dependencies in. `provider.sh create` warns and writes the rest; the
+links are a second pass over the keys the first one returned.
+
 **`[MUST-19]`, `[MUST-20]` — every `blocked_by` resolves, and no ticket blocks
 itself directly or transitively.** Jira creates a `Blocks` link between any two
 issues without checking for a cycle, and will happily link across projects,
@@ -297,3 +302,39 @@ checked here too.
 transition id, and resolves it against the live issue. That is the lifecycle
 table in section 3 made executable: if the table and the Space disagree, the
 call fails instead of moving the ticket somewhere else.
+
+## 10. Writing a ticket — `provider.sh create`
+
+```
+provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH]
+```
+
+Without `--ticket`, `create` writes a title and nothing else. With it, `PATH` is
+a decision-list document (`decision-list/FORMAT.md`) — one decision object, or a
+list holding exactly one — and the whole ticket is written in that one request:
+
+| Ticket field | Written as |
+| --- | --- |
+| `title` | `fields.summary`. `SUMMARY` wins; leave it empty to use the ticket's |
+| `problem`, `solution`, `rationale`, `out_of_scope` | `fields.description`, one `##` heading per part |
+| `tags` | `fields.labels`, always sent, empty or not |
+| `touches`, `verify`, `human_steps`, `appends`, `outcome` | the custom field of that name, as an ADF document — a `textarea` rejects a plain string |
+| `executor` | the `executor` field, `{"value": ...}`, checked against the three options |
+| `defer_until` | the `defer_until` field, an RFC 3339 full-date |
+
+A field the ticket gives no value is not sent at all.
+
+[JIRA-10] `create` MUST resolve every custom field id by name from `GET /field`
+at run time, per `[JIRA-8]`, and MUST fail naming the field when the site has
+none by that name rather than writing an issue missing part of the contract.
+`--dry-run` resolves nothing and prints `<name>` in each id's place.
+
+The field list is not restated here: `lib/common.sh` holds the one table, and
+`provision.sh` creates exactly the fields `provider.sh` fills.
+
+**What `create` does not write.** `blocked_by` and `epic` both name another
+issue, and a Jira link or parent needs its target to exist already, so a set
+imported in one pass cannot carry them on the way in. `create` warns when a
+ticket carries `blocked_by` and leaves it to a second pass. `id`, `created` and
+`updated` are Jira's to assign (section 2); a ticket's own `id` survives only if
+the caller puts it in `tags`.
