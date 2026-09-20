@@ -7,5 +7,10 @@
   },
   "homepage": "https://github.com/moneymikeMD/work-order",
   "license": "MIT",
-  "keywords": ["work-order", "tickets", "specification", "conformance"]
+  "keywords": [
+    "work-order",
+    "tickets",
+    "specification",
+    "conformance"
+  ]
 }
