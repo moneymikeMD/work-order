@@ -199,7 +199,23 @@ fact rather than preventing it.
 
 **`[MUST-33]` — progress narration MUST NOT be written into the body.** Jira
 comments are the substrate's place for commentary, and this binding directs
-progress there. Nothing stops someone appending to `description` instead.
+progress there. Nothing stops someone appending to `description` instead. A
+dated section that reaches `description` anyway is caught by the conformance
+check in section 9, after the fact.
+
+**`[MUST-13]` — a ticket whose `executor` is `agent` or `mixed` MUST declare
+`touches`.** A Jira textarea holds the same bytes for a list declared empty and
+a field nobody filled in, so whether the ticket *declared* anything cannot be
+read back off it. The requirement is enforced at the `In Progress` transition
+instead, per `[JIRA-6]`, and more strictly than the core asks: every executor,
+not only `agent` and `mixed`. The conformance check in section 9 reports it
+`not-checkable` rather than passing a ticket it did not inspect.
+
+**`[MUST-26]` — exactly one representation of the lifecycle position.** This is
+a property of the binding, stated in section 3 and satisfied there, not
+something a ticket set can present a violation of: `fields.status` is the only
+place an implementation reads, so no ticket carries a second copy for a checker
+to find. Reported `not-checkable` for the same reason.
 
 ## 6. What Jira satisfies without help
 
@@ -235,7 +251,39 @@ its tickets, not on the Space: the `unattended` requirements
 (`[MUST-34]`–`[MUST-38]`) are properties of a ticket's text, which this
 substrate stores and cannot check.
 
-## 8. Scripts
+## 8. Checking conformance
+
+A Space's tickets are checked against the specification by
+`conformance/validate.py --source jira --fixture DIR`, where `DIR` is a
+directory of **recorded** API responses:
+
+```
+jira-api.sh raw GET '/search/jql?jql=...&fields=...,description' > DIR/search.jql.json
+jira-api.sh raw GET /field                                       > DIR/field.list.json
+jira-api.sh raw GET /project/KEY                                 > DIR/project.json
+python3 conformance/validate.py --source jira --fixture DIR --profile full
+```
+
+Recorded, not live, for two reasons. A check that needs a credential cannot run
+in CI, which is where a conformance claim has to hold rather than in someone's
+shell; and a recording is the artefact a claim can be re-checked against later,
+which a query against a mutable Space is not.
+
+`description` must be among the requested fields. It carries the ticket body,
+and `[MUST-30]`, `[MUST-31]`, `[MUST-33]`, `[MUST-36]`, `[MUST-37]` and
+`[MUST-38]` are checks on body text. `reference/issues.py` does not request it,
+because its own checks never read a body.
+
+Custom field ids resolve by name from `field.list.json`, per `[JIRA-8]`. Without
+that file the reference implementation's ids are the fallback and `outcome`,
+which has no id there, reads as absent — so a cancelled ticket would be reported
+as violating `[MUST-28]` when the field is merely unresolved.
+
+`[MUST-13]` and `[MUST-26]` are reported `not-checkable` under this binding, for
+the reasons in section 5. Every other requirement the file binding checks is
+checked here too.
+
+## 9. Scripts
 
 | Script | Does |
 | --- | --- |

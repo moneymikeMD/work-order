@@ -1,0 +1,30 @@
+{
+  "id": "10042",
+  "key": "WOJ",
+  "name": "Work Order Conformance",
+  "projectTypeKey": "software",
+  "description": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "A scratch Space provisioned by plugins/work-order-jira/provision.sh."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Conforms to work-order SPEC.md 0.1 profile full, binding work-order-jira 0.2.0."
+          }
+        ]
+      }
+    ]
+  }
+}

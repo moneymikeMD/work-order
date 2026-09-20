@@ -1,0 +1,949 @@
+{
+  "isLast": true,
+  "nextPageToken": null,
+  "issues": [
+    {
+      "id": "10001",
+      "key": "WOJ-1",
+      "fields": {
+        "summary": "The export endpoint answers with a CSV a spreadsheet opens unaided",
+        "status": {
+          "name": "Open",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "labels": [
+          "export",
+          "api"
+        ],
+        "issuelinks": [],
+        "created": "2026-09-12T09:14:03.117-0400",
+        "updated": "2026-09-14T16:02:55.412-0400",
+        "issuetype": {
+          "name": "Task"
+        },
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Problem"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Operators export data by copying it out of the admin page one screen at a time, and the file has no header row."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Solution"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Add a CSV writer behind the existing export command, emitting a header row followed by every matching record."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11001": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "src/export/csv.py"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "tests/test_export_csv.py"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11002": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "python3 -m pytest tests/test_export_csv.py -q"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "python3 -m ex.cli export --format csv --limit 1 | head -1 | grep -c '^id,name,created$'"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "# Today src/export/csv.py does not exist and --format csv exits 2, so both fail."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11003": null,
+        "customfield_11004": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "CHANGELOG.md"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11005": {
+          "self": "",
+          "value": "agent",
+          "id": "10190"
+        },
+        "customfield_11006": null,
+        "customfield_11007": null
+      }
+    },
+    {
+      "id": "10002",
+      "key": "WOJ-2",
+      "fields": {
+        "summary": "The published column list matches what the exporter emits",
+        "status": {
+          "name": "Open",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "labels": [
+          "export",
+          "docs"
+        ],
+        "issuelinks": [
+          {
+            "id": "10200",
+            "type": {
+              "id": "10003",
+              "name": "Blocks",
+              "inward": "is blocked by",
+              "outward": "blocks"
+            },
+            "inwardIssue": {
+              "id": "10501",
+              "key": "WOJ-1",
+              "fields": {
+                "status": {
+                  "name": "Open"
+                }
+              }
+            }
+          }
+        ],
+        "created": "2026-09-12T09:14:03.117-0400",
+        "updated": "2026-09-14T16:02:55.412-0400",
+        "issuetype": {
+          "name": "Task"
+        },
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Problem"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Operators read the export's column list out of the writer's source, because nothing else states it."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Solution"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Write the column table in docs/export.md, one row per column, and check it against the header the writer emits."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Out of scope"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Any other endpoint's documentation, and the format's stability guarantee."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11001": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "docs/export.md"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11002": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "test -f docs/export.md"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "grep -c '^| `id` ' docs/export.md >/dev/null"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "# Today docs/export.md does not exist, so the checks above fail."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11003": null,
+        "customfield_11004": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "CHANGELOG.md"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11005": {
+          "self": "",
+          "value": "agent",
+          "id": "10190"
+        },
+        "customfield_11006": null,
+        "customfield_11007": null
+      }
+    },
+    {
+      "id": "10003",
+      "key": "WOJ-3",
+      "fields": {
+        "summary": "The committed example env file carries no live bucket key",
+        "status": {
+          "name": "In Progress",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "labels": [
+          "export",
+          "ops"
+        ],
+        "issuelinks": [],
+        "created": "2026-09-12T09:14:03.117-0400",
+        "updated": "2026-09-14T16:02:55.412-0400",
+        "issuetype": {
+          "name": "Task"
+        },
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Problem"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "The committed example env file carries a real bucket key rather than an empty placeholder."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Solution"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reduce the committed example to an empty placeholder and assert no key-shaped string remains in it."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Out of scope"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Moving the credential to a workload identity, and any other credential."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11001": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "config/export.env.example"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11002": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "grep -c '^EX_EXPORT_BUCKET_KEY=$' config/export.env.example >/dev/null"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "test \"$(grep -c AKIA config/export.env.example)\" = 0"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "# Today the file names no bucket key and carries a live one, so the first check fails."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11003": null,
+        "customfield_11004": null,
+        "customfield_11005": {
+          "self": "",
+          "value": "agent",
+          "id": "10190"
+        },
+        "customfield_11006": null,
+        "customfield_11007": null
+      }
+    },
+    {
+      "id": "10004",
+      "key": "WOJ-4",
+      "fields": {
+        "summary": "The nightly export runs without anyone triggering it",
+        "status": {
+          "name": "Awaiting Deployment",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "labels": [
+          "export",
+          "ops"
+        ],
+        "issuelinks": [],
+        "created": "2026-09-12T09:14:03.117-0400",
+        "updated": "2026-09-14T16:02:55.412-0400",
+        "issuetype": {
+          "name": "Task"
+        },
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Problem"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "The export runs when somebody remembers, so the file consumers read is between one and nine days old."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Solution"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Ship a timer and service unit that run the export nightly and write the result where consumers already read it."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Out of scope"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Alerting on a missed run, and any change to the export's contents."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11001": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "deploy/export.timer"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "deploy/export.service"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11002": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "systemd-analyze verify deploy/export.service"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "test -s \"$(ls -t /var/log/ex/export-*.csv | head -1)\""
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "# Today deploy/export.service does not exist, so the first check fails."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11003": null,
+        "customfield_11004": null,
+        "customfield_11005": {
+          "self": "",
+          "value": "agent",
+          "id": "10190"
+        },
+        "customfield_11006": null,
+        "customfield_11007": null
+      }
+    },
+    {
+      "id": "10005",
+      "key": "WOJ-5",
+      "fields": {
+        "summary": "The export writers live in a package of their own, not in the CLI module",
+        "status": {
+          "name": "Completed",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "labels": [
+          "export",
+          "api"
+        ],
+        "issuelinks": [],
+        "created": "2026-09-12T09:14:03.117-0400",
+        "updated": "2026-09-14T16:02:55.412-0400",
+        "issuetype": {
+          "name": "Task"
+        },
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Problem"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Every output format is a function in the CLI module, the longest file in the project."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Solution"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Create a package for the export code and move the existing writers into it unchanged."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Out of scope"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Adding or changing any format, and the CLI's argument grammar."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11001": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "src/export/__init__.py"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "src/ex/cli.py"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11002": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "test -f src/export/__init__.py"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "test \"$(grep -c 'def write_' src/ex/cli.py)\" = 0"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "# Today there is no src/export/ and every writer is a function in src/ex/cli.py."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11003": null,
+        "customfield_11004": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "CHANGELOG.md"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11005": {
+          "self": "",
+          "value": "agent",
+          "id": "10190"
+        },
+        "customfield_11006": null,
+        "customfield_11007": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Landed as one commit. The writers moved verbatim; the only edit was the import line in src/ex/cli.py."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "10006",
+      "key": "WOJ-6",
+      "fields": {
+        "summary": "The export also offers XLSX, so finance stops re-saving the CSV by hand",
+        "status": {
+          "name": "Cancelled",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "labels": [
+          "export",
+          "api"
+        ],
+        "issuelinks": [],
+        "created": "2026-09-12T09:14:03.117-0400",
+        "updated": "2026-09-14T16:02:55.412-0400",
+        "issuetype": {
+          "name": "Task"
+        },
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Problem"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Finance receives a CSV and re-saves it as a workbook before using it."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Solution"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Add an XLSX writer alongside the CSV one, behind --format xlsx."
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Out of scope"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Which records are exported, and the CSV format itself."
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_11001": null,
+        "customfield_11002": null,
+        "customfield_11003": null,
+        "customfield_11004": null,
+        "customfield_11005": {
+          "self": "",
+          "value": "agent",
+          "id": "10190"
+        },
+        "customfield_11006": null,
+        "customfield_11007": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Dropped. The premise was that finance needed a native workbook, and the premise was false: they re-save the CSV to set column widths a generated workbook would not have set either. Replaced by nothing."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
