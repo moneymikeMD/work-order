@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.2.0...work-order-jira--v0.3.0) (2026-09-20)
+
+
+### Features
+
+* **conformance:** validate a Jira-tracked set from recorded API responses ([#26](https://github.com/moneymikeMD/work-order/issues/26)) ([7c8b5e0](https://github.com/moneymikeMD/work-order/commit/7c8b5e0409ec1209f469de43298980411cecc914))
+* **plugin:** publish the work-order plugin from the repository root ([#25](https://github.com/moneymikeMD/work-order/issues/25)) ([980add8](https://github.com/moneymikeMD/work-order/commit/980add828241031fe47513150068c13d194cb6f2))
+
 ## [0.2.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.1.0...work-order-jira--v0.2.0) (2026-09-20)
 
 
