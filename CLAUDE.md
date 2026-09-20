@@ -68,6 +68,24 @@ Known quirk: a commit pushed with the default `GITHUB_TOKEN` does not trigger
 other workflows, so the release PR's rebases do not re-run CI and its checks go
 stale. `gh pr close <n> && gh pr reopen <n>` re-triggers them.
 
+### No repo here goes past v1.x
+
+Owner decision, 2026-09-20 (WO-060): no repo in this ecosystem moves beyond
+`v1.x.x` until the owner says the final resting stance has arrived. Nobody
+outside consumes these repos, and a version number in the fives would record
+indecision rather than compatibility.
+
+So a change that would be breaking ships as a **minor**, and explains the
+incompatibility in the commit body as prose. What is banned is the *marker*
+release-please reads as a major bump — a `!` after the type or scope, and a
+`BREAKING CHANGE:` / `BREAKING-CHANGE:` footer — not the change itself. This
+applies to the pull request title too, because `pr-land.sh` squash-merges and
+the squash subject comes from the title.
+
+The `no-major` job in `.github/workflows/ci.yml` enforces it on every pull
+request and on every push to `main`; ai-toolkit and night-watchman run the same
+job. Lifting the cap is one commit per repo: delete the job.
+
 ## Dependencies
 
 Dependabot watches the `github-actions` ecosystem weekly. Its PRs are reviewed
