@@ -1,0 +1,2179 @@
+{
+    "expand": "projects",
+    "projects": [
+        {
+            "expand": "issuetypes",
+            "self": "https://example.atlassian.net/rest/api/3/project/10052",
+            "id": "10052",
+            "key": "WO",
+            "name": "work-order",
+            "avatarUrls": {
+                "48x48": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414",
+                "24x24": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=small",
+                "16x16": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=xsmall",
+                "32x32": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=medium"
+            },
+            "issuetypes": [
+                {
+                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10010",
+                    "id": "10010",
+                    "description": "A small, distinct piece of work.",
+                    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+                    "name": "Task",
+                    "untranslatedName": "Task",
+                    "subtask": false,
+                    "hierarchyLevel": 0,
+                    "expand": "fields",
+                    "fields": {
+                        "summary": {
+                            "required": true,
+                            "schema": {
+                                "type": "string",
+                                "system": "summary"
+                            },
+                            "name": "Summary",
+                            "key": "summary",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuetype": {
+                            "required": true,
+                            "schema": {
+                                "type": "issuetype",
+                                "system": "issuetype"
+                            },
+                            "name": "Issue Type",
+                            "key": "issuetype",
+                            "hasDefaultValue": false,
+                            "operations": [],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10010",
+                                    "id": "10010",
+                                    "description": "A small, distinct piece of work.",
+                                    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+                                    "name": "Task",
+                                    "subtask": false,
+                                    "avatarId": 10318,
+                                    "hierarchyLevel": 0
+                                }
+                            ]
+                        },
+                        "parent": {
+                            "required": false,
+                            "schema": {
+                                "type": "issuelink",
+                                "system": "parent"
+                            },
+                            "name": "Parent",
+                            "key": "parent",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "components": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "component",
+                                "system": "components"
+                            },
+                            "name": "Components",
+                            "key": "components",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "description": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "system": "description"
+                            },
+                            "name": "Description",
+                            "key": "description",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10020": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "json",
+                                "custom": "com.pyxis.greenhopper.jira:gh-sprint",
+                                "customId": 10020
+                            },
+                            "name": "Sprint",
+                            "key": "customfield_10020",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "project": {
+                            "required": true,
+                            "schema": {
+                                "type": "project",
+                                "system": "project"
+                            },
+                            "name": "Project",
+                            "key": "project",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/project/10052",
+                                    "id": "10052",
+                                    "key": "WO",
+                                    "name": "work-order",
+                                    "projectTypeKey": "software",
+                                    "simplified": false,
+                                    "avatarUrls": {
+                                        "48x48": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414",
+                                        "24x24": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=small",
+                                        "16x16": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=xsmall",
+                                        "32x32": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=medium"
+                                    }
+                                }
+                            ]
+                        },
+                        "customfield_10043": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10043
+                            },
+                            "name": "touches",
+                            "key": "customfield_10043",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "fixVersions": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "version",
+                                "system": "fixVersions"
+                            },
+                            "name": "Fix versions",
+                            "key": "fixVersions",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "add",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "customfield_10044": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10044
+                            },
+                            "name": "verify",
+                            "key": "customfield_10044",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "priority": {
+                            "required": false,
+                            "schema": {
+                                "type": "priority",
+                                "system": "priority"
+                            },
+                            "name": "Priority",
+                            "key": "priority",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/1",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/highest_new.svg",
+                                    "name": "Highest",
+                                    "id": "1"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/2",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/high_new.svg",
+                                    "name": "High",
+                                    "id": "2"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                    "name": "Medium",
+                                    "id": "3"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/4",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/low_new.svg",
+                                    "name": "Low",
+                                    "id": "4"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/5",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/lowest_new.svg",
+                                    "name": "Lowest",
+                                    "id": "5"
+                                }
+                            ],
+                            "defaultValue": {
+                                "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                "name": "Medium",
+                                "id": "3"
+                            }
+                        },
+                        "customfield_10001": {
+                            "required": false,
+                            "schema": {
+                                "type": "team",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team",
+                                "customId": 10001,
+                                "configuration": {
+                                    "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team": true
+                                }
+                            },
+                            "name": "Team",
+                            "key": "customfield_10001",
+                            "autoCompleteUrl": "https://example.atlassian.net/gateway/api/v1/recommendations",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10045": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10045
+                            },
+                            "name": "human_steps",
+                            "key": "customfield_10045",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10046": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10046
+                            },
+                            "name": "appends",
+                            "key": "customfield_10046",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10079": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10079
+                            },
+                            "name": "outcome",
+                            "key": "customfield_10079",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10047": {
+                            "required": false,
+                            "schema": {
+                                "type": "option",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select",
+                                "customId": 10047
+                            },
+                            "name": "executor",
+                            "key": "customfield_10047",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10020",
+                                    "value": "agent",
+                                    "id": "10020"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10021",
+                                    "value": "human",
+                                    "id": "10021"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10022",
+                                    "value": "mixed",
+                                    "id": "10022"
+                                }
+                            ]
+                        },
+                        "labels": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "string",
+                                "system": "labels"
+                            },
+                            "name": "Labels",
+                            "key": "labels",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/1.0/labels/suggest?query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ]
+                        },
+                        "customfield_10015": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10015
+                            },
+                            "name": "Start date",
+                            "key": "customfield_10015",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10048": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10048
+                            },
+                            "name": "defer_until",
+                            "key": "customfield_10048",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "attachment": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "attachment",
+                                "system": "attachment"
+                            },
+                            "name": "Attachment",
+                            "key": "attachment",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "copy"
+                            ]
+                        },
+                        "duedate": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "system": "duedate"
+                            },
+                            "name": "Due date",
+                            "key": "duedate",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuelinks": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "issuelinks",
+                                "system": "issuelinks"
+                            },
+                            "name": "Linked Issues",
+                            "key": "issuelinks",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/issue/picker?currentProjectId=&showSubTaskParent=true&showSubTasks=true&currentIssueKey=null&query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "copy"
+                            ]
+                        },
+                        "assignee": {
+                            "required": false,
+                            "schema": {
+                                "type": "user",
+                                "system": "assignee"
+                            },
+                            "name": "Assignee",
+                            "key": "assignee",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/user/assignable/search?project=WO&query=",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10011",
+                    "id": "10011",
+                    "description": "A small piece of work that's part of a larger task.",
+                    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10316?size=medium",
+                    "name": "Sub-task",
+                    "untranslatedName": "Sub-task",
+                    "subtask": true,
+                    "hierarchyLevel": -1,
+                    "expand": "fields",
+                    "fields": {
+                        "summary": {
+                            "required": true,
+                            "schema": {
+                                "type": "string",
+                                "system": "summary"
+                            },
+                            "name": "Summary",
+                            "key": "summary",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuetype": {
+                            "required": true,
+                            "schema": {
+                                "type": "issuetype",
+                                "system": "issuetype"
+                            },
+                            "name": "Issue Type",
+                            "key": "issuetype",
+                            "hasDefaultValue": false,
+                            "operations": [],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10011",
+                                    "id": "10011",
+                                    "description": "A small piece of work that's part of a larger task.",
+                                    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10316?size=medium",
+                                    "name": "Sub-task",
+                                    "subtask": true,
+                                    "avatarId": 10316,
+                                    "hierarchyLevel": -1
+                                }
+                            ]
+                        },
+                        "parent": {
+                            "required": true,
+                            "schema": {
+                                "type": "issuelink",
+                                "system": "parent"
+                            },
+                            "name": "Parent",
+                            "key": "parent",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "components": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "component",
+                                "system": "components"
+                            },
+                            "name": "Components",
+                            "key": "components",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "description": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "system": "description"
+                            },
+                            "name": "Description",
+                            "key": "description",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10020": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "json",
+                                "custom": "com.pyxis.greenhopper.jira:gh-sprint",
+                                "customId": 10020
+                            },
+                            "name": "Sprint",
+                            "key": "customfield_10020",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "project": {
+                            "required": true,
+                            "schema": {
+                                "type": "project",
+                                "system": "project"
+                            },
+                            "name": "Project",
+                            "key": "project",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/project/10052",
+                                    "id": "10052",
+                                    "key": "WO",
+                                    "name": "work-order",
+                                    "projectTypeKey": "software",
+                                    "simplified": false,
+                                    "avatarUrls": {
+                                        "48x48": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414",
+                                        "24x24": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=small",
+                                        "16x16": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=xsmall",
+                                        "32x32": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=medium"
+                                    }
+                                }
+                            ]
+                        },
+                        "customfield_10043": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10043
+                            },
+                            "name": "touches",
+                            "key": "customfield_10043",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "fixVersions": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "version",
+                                "system": "fixVersions"
+                            },
+                            "name": "Fix versions",
+                            "key": "fixVersions",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "add",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "customfield_10044": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10044
+                            },
+                            "name": "verify",
+                            "key": "customfield_10044",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "priority": {
+                            "required": false,
+                            "schema": {
+                                "type": "priority",
+                                "system": "priority"
+                            },
+                            "name": "Priority",
+                            "key": "priority",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/1",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/highest_new.svg",
+                                    "name": "Highest",
+                                    "id": "1"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/2",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/high_new.svg",
+                                    "name": "High",
+                                    "id": "2"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                    "name": "Medium",
+                                    "id": "3"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/4",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/low_new.svg",
+                                    "name": "Low",
+                                    "id": "4"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/5",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/lowest_new.svg",
+                                    "name": "Lowest",
+                                    "id": "5"
+                                }
+                            ],
+                            "defaultValue": {
+                                "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                "name": "Medium",
+                                "id": "3"
+                            }
+                        },
+                        "customfield_10001": {
+                            "required": false,
+                            "schema": {
+                                "type": "team",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team",
+                                "customId": 10001,
+                                "configuration": {
+                                    "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team": true
+                                }
+                            },
+                            "name": "Team",
+                            "key": "customfield_10001",
+                            "autoCompleteUrl": "https://example.atlassian.net/gateway/api/v1/recommendations",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10045": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10045
+                            },
+                            "name": "human_steps",
+                            "key": "customfield_10045",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10046": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10046
+                            },
+                            "name": "appends",
+                            "key": "customfield_10046",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10079": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10079
+                            },
+                            "name": "outcome",
+                            "key": "customfield_10079",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10047": {
+                            "required": false,
+                            "schema": {
+                                "type": "option",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select",
+                                "customId": 10047
+                            },
+                            "name": "executor",
+                            "key": "customfield_10047",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10020",
+                                    "value": "agent",
+                                    "id": "10020"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10021",
+                                    "value": "human",
+                                    "id": "10021"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10022",
+                                    "value": "mixed",
+                                    "id": "10022"
+                                }
+                            ]
+                        },
+                        "labels": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "string",
+                                "system": "labels"
+                            },
+                            "name": "Labels",
+                            "key": "labels",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/1.0/labels/suggest?query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ]
+                        },
+                        "customfield_10015": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10015
+                            },
+                            "name": "Start date",
+                            "key": "customfield_10015",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10048": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10048
+                            },
+                            "name": "defer_until",
+                            "key": "customfield_10048",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "attachment": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "attachment",
+                                "system": "attachment"
+                            },
+                            "name": "Attachment",
+                            "key": "attachment",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "copy"
+                            ]
+                        },
+                        "duedate": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "system": "duedate"
+                            },
+                            "name": "Due date",
+                            "key": "duedate",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuelinks": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "issuelinks",
+                                "system": "issuelinks"
+                            },
+                            "name": "Linked Issues",
+                            "key": "issuelinks",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/issue/picker?currentProjectId=&showSubTaskParent=true&showSubTasks=true&currentIssueKey=null&query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "copy"
+                            ]
+                        },
+                        "assignee": {
+                            "required": false,
+                            "schema": {
+                                "type": "user",
+                                "system": "assignee"
+                            },
+                            "name": "Assignee",
+                            "key": "assignee",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/user/assignable/search?project=WO&query=",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10005",
+                    "id": "10005",
+                    "description": "Stories track functionality or features expressed as user goals.",
+                    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10300?size=medium",
+                    "name": "Story",
+                    "untranslatedName": "Story",
+                    "subtask": false,
+                    "hierarchyLevel": 0,
+                    "expand": "fields",
+                    "fields": {
+                        "summary": {
+                            "required": true,
+                            "schema": {
+                                "type": "string",
+                                "system": "summary"
+                            },
+                            "name": "Summary",
+                            "key": "summary",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuetype": {
+                            "required": true,
+                            "schema": {
+                                "type": "issuetype",
+                                "system": "issuetype"
+                            },
+                            "name": "Issue Type",
+                            "key": "issuetype",
+                            "hasDefaultValue": false,
+                            "operations": [],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10005",
+                                    "id": "10005",
+                                    "description": "Stories track functionality or features expressed as user goals.",
+                                    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10300?size=medium",
+                                    "name": "Story",
+                                    "subtask": false,
+                                    "avatarId": 10300,
+                                    "hierarchyLevel": 0
+                                }
+                            ]
+                        },
+                        "parent": {
+                            "required": false,
+                            "schema": {
+                                "type": "issuelink",
+                                "system": "parent"
+                            },
+                            "name": "Parent",
+                            "key": "parent",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "components": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "component",
+                                "system": "components"
+                            },
+                            "name": "Components",
+                            "key": "components",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "description": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "system": "description"
+                            },
+                            "name": "Description",
+                            "key": "description",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10020": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "json",
+                                "custom": "com.pyxis.greenhopper.jira:gh-sprint",
+                                "customId": 10020
+                            },
+                            "name": "Sprint",
+                            "key": "customfield_10020",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "project": {
+                            "required": true,
+                            "schema": {
+                                "type": "project",
+                                "system": "project"
+                            },
+                            "name": "Project",
+                            "key": "project",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/project/10052",
+                                    "id": "10052",
+                                    "key": "WO",
+                                    "name": "work-order",
+                                    "projectTypeKey": "software",
+                                    "simplified": false,
+                                    "avatarUrls": {
+                                        "48x48": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414",
+                                        "24x24": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=small",
+                                        "16x16": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=xsmall",
+                                        "32x32": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=medium"
+                                    }
+                                }
+                            ]
+                        },
+                        "customfield_10043": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10043
+                            },
+                            "name": "touches",
+                            "key": "customfield_10043",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "fixVersions": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "version",
+                                "system": "fixVersions"
+                            },
+                            "name": "Fix versions",
+                            "key": "fixVersions",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "add",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "customfield_10044": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10044
+                            },
+                            "name": "verify",
+                            "key": "customfield_10044",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "priority": {
+                            "required": false,
+                            "schema": {
+                                "type": "priority",
+                                "system": "priority"
+                            },
+                            "name": "Priority",
+                            "key": "priority",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/1",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/highest_new.svg",
+                                    "name": "Highest",
+                                    "id": "1"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/2",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/high_new.svg",
+                                    "name": "High",
+                                    "id": "2"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                    "name": "Medium",
+                                    "id": "3"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/4",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/low_new.svg",
+                                    "name": "Low",
+                                    "id": "4"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/5",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/lowest_new.svg",
+                                    "name": "Lowest",
+                                    "id": "5"
+                                }
+                            ],
+                            "defaultValue": {
+                                "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                "name": "Medium",
+                                "id": "3"
+                            }
+                        },
+                        "customfield_10001": {
+                            "required": false,
+                            "schema": {
+                                "type": "team",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team",
+                                "customId": 10001,
+                                "configuration": {
+                                    "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team": true
+                                }
+                            },
+                            "name": "Team",
+                            "key": "customfield_10001",
+                            "autoCompleteUrl": "https://example.atlassian.net/gateway/api/v1/recommendations",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10045": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10045
+                            },
+                            "name": "human_steps",
+                            "key": "customfield_10045",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10046": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10046
+                            },
+                            "name": "appends",
+                            "key": "customfield_10046",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10079": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10079
+                            },
+                            "name": "outcome",
+                            "key": "customfield_10079",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10047": {
+                            "required": false,
+                            "schema": {
+                                "type": "option",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select",
+                                "customId": 10047
+                            },
+                            "name": "executor",
+                            "key": "customfield_10047",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10020",
+                                    "value": "agent",
+                                    "id": "10020"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10021",
+                                    "value": "human",
+                                    "id": "10021"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10022",
+                                    "value": "mixed",
+                                    "id": "10022"
+                                }
+                            ]
+                        },
+                        "labels": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "string",
+                                "system": "labels"
+                            },
+                            "name": "Labels",
+                            "key": "labels",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/1.0/labels/suggest?query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ]
+                        },
+                        "customfield_10015": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10015
+                            },
+                            "name": "Start date",
+                            "key": "customfield_10015",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10048": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10048
+                            },
+                            "name": "defer_until",
+                            "key": "customfield_10048",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "attachment": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "attachment",
+                                "system": "attachment"
+                            },
+                            "name": "Attachment",
+                            "key": "attachment",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "copy"
+                            ]
+                        },
+                        "duedate": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "system": "duedate"
+                            },
+                            "name": "Due date",
+                            "key": "duedate",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuelinks": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "issuelinks",
+                                "system": "issuelinks"
+                            },
+                            "name": "Linked Issues",
+                            "key": "issuelinks",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/issue/picker?currentProjectId=&showSubTaskParent=true&showSubTasks=true&currentIssueKey=null&query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "copy"
+                            ]
+                        },
+                        "assignee": {
+                            "required": false,
+                            "schema": {
+                                "type": "user",
+                                "system": "assignee"
+                            },
+                            "name": "Assignee",
+                            "key": "assignee",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/user/assignable/search?project=WO&query=",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10012",
+                    "id": "10012",
+                    "description": "A problem or error.",
+                    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+                    "name": "Bug",
+                    "untranslatedName": "Bug",
+                    "subtask": false,
+                    "hierarchyLevel": 0,
+                    "expand": "fields",
+                    "fields": {
+                        "issuetype": {
+                            "required": true,
+                            "schema": {
+                                "type": "issuetype",
+                                "system": "issuetype"
+                            },
+                            "name": "Issue Type",
+                            "key": "issuetype",
+                            "hasDefaultValue": false,
+                            "operations": [],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10012",
+                                    "id": "10012",
+                                    "description": "A problem or error.",
+                                    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+                                    "name": "Bug",
+                                    "subtask": false,
+                                    "avatarId": 10303,
+                                    "hierarchyLevel": 0
+                                }
+                            ]
+                        },
+                        "parent": {
+                            "required": false,
+                            "schema": {
+                                "type": "issuelink",
+                                "system": "parent"
+                            },
+                            "name": "Parent",
+                            "key": "parent",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "components": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "component",
+                                "system": "components"
+                            },
+                            "name": "Components",
+                            "key": "components",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "description": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "system": "description"
+                            },
+                            "name": "Description",
+                            "key": "description",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "project": {
+                            "required": true,
+                            "schema": {
+                                "type": "project",
+                                "system": "project"
+                            },
+                            "name": "Project",
+                            "key": "project",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/project/10052",
+                                    "id": "10052",
+                                    "key": "WO",
+                                    "name": "work-order",
+                                    "projectTypeKey": "software",
+                                    "simplified": false,
+                                    "avatarUrls": {
+                                        "48x48": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414",
+                                        "24x24": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=small",
+                                        "16x16": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=xsmall",
+                                        "32x32": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=medium"
+                                    }
+                                }
+                            ]
+                        },
+                        "fixVersions": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "version",
+                                "system": "fixVersions"
+                            },
+                            "name": "Fix versions",
+                            "key": "fixVersions",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "add",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "customfield_10079": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10079
+                            },
+                            "name": "outcome",
+                            "key": "customfield_10079",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10015": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10015
+                            },
+                            "name": "Start date",
+                            "key": "customfield_10015",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "attachment": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "attachment",
+                                "system": "attachment"
+                            },
+                            "name": "Attachment",
+                            "key": "attachment",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "copy"
+                            ]
+                        },
+                        "summary": {
+                            "required": true,
+                            "schema": {
+                                "type": "string",
+                                "system": "summary"
+                            },
+                            "name": "Summary",
+                            "key": "summary",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10020": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "json",
+                                "custom": "com.pyxis.greenhopper.jira:gh-sprint",
+                                "customId": 10020
+                            },
+                            "name": "Sprint",
+                            "key": "customfield_10020",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10043": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10043
+                            },
+                            "name": "touches",
+                            "key": "customfield_10043",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10044": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10044
+                            },
+                            "name": "verify",
+                            "key": "customfield_10044",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "priority": {
+                            "required": false,
+                            "schema": {
+                                "type": "priority",
+                                "system": "priority"
+                            },
+                            "name": "Priority",
+                            "key": "priority",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/1",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/highest_new.svg",
+                                    "name": "Highest",
+                                    "id": "1"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/2",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/high_new.svg",
+                                    "name": "High",
+                                    "id": "2"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                    "name": "Medium",
+                                    "id": "3"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/4",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/low_new.svg",
+                                    "name": "Low",
+                                    "id": "4"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/5",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/lowest_new.svg",
+                                    "name": "Lowest",
+                                    "id": "5"
+                                }
+                            ],
+                            "defaultValue": {
+                                "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                "name": "Medium",
+                                "id": "3"
+                            }
+                        },
+                        "customfield_10001": {
+                            "required": false,
+                            "schema": {
+                                "type": "team",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team",
+                                "customId": 10001,
+                                "configuration": {
+                                    "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team": true
+                                }
+                            },
+                            "name": "Team",
+                            "key": "customfield_10001",
+                            "autoCompleteUrl": "https://example.atlassian.net/gateway/api/v1/recommendations",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10045": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10045
+                            },
+                            "name": "human_steps",
+                            "key": "customfield_10045",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10046": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10046
+                            },
+                            "name": "appends",
+                            "key": "customfield_10046",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10047": {
+                            "required": false,
+                            "schema": {
+                                "type": "option",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select",
+                                "customId": 10047
+                            },
+                            "name": "executor",
+                            "key": "customfield_10047",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10020",
+                                    "value": "agent",
+                                    "id": "10020"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10021",
+                                    "value": "human",
+                                    "id": "10021"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10022",
+                                    "value": "mixed",
+                                    "id": "10022"
+                                }
+                            ]
+                        },
+                        "labels": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "string",
+                                "system": "labels"
+                            },
+                            "name": "Labels",
+                            "key": "labels",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/1.0/labels/suggest?query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ]
+                        },
+                        "customfield_10048": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10048
+                            },
+                            "name": "defer_until",
+                            "key": "customfield_10048",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "environment": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "system": "environment"
+                            },
+                            "name": "Environment",
+                            "key": "environment",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "versions": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "version",
+                                "system": "versions"
+                            },
+                            "name": "Affects versions",
+                            "key": "versions",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "add",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "duedate": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "system": "duedate"
+                            },
+                            "name": "Due date",
+                            "key": "duedate",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuelinks": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "issuelinks",
+                                "system": "issuelinks"
+                            },
+                            "name": "Linked Issues",
+                            "key": "issuelinks",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/issue/picker?currentProjectId=&showSubTaskParent=true&showSubTasks=true&currentIssueKey=null&query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "copy"
+                            ]
+                        },
+                        "assignee": {
+                            "required": false,
+                            "schema": {
+                                "type": "user",
+                                "system": "assignee"
+                            },
+                            "name": "Assignee",
+                            "key": "assignee",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/user/assignable/search?project=WO&query=",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10000",
+                    "id": "10000",
+                    "description": "A big user story that needs to be broken down. Created by Jira Software - do not edit or delete.",
+                    "iconUrl": "https://example.atlassian.net/images/icons/issuetypes/epic.svg",
+                    "name": "Epic",
+                    "untranslatedName": "Epic",
+                    "subtask": false,
+                    "hierarchyLevel": 1,
+                    "expand": "fields",
+                    "fields": {
+                        "summary": {
+                            "required": true,
+                            "schema": {
+                                "type": "string",
+                                "system": "summary"
+                            },
+                            "name": "Summary",
+                            "key": "summary",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuetype": {
+                            "required": true,
+                            "schema": {
+                                "type": "issuetype",
+                                "system": "issuetype"
+                            },
+                            "name": "Issue Type",
+                            "key": "issuetype",
+                            "hasDefaultValue": false,
+                            "operations": [],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/issuetype/10000",
+                                    "id": "10000",
+                                    "description": "A big user story that needs to be broken down. Created by Jira Software - do not edit or delete.",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/issuetypes/epic.svg",
+                                    "name": "Epic",
+                                    "subtask": false,
+                                    "hierarchyLevel": 1
+                                }
+                            ]
+                        },
+                        "parent": {
+                            "required": false,
+                            "schema": {
+                                "type": "issuelink",
+                                "system": "parent"
+                            },
+                            "name": "Parent",
+                            "key": "parent",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "components": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "component",
+                                "system": "components"
+                            },
+                            "name": "Components",
+                            "key": "components",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "customfield_10020": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "json",
+                                "custom": "com.pyxis.greenhopper.jira:gh-sprint",
+                                "customId": 10020
+                            },
+                            "name": "Sprint",
+                            "key": "customfield_10020",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "description": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "system": "description"
+                            },
+                            "name": "Description",
+                            "key": "description",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "project": {
+                            "required": true,
+                            "schema": {
+                                "type": "project",
+                                "system": "project"
+                            },
+                            "name": "Project",
+                            "key": "project",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/project/10052",
+                                    "id": "10052",
+                                    "key": "WO",
+                                    "name": "work-order",
+                                    "projectTypeKey": "software",
+                                    "simplified": false,
+                                    "avatarUrls": {
+                                        "48x48": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414",
+                                        "24x24": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=small",
+                                        "16x16": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=xsmall",
+                                        "32x32": "https://example.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10414?size=medium"
+                                    }
+                                }
+                            ]
+                        },
+                        "customfield_10043": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10043
+                            },
+                            "name": "touches",
+                            "key": "customfield_10043",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "fixVersions": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "version",
+                                "system": "fixVersions"
+                            },
+                            "name": "Fix versions",
+                            "key": "fixVersions",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "add",
+                                "remove"
+                            ],
+                            "allowedValues": []
+                        },
+                        "customfield_10044": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10044
+                            },
+                            "name": "verify",
+                            "key": "customfield_10044",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "priority": {
+                            "required": false,
+                            "schema": {
+                                "type": "priority",
+                                "system": "priority"
+                            },
+                            "name": "Priority",
+                            "key": "priority",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/1",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/highest_new.svg",
+                                    "name": "Highest",
+                                    "id": "1"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/2",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/high_new.svg",
+                                    "name": "High",
+                                    "id": "2"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                    "name": "Medium",
+                                    "id": "3"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/4",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/low_new.svg",
+                                    "name": "Low",
+                                    "id": "4"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/priority/5",
+                                    "iconUrl": "https://example.atlassian.net/images/icons/priorities/lowest_new.svg",
+                                    "name": "Lowest",
+                                    "id": "5"
+                                }
+                            ],
+                            "defaultValue": {
+                                "self": "https://example.atlassian.net/rest/api/3/priority/3",
+                                "iconUrl": "https://example.atlassian.net/images/icons/priorities/medium_new.svg",
+                                "name": "Medium",
+                                "id": "3"
+                            }
+                        },
+                        "customfield_10001": {
+                            "required": false,
+                            "schema": {
+                                "type": "team",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team",
+                                "customId": 10001,
+                                "configuration": {
+                                    "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team": true
+                                }
+                            },
+                            "name": "Team",
+                            "key": "customfield_10001",
+                            "autoCompleteUrl": "https://example.atlassian.net/gateway/api/v1/recommendations",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10045": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10045
+                            },
+                            "name": "human_steps",
+                            "key": "customfield_10045",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10046": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10046
+                            },
+                            "name": "appends",
+                            "key": "customfield_10046",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10079": {
+                            "required": false,
+                            "schema": {
+                                "type": "string",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+                                "customId": 10079
+                            },
+                            "name": "outcome",
+                            "key": "customfield_10079",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10047": {
+                            "required": false,
+                            "schema": {
+                                "type": "option",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select",
+                                "customId": 10047
+                            },
+                            "name": "executor",
+                            "key": "customfield_10047",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ],
+                            "allowedValues": [
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10020",
+                                    "value": "agent",
+                                    "id": "10020"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10021",
+                                    "value": "human",
+                                    "id": "10021"
+                                },
+                                {
+                                    "self": "https://example.atlassian.net/rest/api/3/customFieldOption/10022",
+                                    "value": "mixed",
+                                    "id": "10022"
+                                }
+                            ]
+                        },
+                        "labels": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "string",
+                                "system": "labels"
+                            },
+                            "name": "Labels",
+                            "key": "labels",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/1.0/labels/suggest?query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "set",
+                                "remove"
+                            ]
+                        },
+                        "customfield_10015": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10015
+                            },
+                            "name": "Start date",
+                            "key": "customfield_10015",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "customfield_10048": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker",
+                                "customId": 10048
+                            },
+                            "name": "defer_until",
+                            "key": "customfield_10048",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "attachment": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "attachment",
+                                "system": "attachment"
+                            },
+                            "name": "Attachment",
+                            "key": "attachment",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set",
+                                "copy"
+                            ]
+                        },
+                        "duedate": {
+                            "required": false,
+                            "schema": {
+                                "type": "date",
+                                "system": "duedate"
+                            },
+                            "name": "Due date",
+                            "key": "duedate",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "set"
+                            ]
+                        },
+                        "issuelinks": {
+                            "required": false,
+                            "schema": {
+                                "type": "array",
+                                "items": "issuelinks",
+                                "system": "issuelinks"
+                            },
+                            "name": "Linked Issues",
+                            "key": "issuelinks",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/issue/picker?currentProjectId=&showSubTaskParent=true&showSubTasks=true&currentIssueKey=null&query=",
+                            "hasDefaultValue": false,
+                            "operations": [
+                                "add",
+                                "copy"
+                            ]
+                        },
+                        "assignee": {
+                            "required": false,
+                            "schema": {
+                                "type": "user",
+                                "system": "assignee"
+                            },
+                            "name": "Assignee",
+                            "key": "assignee",
+                            "autoCompleteUrl": "https://example.atlassian.net/rest/api/3/user/assignable/search?project=WO&query=",
+                            "hasDefaultValue": true,
+                            "operations": [
+                                "set"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}
