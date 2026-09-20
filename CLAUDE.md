@@ -24,9 +24,23 @@ how the repository itself is worked.
 
 ## CI
 
-`.github/workflows/ci.yml` runs one job, `validate`, on push to `main` and on
-every pull request. It parses every JSON and YAML file in the tree and compiles
-every Python file. `validate` is the required status check on `main`.
+`.github/workflows/ci.yml` runs two jobs on push to `main` and on every pull
+request. `validate` parses every JSON and YAML file in the tree and compiles
+every Python file. `selftests` **discovers** every `*selftest*.sh` by glob and
+runs it, then runs the Python selftest entry points — `reference/issues.py
+selftest` and `conformance/validate.py --selftest`, which a filename glob cannot
+find. A selftest added later is covered with no workflow edit.
+
+Every selftest here is offline by construction: each stubs its HTTP client on
+`PATH` and reaches no network, site or credential, which is what lets them run
+on a public repository with no secret.
+
+`validate` is a required status check on `main`; add `selftests` to the ruleset
+so a red suite blocks a merge.
+
+Why the second job exists: `validate` alone was green while 14 assertions in
+`plugins/work-order-jira/selftest.sh` were failing, because nothing ran them
+(WO-052).
 
 ## Packaging
 
