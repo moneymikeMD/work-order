@@ -119,3 +119,9 @@ jobs:
             fi
           fi
           echo 'no-major: ok'
+
+  no-personal-paths:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: moneymikeMD/ai-toolkit/actions/no-personal-paths@v1
