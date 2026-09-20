@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/moneymikeMD/work-order/compare/v1.1.0...v1.2.0) (2026-09-20)
+
+
+### Features
+
+* **conformance:** ship the validator and the fixtures that prove it fails ([#19](https://github.com/moneymikeMD/work-order/issues/19)) ([35d3942](https://github.com/moneymikeMD/work-order/commit/35d394299020d80d4b183fbe9efcfa01d18e5446))
+* **decision-list:** define the decision-list format and the emit-tickets skill ([#12](https://github.com/moneymikeMD/work-order/issues/12)) ([17fb23b](https://github.com/moneymikeMD/work-order/commit/17fb23b6383a7944a2d45220f6e18d3cf897b257))
+* **jira:** ship the Jira binding as its own versioned package ([#14](https://github.com/moneymikeMD/work-order/issues/14)) ([5dd0b93](https://github.com/moneymikeMD/work-order/commit/5dd0b930244839734d443010e99b55c0e6d84699))
+* **spec:** document the sprint mechanism as an optional extension ([#11](https://github.com/moneymikeMD/work-order/issues/11)) ([be90458](https://github.com/moneymikeMD/work-order/commit/be90458c1dc04af64d85ccbd41661f8503e2031e))
+
+
+### Bug Fixes
+
+* **reference:** correct three issues.py jira-mode defects ([#20](https://github.com/moneymikeMD/work-order/issues/20)) ([21a16e1](https://github.com/moneymikeMD/work-order/commit/21a16e19cb5d367a3b7d889686239b1ffa145ce5))
+* **reference:** exclude .notes.md progress notes from load_files() ([#18](https://github.com/moneymikeMD/work-order/issues/18)) ([2a7b98e](https://github.com/moneymikeMD/work-order/commit/2a7b98ed3bf9487a64400cba562c399247b72e7e))
+
 ## [1.1.0](https://github.com/moneymikeMD/work-order/compare/v1.0.0...v1.1.0) (2026-09-20)
 
 
