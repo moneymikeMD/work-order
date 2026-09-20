@@ -1,6 +1,6 @@
 {
   "name": "work-order-jira",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Jira binding for the work-order ticket-as-contract specification.",
   "author": {
     "name": "Mike Garrett"

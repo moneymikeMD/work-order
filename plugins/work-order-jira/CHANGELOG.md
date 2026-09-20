@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.4.0...work-order-jira--v0.5.0) (2026-09-20)
+
+
+### Features
+
+* the lifecycle is seven positions, with triage as the entry state ([#36](https://github.com/moneymikeMD/work-order/issues/36)) ([6778a19](https://github.com/moneymikeMD/work-order/commit/6778a1965bf7ee88b4c3484a54d0618f943431a9))
+
 ## [0.4.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.3.0...work-order-jira--v0.4.0) (2026-09-20)
 
 
