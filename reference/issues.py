@@ -37,8 +37,9 @@ executor set (e.g. one pasted in from a chat conversation with no frontmatter
 review).
 
 The default source is the filesystem: <dir> is a directory of stage
-subdirectories full of frontmatter Markdown (open/, in-progress/,
-awaiting-deployment/, completed/, cancelled/ — see the to-issues skill).
+subdirectories full of frontmatter Markdown (triage/, open/, in-progress/,
+awaiting-deployment/, deferred/, completed/, cancelled/ — see the to-issues
+skill).
 
     --source jira | ISSUES_SOURCE=jira
         Read the ticket set from Jira instead of the filesystem. <dir> is not
@@ -80,11 +81,15 @@ from datetime import date
 from fnmatch import fnmatch
 from collections import defaultdict
 
-STAGES = ["open", "in-progress", "awaiting-deployment", "completed", "cancelled"]
+# The seven lifecycle positions of SPEC.md MUST-25, in order. triage is the
+# entry state (MUST-46) and deferred is time-parked (MUST-47); neither is
+# WORKABLE, and a missing directory is simply an empty position.
+STAGES = ["triage", "open", "in-progress", "awaiting-deployment", "deferred",
+          "completed", "cancelled"]
 DONE = ["completed", "cancelled"]
 # awaiting-deployment still has work left (the deploy itself); leaving it
 # out of PENDING strands dependents and waves() reports a phantom cycle.
-PENDING = ["open", "in-progress", "awaiting-deployment"]
+PENDING = ["triage", "open", "in-progress", "awaiting-deployment", "deferred"]
 # Dispatchable stages. awaiting-deployment is deliberately not one: the branch
 # already landed and was deleted, so the branch-exists refusal does not fire
 # and a re-dispatch redoes merged work on a fresh branch.
@@ -211,17 +216,22 @@ JIRA_JQL = _jira_jql(JIRA_PROJECT_KEY)
 JIRA_SEARCH_PATH = "/search/jql"
 JIRA_MAX_RESULTS = 500
 
-# Triage and Deferred are deliberately absent from WORKABLE/PENDING/DONE:
-# both are parked until someone moves them, never startable.
+# The seven statuses the work-order Jira binding binds, plus the scrum
+# template's own two, which it reads as aliases and never writes (BINDING.md
+# section 3). Triage and Deferred are positions but never WORKABLE: both are
+# parked until something moves them, and the thing that moves a Deferred issue
+# is a global Jira automation that scans defer_until daily and transitions it
+# into To Do, which reads back as open.
 JIRA_STATUS_TO_STAGE = {
     "Triage": "triage",
-    "To Do": "open",
     "Open": "open",
     "In Progress": "in-progress",
     "Awaiting Deployment": "awaiting-deployment",
     "Deferred": "deferred",
     "Completed": "completed",
     "Cancelled": "cancelled",
+    # Read-only aliases, the scrum template's own ready and closed statuses.
+    "To Do": "open",
     # Template Spaces ship Done, not Completed, as the closed status; it must
     # also be excluded in _jira_jql() or every closed ticket comes back.
     "Done": "completed",
@@ -673,10 +683,20 @@ def lint(tickets, root):
             errs.append(f"{tid}: defer_until '{defer}' is not an ISO date "
                         f"(YYYY-MM-DD)")
 
+        if stage == "deferred" and not t.get("defer_until"):
+            errs.append(f"{tid}: in deferred with no defer_until — nothing says "
+                        f"when it comes back, so nobody looks at it again "
+                        f"(SPEC.md MUST-47)")
+
         if stage == "cancelled":
             if not t.get("outcome"):
                 errs.append(f"{tid}: cancelled with no outcome — the reader "
                             f"learns it lost but not why, and re-proposes it")
+        elif stage == "triage":
+            # SPEC.md MUST-46: triage is the entry state, before the ticket is
+            # a contract. Only id/title/created/updated bind here; demanding
+            # verify would report every freshly written ticket as broken.
+            pass
         elif not is_epic:
             if not t.get("verify"):
                 errs.append(f"{tid}: no verify — nobody can prove this is done")
@@ -1116,6 +1136,61 @@ def _done_status_fixture():
     return [done, shadow]
 
 
+def _lifecycle_selftest():
+    """SPEC.md 0.2's two added positions, checked where they differ from the
+    five that were always here: a ticket in triage is held only to
+    id/title/created/updated (MUST-46), a ticket in deferred must carry
+    defer_until (MUST-47), and neither is ever startable."""
+    import io
+    import contextlib
+
+    def capture(fn, tickets):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            fn(tickets, "selftest")
+        return buf.getvalue()
+
+    base = {
+        "created": "2026-01-01", "updated": "2026-01-01", "tags": [],
+        "blocked_by": [], "human_steps": [], "appends": [], "epic": None,
+        "defer_until": None, "_is_epic": False, "_body": "", "touches": [],
+    }
+    triaged = dict(base, id="ZZ-910", title="written on request, no contract yet",
+                   executor="agent", verify="", _path="ZZ-910", _stage="triage")
+    parked = dict(base, id="ZZ-911", title="parked with a date",
+                  executor="agent", verify="true", defer_until="2099-01-01",
+                  _path="ZZ-911", _stage="deferred")
+    undated = dict(base, id="ZZ-912", title="parked with no date",
+                   executor="agent", verify="true",
+                   _path="ZZ-912", _stage="deferred")
+
+    failures = []
+    out = capture(lint, [triaged, parked])
+    if "ZZ-910" in out:
+        failures.append("lint: a triage ticket with no verify was reported "
+                        "(SPEC.md MUST-46 excuses it)")
+    if "ZZ-911" in out:
+        failures.append("lint: a deferred ticket carrying defer_until was reported")
+
+    out = capture(lint, [undated])
+    if "MUST-47" not in out:
+        failures.append("lint: a deferred ticket with no defer_until was not "
+                        f"reported against MUST-47: {out!r}")
+
+    for stage in ("triage", "deferred"):
+        if stage in WORKABLE:
+            failures.append(f"{stage} is in WORKABLE — it would be dispatched")
+        if stage not in STAGES:
+            failures.append(f"{stage} is missing from STAGES")
+    if JIRA_STATUS_TO_STAGE.get("Open") != "open":
+        failures.append("the Jira status 'Open' does not map to the open "
+                        "position — it is what the position binds to")
+    if JIRA_STATUS_TO_STAGE.get("To Do") != "open":
+        failures.append("the Jira status 'To Do' does not read back as the open "
+                        "position — the deferral automation moves issues there")
+    return failures
+
+
 def selftest():
     """Fixture-based checks, no <dir>, Jira, or network access needed:
     1. a ticket captured with only a title/description and no executor set
@@ -1173,6 +1248,7 @@ def selftest():
         failures.append(f"lint reports {lint_count} tickets but board reports "
                          f"{board_count} total — shadow stand-in counted inconsistently")
 
+    failures.extend(_lifecycle_selftest())
     failures.extend(_scope_selftest())
     failures.extend(_jira_fixture_selftest())
     failures.extend(_notes_md_selftest())
@@ -1192,7 +1268,9 @@ def selftest():
           "a comma-separated touches line is rejected; load_files excludes "
           "a .notes.md suffix but not a notes-in-slug id; a shared `appends` "
           "file splits a wave under --landing parallel and only warns under "
-          "serial, and preflight exits 0/1/2")
+          "serial, and preflight exits 0/1/2; triage is exempt from the "
+          "contract and deferred requires defer_until, and neither is "
+          "dispatchable")
     return 0
 
 

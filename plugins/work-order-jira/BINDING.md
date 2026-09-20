@@ -4,7 +4,7 @@ This document is a **binding** in the sense of `SPEC.md` section 11: a normative
 mapping of the work-order ticket contract onto one substrate, here Jira Cloud
 company-managed projects.
 
-Specification bound: work-order **0.1**, as published in `SPEC.md` and
+Specification bound: work-order **0.2**, as published in `SPEC.md` and
 `VERSION-spec` at the root of this repository.
 
 This binding is versioned independently of the specification and of the
@@ -72,28 +72,99 @@ missing one, on the next.
 
 | Position | Status | |
 | --- | --- | --- |
-| `open` | `Open` | |
+| `triage` | `Triage` | the entry state, `[MUST-46]` |
+| `open` | `Open` | ready to work, `[JIRA-15]` |
 | `in-progress` | `In Progress` | |
 | `awaiting-deployment` | `Awaiting Deployment` | |
+| `deferred` | `Deferred` | exit is time-based, `[MUST-47]` |
 | `completed` | `Completed` | terminal |
 | `cancelled` | `Cancelled` | terminal |
 
+[JIRA-15] The `open` position MUST bind to the Jira status `Open`. `Open` is
+*a ticket that is ready to be worked on; it meets our criteria as something that
+is startable* — `[MUST-25]`'s definition of the position, and what the file
+binding's `open/` directory has always meant. An implementation MUST NOT bind
+the position to any other status, and MUST NOT retire `Open` on the evidence
+that it is holding no issues: how many issues sit in a status is a fact about
+one moment, and this binding is a contract.
+
+### Legacy statuses, read only
+
+| Status | Read as | |
+| --- | --- | --- |
+| `To Do` | `open` | the scrum template's default ready-to-work status |
+| `Done` | `completed` | the scrum template's closed status |
+
+An implementation MAY accept these two on read, and MUST NOT write either, MUST
+NOT provision either, and MUST NOT accept any status outside this table and the
+one above. The alias is one-way, and it is here so that a Space provisioned from
+the Jira project template — which ships `To Do` and `Done` and neither of the
+statuses those two alias — stays readable rather than reporting every issue as
+having no position at all. That is what happened to all 58 issues of one import.
+This is not the guess `[JIRA-3]` forbids: an alias is stated here by name, and
+the set of them is closed.
+
+Whether `To Do` survives on the prototype's board is a separate question, open
+in WO-058, and it is the owner's to answer. Nothing in this binding decides it.
+
 Jira offers several other places a position could appear to live, and none of
-them is one: `fields.resolution`, the `statusCategory` (three values, not five),
-a board column, a sprint, a label. An implementation MUST NOT read or write a
-position anywhere but `status`, per `[MUST-26]`. `statusCategory` in particular
-collapses `Open` and `Awaiting Deployment` differently than the lifecycle does
-and cannot be derived back.
+them is one: `fields.resolution`, the `statusCategory` (three values, not
+seven), a board column, a sprint, a label. An implementation MUST NOT read or
+write a position anywhere but `status`, per `[MUST-26]`. `statusCategory` in
+particular collapses `Triage`, `Open` and `Deferred` into one value and cannot
+be derived back.
 
-[JIRA-3] A ticket whose status is not one of the five above has no lifecycle
-position under this binding. An implementation MUST report that as an error and
-MUST NOT guess a position from the status name, its category, or its position on
-a board. A project MAY carry other statuses for work outside the set.
+[JIRA-3] A ticket whose status is not one of the seven above, or one of the two
+legacy aliases, has no lifecycle position under this binding. An implementation
+MUST report that as an error and MUST NOT guess a position from the status name,
+its category, or its position on a board. A project MAY carry other statuses for
+work outside the set.
 
-[JIRA-4] The transition into each of the five statuses MUST be `GLOBAL`, so
+[JIRA-11] An implementation reporting a ticket's position MUST distinguish "the
+status is not one this binding binds" from "the position could not be read",
+with an exit status or a parseable token of its own — not with prose a caller
+has to match. A conforming Space produces no unmapped status; a caller reading a
+Space that is not conforming still has to tell a ticket parked outside the
+lifecycle apart from a broken read, and matching an error message is not a
+contract. `provider.sh position` exits **4** and prints
+`unmapped-status<TAB><status name>` for the first, and exits 1 for the second.
+
+[JIRA-4] The transition into each of the seven statuses MUST be `GLOBAL`, so
 every position is reachable from every other without a transition matrix. The
 lifecycle's ordering is enforced by validators, named below, not by which
 transitions exist.
+
+[JIRA-12] The workflow's **initial transition** — the one Jira runs when an
+issue is created, `"type": "initial"` — MUST target the status bound to the
+entry state, `Triage`. An implementation MUST select that transition by its
+type and MUST resolve the target status id by name, per `[JIRA-8]`; both the
+transition id and the status id are per-site.
+
+The Jira project template targets it at `To Do`, so a Space provisioned without
+this step creates every issue at the ready-to-work position and skips triage
+entirely. The prototype project was corrected by hand and the replication path
+was not: same workflow shape, same transition id `1` named `Create`, different
+target. `workflow-apply.sh` already rewrites this workflow through
+`POST /workflows/update`, so this is a step the provisioner never asked for
+rather than something Jira will not do.
+
+### 3.1 The deferral automation
+
+A **global Jira automation**, configured on the site and owned by the site's
+administrator, scans `defer_until` daily and transitions an issue out of
+`Deferred` into `To Do` once the date has passed. It is recorded here because
+two things in this binding depend on it and would otherwise look arbitrary:
+
+- `To Do` MUST stay readable (it is, as the one-way alias above). An automation
+  that parks issues in a status the binding cannot read is worse than no
+  automation.
+- The `Deferred` transition requires `verify` as well as `defer_until` (section
+  4), so that an issue the automation later moves into `To Do` can always
+  satisfy that transition's own validator. The gate is placed on the way in,
+  where a person is present, rather than on the way out, where one is not.
+
+This binding does not create, edit, inspect or manage that automation, and no
+script here does either. It states that it exists and what it depends on.
 
 ## 4. Enforcement
 
@@ -104,11 +175,38 @@ removed.
 
 | Transition | Validator | Serves |
 | --- | --- | --- |
+| `Triage` | none — deliberately | `[MUST-46]`, per `[JIRA-13]` |
+| `Open` | `verify` is required | `[MUST-7]`, per `[JIRA-13]` |
+| `To Do` | `verify` is required, where the transition exists | `[MUST-7]`, per `[JIRA-13]` |
 | `In Progress` | `verify` is required | `[MUST-7]`, `[MUST-8]` |
 | `In Progress` | `touches` is required | `[MUST-13]`, tightened by `[JIRA-6]` |
+| `Deferred` | `defer_until` is required | `[MUST-47]`, per `[JIRA-14]` |
+| `Deferred` | `verify` is required | `[MUST-7]`, per `[JIRA-14]` |
 | `Completed` | `verify` is required | `[MUST-7]` |
 | `Completed` | previous status includes `Awaiting Deployment` | `[MUST-27]`, per `[JIRA-5]` |
 | `Cancelled` | `outcome` is required | `[MUST-28]`, per `[JIRA-7]` |
+
+[JIRA-13] The `Triage` transition MUST carry no validator, and the transition
+into the ready-to-work position MUST require `verify`. Together those two are
+the entry state made executable: anything may enter `Triage`, and leaving it is
+the assertion `[MUST-46]` describes. A validator on `Triage` would reject the
+ticket at the one moment nobody has written the contract yet; no validator on
+the way out would leave the entry state a formality.
+
+The requirement covers **both** `Open` and the `To Do` alias, and an
+implementation MUST apply it to the `To Do` transition wherever that transition
+exists on the workflow. `To Do` is never provisioned, so on a Space this binding
+built there is nothing to apply it to; on a Space provisioned from the Jira
+project template the transition is already there, and the deferral automation of
+section 3.1 uses it. Leaving that one ungated would make the alias a way in
+around the gate.
+
+[JIRA-14] The `Deferred` transition MUST require `defer_until`, per
+`[MUST-47]`, and MUST also require `verify`. The first is what makes `Deferred`
+bounded. The second is what keeps the automation of section 3.1 able to move
+the issue back out: it transitions into `To Do`, whose own validator requires
+`verify` per `[JIRA-13]`, and an automation running unattended cannot fill a
+field in.
 
 [JIRA-5] The `Completed` transition MUST carry a previous-status validator
 naming `Awaiting Deployment`. `[MUST-27]` says a ticket must occupy that
@@ -188,7 +286,7 @@ which a set boundary forbids. External check.
 ticket as available.** Startability is derived, not stored:
 
 ```
-project = KEY AND status = Open
+project = KEY AND status in (Open, "To Do")
   AND (defer_until is EMPTY OR defer_until <= now())
   AND issueFunction not in linkedIssuesOf("...")   -- blockers not terminal
 ```

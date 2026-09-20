@@ -86,7 +86,7 @@ validated. A set that wants to record its claim writes one line in a
 `CONFORMANCE` file, or anywhere in its `README.md`, in this shape:
 
 ```
-work-order SPEC.md 0.1 profile full
+work-order SPEC.md 0.2 profile full
 ```
 
 `[MUST-40]` then checks that the written claim cites this document's MAJOR.MINOR
@@ -128,16 +128,16 @@ in the binding's own "What this binding cannot satisfy" section:
 - **`[MUST-26]`** — the lifecycle position is `fields.status` and nothing else,
   and no field this binding reads can carry a second copy of it.
 
-The status map is `issues.py`'s, so the two template-derived aliases it carries
-(`To Do` → `open`, `Done` → `completed`) are accepted as well as the binding's
-five status names. Any other status is reported under `[MUST-25]` as a ticket
-with no lifecycle position, per `[JIRA-3]`, rather than guessed at.
+The status map is `issues.py`'s: the binding's seven status names plus the two
+read-only aliases it documents (`To Do` → `open`, `Done` → `completed`). Any
+other status is reported under `[MUST-25]` as a ticket with no lifecycle
+position, per `[JIRA-3]`, rather than guessed at.
 
 ## Layouts
 
 **Staged** — the file binding's layout, and the normal case. Stage directories
 that are absent are treated as empty, per `[FILE-2]`. A ticket found outside the
-five stage directories, or nested below one, is reported under `[MUST-25]`.
+seven stage directories, or nested below one, is reported under `[MUST-25]`.
 
 **Flat** — a directory holding ticket files and no stage directories at all is
 read as a set of `open` tickets. This is what a generator such as the
@@ -153,9 +153,10 @@ position, so there is nothing to check it against.
 `fixtures/` is the evidence that the validator has teeth. A validator nobody has
 watched fail is indistinguishable from one that passes everything.
 
-- **`conforming/`** — a six-ticket set, one ticket in each of the five
+- **`conforming/`** — a six-ticket set, one ticket in each of five of the seven
   lifecycle positions, that passes at `minimal`, `full` **and** `unattended`
-  with no MUST violated.
+  with no MUST violated. `triage/` and `deferred/` are absent from it, which
+  `[FILE-2]` reads as empty rather than missing.
 - **`violates-MUST-<n>-<slug>/`** — one directory per mechanically checkable
   MUST. Each is `conforming/` with exactly one edit, and fails exactly that one
   requirement at the profile the requirement itself declares.

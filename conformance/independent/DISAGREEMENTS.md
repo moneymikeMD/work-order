@@ -8,6 +8,16 @@ did not say enough, and the reading that was chosen instead.
 
 WO-020 expected this list to be non-empty on a first attempt. It is.
 
+**This list was written against specification 0.1.** Specification 0.2 (WO-053)
+added two lifecycle positions, `triage` and `deferred`, and every section below
+that counts the positions as five is reading 0.1. `minimal-validate.py` itself
+was updated to 0.2 — seven stage directories, `[MUST-47]`, and the `[MUST-46]`
+carve-out that holds a `triage` ticket to its identity, title and dates and to
+nothing else — so `sweep.py` still reaches the verdict every fixture name
+claims. The readings recorded below were not revisited, because the point of
+this document is what one implementer had to guess on a first pass, and
+rewriting that in hindsight would destroy it.
+
 ## What was read, and what was not
 
 Read: `SPEC.md`, `bindings/file/BINDING.md`, and the fixture trees under

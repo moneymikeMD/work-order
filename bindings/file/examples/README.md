@@ -1,7 +1,9 @@
 # A worked set in the file binding
 
-Six tickets belonging to a fictional project `ex`, one in each of the five
-lifecycle positions, written to be read rather than run: the commands in their
+Six tickets belonging to a fictional project `ex`, one in each of five of the
+seven lifecycle positions — `triage/` and `deferred/` are empty here, which
+`[FILE-2]` reads as "nothing is in that position right now". Written to be read
+rather than run: the commands in their
 `verify` blocks name paths in that fictional project and will not pass here.
 
 What is real is the shape. The set lints clean:

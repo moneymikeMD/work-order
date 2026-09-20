@@ -16,7 +16,8 @@ import os
 import re
 import sys
 
-STAGES = ("open", "in-progress", "awaiting-deployment", "completed", "cancelled")
+STAGES = ("triage", "open", "in-progress", "awaiting-deployment", "deferred",
+          "completed", "cancelled")
 TERMINAL = ("completed", "cancelled")
 PROFILES = ("minimal", "full", "unattended")
 
@@ -304,6 +305,23 @@ def check_ticket(ticket, report, by_id, startable_ids):
     report.must(1, "minimal", not ticket.tid, where, "no `id`")
     report.must(3, "minimal", not fields.get("title"), where, "no `title`")
 
+    report.must(
+        47, "minimal",
+        ticket.stage == "deferred" and not fields.get("defer_until"),
+        where, "is deferred and carries no `defer_until`",
+    )
+    if ticket.stage == "triage":
+        # MUST-46: at the entry state a ticket is not yet a contract, so it is
+        # held to MUST-1, MUST-3 and MUST-4 and to nothing else.
+        for name in ("created", "updated"):
+            value = fields.get(name)
+            report.must(
+                4, "minimal",
+                not isinstance(value, str) or not DATE_RE.match(value or ""),
+                where, f"`{name}` is not an RFC 3339 full-date: {value!r}",
+            )
+        return
+
     for name in ("created", "updated"):
         value = fields.get(name)
         report.must(
@@ -446,7 +464,7 @@ def validate(root, profile):
 
     for name in stray:
         report.must(25, "minimal", True, name + "/",
-                    "not one of the five lifecycle positions")
+                    "not one of the seven lifecycle positions")
 
     by_id, duplicates = {}, set()
     for ticket in tickets:

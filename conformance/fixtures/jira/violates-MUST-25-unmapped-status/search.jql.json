@@ -972,7 +972,7 @@
       "fields": {
         "summary": "Someone filed a note about the export's row order",
         "status": {
-          "name": "Triage",
+          "name": "Build Broken",
           "statusCategory": {
             "key": "indeterminate"
           }

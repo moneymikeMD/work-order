@@ -116,6 +116,12 @@ wf_search() {
             fx workflow.search.txt | jq -c '
                 .values[0].statuses |= map(select(.name != "Awaiting Deployment"))
                 | .values[0].transitions |= map(if .name == "Awaiting Deployment" then .name = "Legacy AD" else . end)' ;;
+        # The recorded workflow's Create transition targets To Do (10009), the
+        # template's default. entry-ok is the same workflow after [JIRA-12] has
+        # been applied, which is the only "already complete" case there is.
+        entry-ok)
+            fx workflow.search.txt | jq -c '
+                .values[0].transitions |= map(if .type == "initial" then .to = "10011" else . end)' ;;
         *) fx workflow.search.txt ;;
     esac
 }
@@ -328,11 +334,36 @@ OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Awaiting Deployment" \
       "$PROVIDER" --http "$STUB" position PROJ-1 2>&1)
 eq "provider position maps a bound status to its lifecycle position" "awaiting-deployment" "$OUT"
 
+reset_log position-todo
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" position PROJ-1 2>/dev/null); RC=$?
+eq "provider position reads the template's To Do as the open position" "open" "$OUT"
+eq "  and exits 0, because a documented alias is not an unmapped status" "0" "$RC"
+
+reset_log position-triage
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Triage" \
+      "$PROVIDER" --http "$STUB" position PROJ-1 2>&1)
+eq "triage reads back as a lifecycle position" "triage" "$OUT"
+
+reset_log position-deferred
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Deferred" \
+      "$PROVIDER" --http "$STUB" position PROJ-1 2>&1)
+eq "deferred reads back as a lifecycle position" "deferred" "$OUT"
+
+reset_log position-open
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Open" \
+      "$PROVIDER" --http "$STUB" position PROJ-1 2>&1); RC=$?
+eq "provider position maps Open, the status open binds to, to open" "open" "$OUT"
+eq "  and says nothing on stderr, because Open is not an alias" "0" "$RC"
+
 reset_log position-unmapped
-OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" position PROJ-1 2>&1); RC=$?
-eq "provider position fails on a status outside the binding" "1" "$RC"
-contains "  citing the binding requirement" "JIRA-3" "$OUT"
-contains "  and naming the status it found" "To Do" "$OUT"
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Build Broken" \
+      "$PROVIDER" --http "$STUB" position PROJ-1 2>/dev/null); RC=$?
+ERRTXT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Build Broken" \
+      "$PROVIDER" --http "$STUB" position PROJ-1 2>&1 >/dev/null) || true
+eq "an unmapped status is reported as unmapped, not as an error" "4" "$RC"
+contains "  on stdout, as a token a caller can parse rather than prose" "unmapped-status" "$OUT"
+contains "  naming the status it found" "Build Broken" "$OUT"
+contains "  and citing the binding requirement on stderr" "JIRA-3" "$ERRTXT"
 
 reset_log transition-pos
 OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1)
@@ -345,9 +376,25 @@ WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled >/dev/
 contains "provider transition cancelled resolves its own transition" \
     '{"transition":{"id":"91"}}' "$(cat "$LOG")"
 
+reset_log transition-open
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" transition PROJ-1 open >/dev/null 2>&1
+contains "provider transition open resolves the transition into Open, not the To Do alias" \
+    '{"transition":{"id":"51"}}' "$(cat "$LOG")"
+
+reset_log transition-triage
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" transition PROJ-1 triage >/dev/null 2>&1
+contains "provider transition triage resolves its own transition" \
+    '{"transition":{"id":"41"}}' "$(cat "$LOG")"
+
+reset_log transition-deferred
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" transition PROJ-1 deferred >/dev/null 2>&1
+contains "provider transition deferred resolves its own transition" \
+    '{"transition":{"id":"71"}}' "$(cat "$LOG")"
+
 OUT=$("$PROVIDER" --dry-run transition PROJ-1 almost-done 2>&1); RC=$?
-eq "provider rejects a position that is not one of the five" "1" "$RC"
-contains "  listing the five" "awaiting-deployment" "$OUT"
+eq "provider rejects a position that is not one of the seven" "1" "$RC"
+contains "  listing all seven" "awaiting-deployment" "$OUT"
+contains "  including the two added in specification 0.2" "deferred" "$OUT"
 
 reset_log comment
 WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" comment PROJ-1 "line one
@@ -464,10 +511,26 @@ eq "a ticket survives create then fetch unchanged" "ROUNDTRIP OK" "$ROUNDTRIP"
 # ---- 4. workflow-apply.sh ----------------------------------------------
 
 reset_log wf-complete
-OUT=$(WO_TEST_LOG="$LOG" "$WFAPPLY" SPK4 --http "$STUB" --rules none --dry-run 2>&1); RC=$?
-eq "workflow-apply with every status present exits 0" "0" "$RC"
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_WF=entry-ok \
+      "$WFAPPLY" SPK4 --http "$STUB" --rules none --dry-run 2>&1); RC=$?
+eq "workflow-apply with every status present and the entry state already targeted exits 0" "0" "$RC"
 contains "  and says already complete" "already complete" "$OUT"
 not_contains "  without ever bulk-getting the workflow" "POST /workflows" "$(cat "$LOG")"
+
+# [JIRA-12]. The recorded workflow is the template's: all seven statuses are on
+# it, so the ONLY thing left to converge is where the Create transition points.
+reset_log wf-entry-detect
+OUT=$(WO_TEST_LOG="$LOG" "$WFAPPLY" SPK4 --http "$STUB" --rules none --dry-run 2>&1); RC=$?
+eq "workflow-apply does not call a workflow complete while Create targets the wrong status" "0" "$RC"
+not_contains "  so it is not already complete" "already complete" "$OUT"
+contains "  and it names the create transition in the plan" "create transition" "$OUT"
+contains "  saying which status it targets today" "targets status 10009" "$OUT"
+RETARGET=$(printf '%s' "$OUT" | sed -n '/^{/,$p' \
+    | jq -r '[.workflows[0].transitions[] | select(.type == "INITIAL") | .toStatusReference] | join(",")' 2>/dev/null)
+eq "the create transition targets the entry state" "10011" "$RETARGET"
+KEPT=$(printf '%s' "$OUT" | sed -n '/^{/,$p' \
+    | jq -r '[.workflows[0].transitions[] | select(.type == "INITIAL") | .id] | join(",")' 2>/dev/null)
+eq "  keeping the transition's own id, which is per-site and never rewritten" "1" "$KEPT"
 
 reset_log wf-unresolved
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=live \
@@ -525,6 +588,8 @@ not_contains "  no curl was reached" "curl was called" "$OUT"
 for f in touches executor verify human_steps appends defer_until outcome; do
     contains "  the plan names the $f field" "\"name\":\"$f\"" "$OUT"
 done
+contains "  the plan names the create transition it would retarget" "create transition" "$OUT"
+contains "  and the entry state it would retarget it at" "Triage" "$OUT"
 contains "  the plan names the screen walk" "/screens/<id>/tabs/<tab>/fields" "$OUT"
 contains "  the plan names the searcherKey repair" "searcherKey" "$OUT"
 

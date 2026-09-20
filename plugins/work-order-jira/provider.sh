@@ -12,9 +12,10 @@
 #   provider.sh [--dry-run] [--http PATH] create PROJECT ISSUETYPE SUMMARY
 #                                                [--ticket PATH]
 #
-#   POSITION       one of open, in-progress, awaiting-deployment, completed,
-#                  cancelled. Resolved to a transition by the status name
-#                  BINDING.md binds it to, read live from the issue.
+#   POSITION       one of triage, open, in-progress, awaiting-deployment,
+#                  deferred, completed, cancelled. Resolved to a transition by
+#                  the status name BINDING.md binds it to, read live from the
+#                  issue.
 #   TEXT           '-' reads the comment from stdin.
 #   --ticket PATH  a decision-list document (decision-list/FORMAT.md): one
 #                  decision object, or a list holding exactly one. Its fields
@@ -32,6 +33,14 @@
 # confirmation, so the provider works unattended; --dry-run or
 # WORK_ORDER_JIRA_DRY_RUN=1 turns every call into a printed request.
 #
+# Exit status:
+#   0  the verb succeeded.
+#   1  a read, a write or an argument failed.
+#   4  `position` only: the issue's status is not one this binding binds, and
+#      is not one of the two legacy aliases. Distinct from 1 on purpose, per
+#      BINDING.md [JIRA-11]: stdout carries `unmapped-status<TAB><name>` and a
+#      caller must not have to match prose to tell this from a failed read.
+#
 # bash 3.2 compatible.
 
 set -euo pipefail
@@ -40,16 +49,30 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$DIR/lib/common.sh"
 
-POSITIONS='open
+# The seven lifecycle positions of SPEC.md MUST-25 and the status BINDING.md
+# section 3 binds each to, in one order. `open` binds to `Open` ([JIRA-15]).
+POSITIONS='triage
+open
 in-progress
 awaiting-deployment
+deferred
 completed
 cancelled'
-POSITION_STATUSES='Open
+POSITION_STATUSES='Triage
+Open
 In Progress
 Awaiting Deployment
+Deferred
 Completed
 Cancelled'
+# The scrum template's own two statuses, read as aliases (BINDING.md section 3):
+# accepted by `position`, never produced by `transition`, never provisioned.
+LEGACY_STATUSES='
+To Do
+Done'
+LEGACY_POSITIONS='
+open
+completed'
 
 DRY_RUN=0
 [ "${WORK_ORDER_JIRA_DRY_RUN:-0}" = "1" ] && DRY_RUN=1
@@ -62,7 +85,7 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || die "--http needs a path"
             HTTP="$2"; shift 2 ;;
         -h|--help)
-            sed -n '3,35p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,44p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --) shift; break ;;
         -*) die "unknown flag '$1' — run with --help" ;;
@@ -85,7 +108,7 @@ http() {
 }
 
 # status_for_position POSITION — print the Jira status name BINDING.md binds
-# POSITION to, or return 1 when POSITION is not one of the five.
+# POSITION to, or return 1 when POSITION is not one of the seven.
 status_for_position() {
     local want="$1" i=1 p s
     while IFS= read -r p; do
@@ -102,6 +125,7 @@ EOF
 
 # position_for_status STATUS — the inverse: print the lifecycle position a
 # Jira status name represents, or return 1 for a status outside the binding.
+# The two legacy aliases are accepted here and nowhere else.
 position_for_status() {
     local want="$1" i=1 s p
     while IFS= read -r s; do
@@ -112,6 +136,18 @@ position_for_status() {
         return 0
     done <<EOF
 $POSITION_STATUSES
+EOF
+    i=1
+    while IFS= read -r s; do
+        p=$(printf '%s\n' "$LEGACY_POSITIONS" | sed -n "${i}p")
+        i=$((i + 1))
+        [ -n "$s" ] || continue
+        [ "$s" = "$want" ] || continue
+        warn "status '$want' is a read-only alias for the '$p' position and is never written or provisioned — see BINDING.md section 3"
+        printf '%s' "$p"
+        return 0
+    done <<EOF
+$LEGACY_STATUSES
 EOF
     return 1
 }
@@ -138,9 +174,16 @@ case "$verb" in
         STATUS_NAME=$(printf '%s' "$ISSUE" | jq -r '.fields.status.name // empty') \
             || die "could not parse .fields.status.name from the issue readback"
         [ -n "$STATUS_NAME" ] || die "issue '$1' readback carried no status name"
-        POS=$(position_for_status "$STATUS_NAME") \
-            || die "issue '$1' is in status '$STATUS_NAME', which this binding does not map to a lifecycle position — see BINDING.md [JIRA-3]"
-        printf '%s\n' "$POS"
+        # Exit 4, not 1: an unmapped status is a report about the issue, and a
+        # caller must be able to tell it from a read that failed without
+        # matching this message. BINDING.md [JIRA-11].
+        if POS=$(position_for_status "$STATUS_NAME"); then
+            printf '%s\n' "$POS"
+        else
+            printf 'unmapped-status\t%s\n' "$STATUS_NAME"
+            warn "issue '$1' is in status '$STATUS_NAME', which this binding does not bind to a lifecycle position — see BINDING.md [JIRA-3]. Reported, not failed: exit 4."
+            exit 4
+        fi
         ;;
 
     transition)
@@ -150,7 +193,7 @@ case "$verb" in
         case "$TARGET" in
             *[!0-9]*)
                 WANT_STATUS=$(status_for_position "$TARGET") \
-                    || die "'$TARGET' is not a lifecycle position (open, in-progress, awaiting-deployment, completed, cancelled) and is not a numeric transition id"
+                    || die "'$TARGET' is not a lifecycle position (triage, open, in-progress, awaiting-deployment, deferred, completed, cancelled) and is not a numeric transition id"
                 if [ "$DRY_RUN" = "1" ]; then
                     http GET "/issue/$1/transitions"
                     printf 'WOULD then POST the transition whose .to.name is %s\n' "$WANT_STATUS"

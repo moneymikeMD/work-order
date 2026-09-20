@@ -36,7 +36,11 @@ from datetime import date
 from fnmatch import fnmatch
 from pathlib import Path
 
-STAGES = ("open", "in-progress", "awaiting-deployment", "completed", "cancelled")
+STAGES = ("triage", "open", "in-progress", "awaiting-deployment", "deferred",
+          "completed", "cancelled")
+# MUST-46: at the entry state a ticket is not yet a contract, so only these
+# requirements bind there. Every other per-ticket check skips a triage ticket.
+TRIAGE_BINDS = ("MUST-1", "MUST-3", "MUST-4")
 TERMINAL = ("completed", "cancelled")
 PROFILES = ("minimal", "full", "unattended")
 SOURCES = ("file", "jira")
@@ -294,7 +298,7 @@ def load_set(root):
             for path in sorted(sub.rglob("*.md")):
                 if not path.name.endswith(".notes.md") and _is_ticket(path):
                     rel = path.relative_to(root)
-                    strays.append((str(rel), f"'{sub.name}/' is not one of the five stage directories"))
+                    strays.append((str(rel), f"'{sub.name}/' is not one of the seven stage directories"))
         for stage in present:
             for path in sorted((root / stage).rglob("*.md")):
                 if path.parent != root / stage and _is_ticket(path):
@@ -426,10 +430,15 @@ class Context:
         self.startable = [t for t in tickets if is_startable(t, self.by_id, today)]
 
 
-def per_ticket(fn):
+def per_ticket(fn, at_triage=False):
+    """Wrap a one-ticket check into a whole-set check. A ticket at `triage`
+    is skipped unless AT_TRIAGE, because [MUST-46] holds the entry state to
+    nothing but its identity, title and dates."""
     def run(ctx):
         out = []
         for t in ctx.tickets:
+            if t["_stage"] == "triage" and not at_triage:
+                continue
             msg = fn(t, ctx)
             if msg:
                 out.append(f"{t['_where']}: {msg}")
@@ -637,6 +646,17 @@ def check_one_representation(t, _ctx):
     return None
 
 
+def check_deferred_date(t, _ctx):
+    if t["_stage"] != "deferred":
+        return None
+    value = t.get("defer_until")
+    if not (isinstance(value, str) and value.strip()):
+        return "is deferred and carries no 'defer_until', so nothing says when it comes back"
+    if parse_iso(value) is None:
+        return f"is deferred and its 'defer_until' ({value!r}) is not an RFC 3339 full-date"
+    return None
+
+
 def check_cancelled_outcome(t, _ctx):
     if t["_stage"] != "cancelled":
         return None
@@ -804,8 +824,9 @@ def should_settle_in_ticket(t, _ctx):
 
 CHECKS = {
     "MUST-1": check_ids,
-    "MUST-3": per_ticket(lambda t, c: None if str(t.get("title") or "").strip() else "no 'title'"),
-    "MUST-4": per_ticket(check_dates),
+    "MUST-3": per_ticket(lambda t, c: None if str(t.get("title") or "").strip() else "no 'title'",
+                         at_triage=True),
+    "MUST-4": per_ticket(check_dates, at_triage=True),
     "MUST-6": per_ticket(check_tags_list),
     "MUST-7": per_ticket(check_verify_present),
     "MUST-8": per_ticket(check_verify_commands),
@@ -835,6 +856,7 @@ CHECKS = {
     "MUST-38": per_ticket(check_settled),
     "MUST-39": per_ticket(check_reserved_fields),
     "MUST-40": check_claim,
+    "MUST-47": per_ticket(check_deferred_date, at_triage=True),
     "SHOULD-1": per_ticket(should_id_form),
     "SHOULD-2": should_tag_vocabulary,
     "SHOULD-4": per_ticket(should_say_manual),
@@ -862,13 +884,16 @@ UNCHECKABLE = {
     "MUST-43": (DOCUMENT, "constrains a binding document, not a ticket set"),
     "MUST-44": (DOCUMENT, "constrains a binding document, not a ticket set"),
     "MUST-45": (DOCUMENT, "constrains this specification's own revisions"),
+    "MUST-46": (IMPLEMENTATION,
+                "constrains an implementation; this program never treats a triage "
+                "ticket as startable, and holds it to MUST-1, MUST-3 and MUST-4 only"),
     "SHOULD-3": (NOT_CHECKABLE, "whether 'verify' was run at the base state is not recorded in the tree"),
     "SHOULD-5": (NOT_CHECKABLE, "re-running 'verify' is the only way to learn this"),
     "SHOULD-6": (NOT_CHECKABLE, "whether 'touches' is generous enough is a judgement"),
     "SHOULD-10": (NOT_CHECKABLE, "which change carried a transition is a fact about history"),
 }
 
-LIFECYCLE_DEPENDENT = ("MUST-25",)
+LIFECYCLE_DEPENDENT = ("MUST-25", "MUST-47")
 
 # Requirements a source cannot present a violation of, each with the reason.
 # A binding that checks less than another one says so here and in its own
