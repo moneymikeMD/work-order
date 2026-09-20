@@ -5,6 +5,7 @@
 
 ```
 validate.py --profile minimal|full|unattended SET_DIR
+validate.py --source jira --fixture DIR --profile minimal|full|unattended
 validate.py --selftest
 ```
 
@@ -93,6 +94,45 @@ and the profile actually being validated. A claim that disagrees with the flag
 is a failure: the interesting case is a set that claims `unattended` in its
 README and is only ever validated at `minimal`.
 
+## Sources — `--source file|jira`
+
+The default is `file`, and every existing caller is unchanged by the other one
+existing.
+
+`--source jira` reads the same set through the
+[Jira binding](../plugins/work-order-jira/BINDING.md), from a directory of
+**recorded API responses** — `--fixture DIR`. It never reaches a live site,
+reads no credential and makes no network call, because a conformance check that
+needs one cannot run in an adopter's CI. See
+[`fixtures/jira/README.md`](fixtures/jira/README.md) for the directory's shape
+and how to record your own.
+
+The field mapping is not written twice. `conformance/jira_source.py` normalises
+a site's custom field ids onto `reference/issues.py`'s constants — resolving
+them by name from a recorded `GET /field`, per `[JIRA-8]` — and then calls that
+implementation's `jira_issue_to_ticket()`. What it adds is the **body**:
+`jira_issue_to_ticket()` sets it to the empty string because `issues.py`'s own
+checks never read one, and `[MUST-30]`, `[MUST-31]`, `[MUST-33]`, `[MUST-36]`,
+`[MUST-37]` and `[MUST-38]` are all checks on body text. `fields.description`
+is an Atlassian Document Format tree, and it is rendered to Markdown with its
+heading levels intact, which is what those checks match against.
+
+Two requirements report `not-checkable` under `--source jira` rather than a
+pass they did not earn, each with its reason printed in the report and stated
+in the binding's own "What this binding cannot satisfy" section:
+
+- **`[MUST-13]`** — a Jira textarea holds the same bytes for an empty
+  `touches` and an unfilled one, so "declared" cannot be read off a ticket. The
+  Space's `In Progress` transition requires the field instead, per `[JIRA-6]`,
+  which is stricter than the core requirement rather than weaker.
+- **`[MUST-26]`** — the lifecycle position is `fields.status` and nothing else,
+  and no field this binding reads can carry a second copy of it.
+
+The status map is `issues.py`'s, so the two template-derived aliases it carries
+(`To Do` → `open`, `Done` → `completed`) are accepted as well as the binding's
+five status names. Any other status is reported under `[MUST-25]` as a ticket
+with no lifecycle position, per `[JIRA-3]`, rather than guessed at.
+
 ## Layouts
 
 **Staged** — the file binding's layout, and the normal case. Stage directories
@@ -120,6 +160,9 @@ watched fail is indistinguishable from one that passes everything.
   MUST. Each is `conforming/` with exactly one edit, and fails exactly that one
   requirement at the profile the requirement itself declares.
 - **`violates-SHOULD-only/`** — reports SHOULD findings and exits 0.
+- **`jira/`** — the same evidence for the Jira binding: one conforming set of
+  recorded API responses and one negative fixture per requirement that binding
+  can present a violation of. See [`jira/README.md`](fixtures/jira/README.md).
 
 The headline fixture is `violates-MUST-9-verify-can-fail/`: a ticket whose only
 check ends `|| true`, so it cannot fail at the base state, states an observation
@@ -146,6 +189,12 @@ asserts:
    declares — the set of gating failures is precisely that one requirement.
    SHOULD findings alongside it are allowed and expected.
 7. `violates-SHOULD-only/` exits 0 and still reports.
+8. The same two properties for `--source jira`: `fixtures/jira/conforming/`
+   conforms at all three profiles with nothing `UNCHECKED`, and each
+   `fixtures/jira/violates-MUST-<n>-<slug>/` fails exactly its named
+   requirement. Plus one property the file binding has for free — that every
+   ticket arrived carrying its description as a body, which is the thing the
+   reference implementation's adapter drops.
 
 Run it after any change to the checks or the fixtures.
 

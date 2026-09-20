@@ -3,6 +3,7 @@
 requirements at a declared profile?
 
     validate.py --profile minimal|full|unattended SET_DIR
+    validate.py --source jira --fixture DIR --profile minimal|full|unattended
     validate.py --selftest
 
 SET_DIR is a ticket set in the file binding (bindings/file/BINDING.md): one
@@ -10,6 +11,11 @@ stage directory per lifecycle position, tickets as Markdown files with
 frontmatter. A directory holding ticket files and no stage directories at all
 is read as a flat set of `open` tickets, which is what a generator writing
 fresh tickets into an output directory produces.
+
+`--source jira` reads the same set through the Jira binding
+(plugins/work-order-jira/BINDING.md) instead, from a directory of recorded API
+responses — never from a live site, so a conformance check needs no credential
+and runs in CI. See conformance/fixtures/jira/README.md.
 
 Profile membership is computed from SPEC.md itself — each requirement carries
 one inline token naming the lowest profile it applies at, and the profiles
@@ -33,6 +39,7 @@ from pathlib import Path
 STAGES = ("open", "in-progress", "awaiting-deployment", "completed", "cancelled")
 TERMINAL = ("completed", "cancelled")
 PROFILES = ("minimal", "full", "unattended")
+SOURCES = ("file", "jira")
 EXECUTORS = ("agent", "human", "mixed")
 
 REQ_RE = re.compile(r"^\[(MUST|SHOULD)-(\d+)\] `(minimal|full|unattended)`")
@@ -305,6 +312,15 @@ def load_set(root):
     return tickets, strays, layout
 
 
+def claim_in(text, source):
+    """Return (major_minor, profile, source) for a conformance claim written in
+    TEXT, or None when it carries none."""
+    m = CLAIM_RE.search(text or "")
+    if m:
+        return f"{m.group(1)}.{m.group(2)}", m.group(3).lower(), source
+    return None
+
+
 def read_claim(root):
     """Return (major_minor, profile, source) for the set's written conformance
     claim, or None when it makes none on disk."""
@@ -312,9 +328,9 @@ def read_claim(root):
         path = root / name
         if not path.is_file():
             continue
-        m = CLAIM_RE.search(path.read_text(encoding="utf-8"))
-        if m:
-            return f"{m.group(1)}.{m.group(2)}", m.group(3).lower(), name
+        found = claim_in(path.read_text(encoding="utf-8"), name)
+        if found:
+            return found
     return None
 
 
@@ -391,7 +407,9 @@ def is_startable(t, by_id, today):
 
 
 class Context:
-    def __init__(self, tickets, strays, layout, root, profile, claim, version_mm):
+    def __init__(self, tickets, strays, layout, root, profile, claim, version_mm,
+                 source="file"):
+        self.source = source
         self.tickets = tickets
         self.strays = strays
         self.layout = layout
@@ -852,6 +870,22 @@ UNCHECKABLE = {
 
 LIFECYCLE_DEPENDENT = ("MUST-25",)
 
+# Requirements a source cannot present a violation of, each with the reason.
+# A binding that checks less than another one says so here and in its own
+# BINDING.md, rather than reporting a pass it did not earn.
+SOURCE_DISPOSITION = {
+    "jira": {
+        "MUST-13": (NOT_CHECKABLE,
+                    "a Jira textarea holds the same bytes for an empty list and an "
+                    "unfilled field, so 'declared' cannot be read off the ticket; the "
+                    "In Progress transition requires it instead ([JIRA-6])"),
+        "MUST-26": (NOT_CHECKABLE,
+                    "the position is fields.status and nothing else; no field this "
+                    "binding reads can carry a second copy of it (work-order-jira "
+                    "BINDING.md section 3)"),
+    },
+}
+
 
 def evaluate(ctx, reqs):
     """Return one row per in-profile requirement: (key, profile, status, note,
@@ -859,6 +893,10 @@ def evaluate(ctx, reqs):
     rows = []
     for req in reqs:
         if not req.in_profile(ctx.profile):
+            continue
+        disposed = SOURCE_DISPOSITION.get(ctx.source, {}).get(req.key)
+        if disposed:
+            rows.append((req.key, req.profile, disposed[0], disposed[1], []))
             continue
         if req.key in CHECKS:
             if ctx.layout == "flat" and req.key in LIFECYCLE_DEPENDENT:
@@ -919,12 +957,26 @@ def report(rows, ctx, version, quiet, out=sys.stdout, err=None):
     return 0
 
 
-def run(set_dir, profile, spec_path, version_path, quiet=False, out=sys.stdout, err=None):
+def run(set_dir, profile, spec_path, version_path, quiet=False, out=sys.stdout, err=None,
+        source="file", fixture=None):
     reqs = parse_spec(spec_path)
     version, version_mm = spec_version(version_path)
-    root = Path(set_dir)
-    tickets, strays, layout = load_set(root)
-    ctx = Context(tickets, strays, layout, root, profile, read_claim(root), version_mm)
+    if source == "jira":
+        here = str(Path(__file__).resolve().parent)
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        from jira_source import FixtureError, load_jira_set
+        root = Path(fixture)
+        try:
+            tickets, strays, layout, claim_text, claim_source = load_jira_set(root, STAGES)
+        except FixtureError as exc:
+            die(str(exc))
+        claim = claim_in(claim_text, claim_source) or read_claim(root)
+    else:
+        root = Path(set_dir)
+        tickets, strays, layout = load_set(root)
+        claim = read_claim(root)
+    ctx = Context(tickets, strays, layout, root, profile, claim, version_mm, source)
     rows = evaluate(ctx, reqs)
     return report(rows, ctx, version, quiet, out, err), rows
 
@@ -939,6 +991,11 @@ def main(argv):
     )
     parser.add_argument("set_dir", nargs="?", help="the ticket set's root directory")
     parser.add_argument("--profile", choices=PROFILES, help="the profile to validate at")
+    parser.add_argument("--source", choices=SOURCES, default="file",
+                        help="the binding the set is read through (default: file)")
+    parser.add_argument("--fixture", default=None,
+                        help="--source jira: a directory of recorded Jira API responses to "
+                             "read the set from; this program never reaches a live site")
     parser.add_argument("--spec", default=None, help="path to SPEC.md (default: beside this program)")
     parser.add_argument("--version-file", default=None, help="path to VERSION-spec")
     parser.add_argument("--quiet", action="store_true", help="print only failures and the summary")
@@ -953,10 +1010,22 @@ def main(argv):
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from selftest import selftest
         return selftest(spec_path, version_path)
-    if not args.set_dir or not args.profile:
-        parser.error("a set directory and --profile are both required (or use --selftest)")
+    if args.source == "jira":
+        if args.set_dir:
+            parser.error("--source jira reads the set from --fixture, not from a set directory")
+        if not args.fixture:
+            parser.error("--source jira needs --fixture DIR, a directory of recorded Jira API "
+                         "responses (see conformance/fixtures/jira/README.md)")
+        if not args.profile:
+            parser.error("--profile is required")
+    else:
+        if args.fixture:
+            parser.error("--fixture is only meaningful with --source jira")
+        if not args.set_dir or not args.profile:
+            parser.error("a set directory and --profile are both required (or use --selftest)")
 
-    rc, _ = run(args.set_dir, args.profile, spec_path, version_path, args.quiet)
+    rc, _ = run(args.set_dir, args.profile, spec_path, version_path, args.quiet,
+                source=args.source, fixture=args.fixture)
     return rc
 
 

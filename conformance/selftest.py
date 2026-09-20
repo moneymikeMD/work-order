@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-from validate import CHECKS, PROFILES, UNCHECKABLE, parse_spec, run
+from validate import CHECKS, PROFILES, SOURCE_DISPOSITION, UNCHECKABLE, parse_spec, run
 
 FIXTURE_RE = re.compile(r"^violates-MUST-(\d+)(?:-.*)?$")
 
@@ -30,9 +30,11 @@ class Results:
             print(f"FAIL {label}{': ' + detail if detail else ''}")
 
 
-def _validate(set_dir, profile, spec_path, version_path):
+def _validate(set_dir, profile, spec_path, version_path, source="file"):
     sink = io.StringIO()
-    rc, rows = run(set_dir, profile, spec_path, version_path, quiet=True, out=sink, err=sink)
+    kwargs = {"source": source, "fixture": set_dir} if source == "jira" else {}
+    rc, rows = run(None if source == "jira" else set_dir, profile, spec_path, version_path,
+                   quiet=True, out=sink, err=sink, **kwargs)
     failed = [r[0] for r in rows if r[2] == "FAIL"]
     reported = [r[0] for r in rows if r[2] == "report"]
     unchecked = [r[0] for r in rows if r[2] == "UNCHECKED"]
@@ -61,9 +63,9 @@ def _fixture_coverage(res, fixtures, reqs):
         m = FIXTURE_RE.match(path.name)
         if m:
             present[f"MUST-{m.group(1)}"] = path
-        elif path.name not in ("conforming", "violates-SHOULD-only"):
+        elif path.name not in ("conforming", "violates-SHOULD-only", "jira"):
             res.check(False, f"fixture directory '{path.name}' follows the naming convention",
-                      "expected conforming/, violates-SHOULD-only/ or violates-MUST-<n>-<slug>/")
+                      "expected conforming/, violates-SHOULD-only/, jira/ or violates-MUST-<n>-<slug>/")
 
     gating = sorted(k for k in CHECKS if k.startswith("MUST-"))
     missing = [k for k in gating if k not in present]
@@ -72,6 +74,54 @@ def _fixture_coverage(res, fixtures, reqs):
     res.check(not orphans, "every negative fixture names a requirement this program checks",
               f"orphans: {orphans}")
     return {k: (v, by_key[k].profile) for k, v in present.items() if k in by_key}
+
+
+def _jira(res, root, reqs, spec_path, version_path):
+    """The Jira binding reads the same specification through recorded API
+    responses, so the same two properties must hold there: a conforming set
+    passes, and each negative fixture fails exactly the requirement it names."""
+    by_key = {r.key: r for r in reqs}
+    if not root.is_dir():
+        res.check(False, "fixtures/jira/ exists")
+        return
+
+    for profile in PROFILES:
+        rc, failed, _, unchecked, _ = _validate(
+            root / "conforming", profile, spec_path, version_path, source="jira"
+        )
+        res.check(rc == 0 and not failed,
+                  f"fixtures/jira/conforming/ conforms at profile `{profile}`",
+                  f"MUST violated: {failed}")
+        res.check(not unchecked, f"no requirement is UNCHECKED for jira at profile `{profile}`",
+                  f"unchecked: {unchecked}")
+
+    disposed = set(SOURCE_DISPOSITION.get("jira", {}))
+    res.check(disposed <= set(CHECKS),
+              "every jira disposition names a requirement the file binding checks",
+              f"stray: {sorted(disposed - set(CHECKS))}")
+
+    negatives = sorted(p for p in root.iterdir() if p.is_dir() and FIXTURE_RE.match(p.name))
+    res.check(bool(negatives), "fixtures/jira/ ships at least one negative fixture")
+    for path in negatives:
+        key = f"MUST-{FIXTURE_RE.match(path.name).group(1)}"
+        if key not in by_key:
+            res.check(False, f"{path.name} names a requirement SPEC.md contains")
+            continue
+        profile = by_key[key].profile
+        rc, failed, _, _, _ = _validate(path, profile, spec_path, version_path, source="jira")
+        res.check(failed == [key] and rc == 1,
+                  f"jira/{path.name} fails exactly {key} at profile `{profile}`",
+                  f"gating failures were {failed} (rc {rc})")
+
+    # The body is what issues.py's adapter drops, so prove it survived rather
+    # than inferring it from a passing set.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from jira_source import load_jira_set
+    from validate import STAGES
+    tickets, _, _, _, _ = load_jira_set(root / "conforming", STAGES)
+    bodiless = [t["_where"] for t in tickets if "# " not in (t["_body"] or "")]
+    res.check(not bodiless, "every jira ticket carries its description as a Markdown body",
+              f"empty or heading-less: {bodiless}")
 
 
 def selftest(spec_path, version_path):
@@ -102,6 +152,8 @@ def selftest(spec_path, version_path):
         res.check(failed == [key] and rc == 1,
                   f"{path.name} fails exactly {key} at profile `{profile}`",
                   f"gating failures were {failed} (rc {rc})")
+
+    _jira(res, fixtures / "jira", reqs, spec_path, version_path)
 
     should_only = fixtures / "violates-SHOULD-only"
     if should_only.is_dir():
