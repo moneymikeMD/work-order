@@ -1,0 +1,10 @@
+{
+  "id": "EX-051",
+  "title": "The smallest decision create will write",
+  "problem": "A caller with a title and a target holds no rationale yet.",
+  "solution": "Write what there is; the fields with no value are not sent at all.",
+  "tags": ["work-order"],
+  "blocked_by": ["EX-050"],
+  "touches": [],
+  "executor": "agent"
+}

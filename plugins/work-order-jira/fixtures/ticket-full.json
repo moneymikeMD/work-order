@@ -1,0 +1,40 @@
+{
+  "decision_list_version": "0.1.0",
+  "source": "WO-050 — the create-path request fixture, not a recorded response",
+  "decisions": [
+    {
+      "id": "EX-050",
+      "title": "Populate every field this binding provisions",
+      "problem": "A create path that sends only a summary writes a bare title into a Space provisioned for seven custom fields, so the imported record carries none of the contract that made it a ticket.",
+      "solution": "Send the whole decision as one create request: the description headings, the labels, and each of the seven custom fields under the id this site assigns it.",
+      "rationale": [
+        {
+          "choice": "One field table, read by the script that creates the fields and by the script that fills them.",
+          "rejected": [
+            "A second hardcoded list in the create path: it drifts at the first rename.",
+            "Hardcoded customfield ids: a field id copied from one site is a wrong field on the next."
+          ]
+        }
+      ],
+      "out_of_scope": "Provisioning the Space, and linking blocked_by, which needs its target to exist first.",
+      "executor": "mixed",
+      "human_steps": [
+        "Create the Jira API token and export WORK_ORDER_JIRA_TOKEN.",
+        "Confirm the target project key before the first live run."
+      ],
+      "tags": ["work-order", "jira", "binding"],
+      "blocked_by": [],
+      "touches": [
+        "plugins/work-order-jira/provider.sh",
+        "plugins/work-order-jira/lib/common.sh"
+      ],
+      "appends": ["plugins/work-order-jira/BINDING.md"],
+      "verify": "plugins/work-order-jira/selftest.sh\nplugins/work-order-jira/provider.sh --dry-run create WO Task s \\\n  --ticket plugins/work-order-jira/fixtures/ticket-full.json",
+      "verify_fails_today": "create takes a summary and nothing else, so the dry-run body carries no description.",
+      "created": "2026-09-20",
+      "updated": "2026-09-20",
+      "defer_until": "2026-10-01",
+      "outcome": "Carried so this fixture exercises all seven provisioned fields."
+    }
+  ]
+}

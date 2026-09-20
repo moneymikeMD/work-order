@@ -50,34 +50,12 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$DIR/lib/common.sh"
 
-# Parallel newline-separated lists in one table order: bash 3.2 has no
-# associative arrays.
-FIELD_NAMES='touches
-executor
-verify
-human_steps
-appends
-defer_until
-outcome'
-FIELD_TYPE_KEYS='com.atlassian.jira.plugin.system.customfieldtypes:textarea
-com.atlassian.jira.plugin.system.customfieldtypes:select
-com.atlassian.jira.plugin.system.customfieldtypes:textarea
-com.atlassian.jira.plugin.system.customfieldtypes:textarea
-com.atlassian.jira.plugin.system.customfieldtypes:textarea
-com.atlassian.jira.plugin.system.customfieldtypes:datepicker
-com.atlassian.jira.plugin.system.customfieldtypes:textarea'
-# executor's searcherKey is multiselectsearcher, not selectsearcher: a select
-# field's PUT with selectsearcher is HTTP 400, measured live.
-FIELD_SEARCHER_KEYS='com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
-com.atlassian.jira.plugin.system.customfieldtypes:multiselectsearcher
-com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
-com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
-com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
-com.atlassian.jira.plugin.system.customfieldtypes:daterange
-com.atlassian.jira.plugin.system.customfieldtypes:textsearcher'
-EXECUTOR_OPTIONS='agent
-human
-mixed'
+# The one table lives in lib/common.sh, so provider.sh populates exactly the
+# fields this script creates.
+FIELD_NAMES="$WO_JIRA_FIELD_NAMES"
+FIELD_TYPE_KEYS="$WO_JIRA_FIELD_TYPE_KEYS"
+FIELD_SEARCHER_KEYS="$WO_JIRA_FIELD_SEARCHER_KEYS"
+EXECUTOR_OPTIONS="$WO_JIRA_EXECUTOR_OPTIONS"
 PROJECT_TEMPLATE_KEY='com.pyxis.greenhopper.jira:gh-simplified-scrum-classic'
 
 PROJECT_KEY=""

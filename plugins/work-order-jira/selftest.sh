@@ -13,6 +13,12 @@
 # GET /myself, a POST /field response — the stub builds one inline and is
 # marked SYNTHETIC at that line.
 #
+# The stub also keeps what a create sent and serves it back on the matching
+# GET, so a ticket can be created and then read back through the repo's own
+# Jira reader (conformance/jira_source.py) and compared with what was sent.
+# That reader is the one place the field mapping lives, so this file — not the
+# binding, which stays self-contained — depends on the repository around it.
+#
 # Usage: plugins/work-order-jira/selftest.sh
 
 set -uo pipefail
@@ -32,6 +38,11 @@ done
 [ -f "$COMMON" ] || { echo "$COMMON is missing" >&2; exit 2; }
 [ -f "$RULES" ]  || { echo "$RULES is missing" >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "jq is required to run this selftest" >&2; exit 2; }
+command -v python3 >/dev/null 2>&1 \
+    || { echo "python3 is required: the round trip reads back through conformance/" >&2; exit 2; }
+READER="$HERE/../../conformance/jira_source.py"
+[ -f "$READER" ] \
+    || { echo "$READER is missing: the round trip has no reader to read back through" >&2; exit 2; }
 
 N=0
 FAIL=0
@@ -186,7 +197,10 @@ case "$M:$P" in
     POST:/workflows/update) echo '{}' ;;
     POST:/workflows) wf_bulkget ;;
 
-    POST:/issue) fx issue.create.json ;;
+    POST:/issue)
+        # SYNTHETIC: the created body is kept so the GET below can serve it back.
+        printf '%s' "$B" > "$WO_TEST_WORK/created-issue.json"
+        fx issue.create.json ;;
     GET:/issue/*/transitions) fx issue.transitions.json ;;
     POST:/issue/*/transitions) echo '{}' ;;
     POST:/issue/*/comment) echo '{}' ;;
@@ -196,7 +210,17 @@ case "$M:$P" in
         else
             fx issue.status.json
         fi ;;
-    GET:/issue/*) fx issue.fetch.json ;;
+    GET:/issue/*)
+        if [ -f "$WO_TEST_WORK/created-issue.json" ]; then
+            # SYNTHETIC: the fields as sent, plus the four Jira maintains itself.
+            jq -c --arg k "${P#/issue/}" '{key: $k, fields: (.fields + {
+                status: {name: "Open"}, issuelinks: [],
+                created: "2026-09-20T09:00:00.000+0100",
+                updated: "2026-09-20T09:00:00.000+0100"})}' \
+                "$WO_TEST_WORK/created-issue.json"
+        else
+            fx issue.fetch.json
+        fi ;;
 
     *) printf 'HTTP 501\n{"stub":"no case for %s %s"}\n' "$M" "$P" >&2; exit 1 ;;
 esac
@@ -208,7 +232,7 @@ LOG=""
 reset_log() {
     LOG="$WORK/log.$1"
     : > "$LOG"
-    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK"/probe.*
+    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK"/probe.*
 }
 export WO_TEST_FX="$FX"
 export WO_TEST_WORK="$WORK"
@@ -327,6 +351,104 @@ contains "  citing the requirement" "MUST-3" "$OUT"
 reset_log create
 WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create ZZPROBE Task "A title" >/dev/null 2>&1
 contains "provider create sends project, issuetype and summary" '"summary":"A title"' "$(cat "$LOG")"
+
+# ---- 3b. provider.sh create --ticket ------------------------------------
+
+OUT=$(python3 "$HERE/../../decision-list/validate.py" "$FX/ticket-full.json" 2>&1); RC=$?
+eq "the create fixture is a decision list WO-009's own validator accepts" "0" "$RC"
+
+OUT=$(PATH="$FAKEBIN:$PATH" "$PROVIDER" --dry-run create ZZPROBE Task "s" \
+      --ticket "$FX/ticket-full.json" 2>&1); RC=$?
+eq "provider create --ticket --dry-run exits 0" "0" "$RC"
+contains "  sending a description" '"description"' "$OUT"
+contains "  with the problem as a heading Jira renders" '"text":"Problem"' "$OUT"
+contains "  and the ticket's tags as labels" '"labels":["work-order","jira","binding"]' "$OUT"
+not_contains "  resolving no credential" "atlassian.net" "$OUT"
+not_contains "  and never calling curl" "curl was called" "$OUT"
+
+TABLE=$(bash -c '. "'"$COMMON"'"; printf "%s\n" "$WO_JIRA_FIELD_NAMES"')
+for f in $TABLE; do
+    contains "  naming the $f field it would resolve" "\"<$f>\"" "$OUT"
+done
+
+reset_log create-ticket
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" \
+      create ZZPROBE Task "" --ticket "$FX/ticket-full.json" 2>&1); RC=$?
+eq "provider create --ticket against a provisioned site exits 0" "0" "$RC"
+contains "  resolving the field id this site assigns by name" '"customfield_10043"' "$(cat "$LOG")"
+contains "  including one outside the reference implementation's ids" '"customfield_10053"' "$(cat "$LOG")"
+contains "  taking the title from the ticket when SUMMARY is empty" \
+    '"summary":"Populate every field this binding provisions"' "$(cat "$LOG")"
+not_contains "  leaving no unresolved placeholder in the request" '"<touches>"' "$(cat "$LOG")"
+
+reset_log create-unprovisioned
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=live "$PROVIDER" --http "$STUB" \
+      create ZZPROBE Task "t" --ticket "$FX/ticket-full.json" 2>&1); RC=$?
+eq "provider create refuses to drop a field this site has not provisioned" "1" "$RC"
+contains "  naming the field and the fix" "run provision.sh" "$OUT"
+not_contains "  having created no half-populated issue" "POST /issue " "$(cat "$LOG")"
+
+jq '.decisions[0].tags = ["work order"]' "$FX/ticket-full.json" > "$WORK/bad-tag.json"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "t" --ticket "$WORK/bad-tag.json" 2>&1); RC=$?
+eq "provider create refuses a tag Jira cannot hold as a label" "1" "$RC"
+contains "  naming the tag" "work order" "$OUT"
+
+jq '.decisions = [.decisions[0], .decisions[0]]' "$FX/ticket-full.json" > "$WORK/two.json"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "t" --ticket "$WORK/two.json" 2>&1); RC=$?
+eq "provider create refuses a decision list holding more than one decision" "1" "$RC"
+
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$FX/ticket-minimal.json" 2>&1); RC=$?
+eq "provider create writes a ticket carrying only some of the fields" "0" "$RC"
+contains "  declaring the blocked_by it does not write" "second pass" "$OUT"
+not_contains "  and sending no field the ticket has no value for" "<outcome>" "$OUT"
+
+reset_log create-roundtrip
+WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$STUB" GET /field > "$WORK/field.list.json" 2>/dev/null
+WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" \
+    create ZZPROBE Task "" --ticket "$FX/ticket-full.json" >/dev/null 2>&1
+WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" fetch ZZPROBE-1 \
+    > "$WORK/fetched.json" 2>/dev/null
+ROUNDTRIP=$(python3 - "$HERE/../.." "$WORK/field.list.json" "$WORK/fetched.json" \
+    "$FX/ticket-full.json" <<'PY'
+import json, sys
+from pathlib import Path
+
+root, fieldlist, fetched, source = (Path(a) for a in sys.argv[1:5])
+sys.path.insert(0, str(root / "conformance"))
+import jira_source
+
+ids = jira_source.resolve_field_ids(json.loads(fieldlist.read_text()))
+got = jira_source.issue_to_ticket(json.loads(fetched.read_text()), ids)
+want = json.loads(source.read_text())["decisions"][0]
+
+diffs = []
+
+
+def same(name, sent, read_back):
+    if sent != read_back:
+        diffs.append(f"{name}: sent {sent!r}, read back {read_back!r}")
+
+
+for name in ("touches", "appends", "human_steps"):
+    same(name, want.get(name) or [], got.get(name) or [])
+# Jira serves labels sorted, so tags round-trip as a set, not a sequence.
+same("tags", sorted(want.get("tags") or []), sorted(got.get("tags") or []))
+for name in ("title", "verify", "executor", "outcome"):
+    same(name, want.get(name) or "", got.get(name) or "")
+same("defer_until", want.get("defer_until"), got.get("defer_until"))
+
+body = got.get("_body") or ""
+for head in ("## Problem", "## Solution", "## Decisions", "## Out of scope"):
+    if head not in body:
+        diffs.append(f"description lost the {head!r} heading")
+for name in ("problem", "solution", "out_of_scope"):
+    if (want.get(name) or "") not in body:
+        diffs.append(f"description lost the {name} text")
+
+print("ROUNDTRIP OK" if not diffs else "; ".join(diffs))
+PY
+)
+eq "a ticket survives create then fetch unchanged" "ROUNDTRIP OK" "$ROUNDTRIP"
 
 # ---- 4. workflow-apply.sh ----------------------------------------------
 
