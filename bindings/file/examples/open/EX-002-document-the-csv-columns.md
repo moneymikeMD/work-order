@@ -16,9 +16,9 @@ verify: |
   grep -c '^| `name` ' docs/export.md >/dev/null
   grep -c '^| `created` ' docs/export.md >/dev/null
   python3 -m ex.cli export --format csv --limit 1 | head -1 | grep -c '^id,name,created$'
-  # Today docs/export.md does not exist, so all four checks fail. The last
-  # line is what keeps the table honest: it fails if the writer's header and
-  # the documented columns ever disagree.
+  # Today docs/export.md does not exist, so the first four checks fail. The
+  # last line is what keeps the table honest: it fails if the writer's header
+  # and the documented columns ever disagree.
 ---
 
 ## Problem

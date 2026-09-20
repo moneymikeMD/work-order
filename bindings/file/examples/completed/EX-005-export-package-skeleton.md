@@ -13,14 +13,14 @@ appends:
   - CHANGELOG.md
 verify: |
   test -f src/export/__init__.py
-  python3 -c "import export; print(export.__name__)" | grep -c '^export$' >/dev/null
+  PYTHONPATH=src python3 -c "import export" && echo IMPORTED
   test "$(grep -c 'def write_' src/ex/cli.py)" = 0
   # Today there is no src/export/ at all and every writer is a function in
   # src/ex/cli.py, so the first check fails and the third finds four matches.
 outcome: |
   Landed as one commit. The writers moved verbatim; the only edit was the
-  import line in src/ex/cli.py. EX-001 now has somewhere to put a second
-  format without growing the CLI module further.
+  import line in src/ex/cli.py. A second format can now be added without
+  growing the CLI module further.
 ---
 
 ## Problem
