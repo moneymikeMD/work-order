@@ -69,7 +69,14 @@ DONE = ["completed", "cancelled"]
 # awaiting-deployment still has work left (the deploy itself); leaving it
 # out of PENDING strands dependents and waves() reports a phantom cycle.
 PENDING = ["open", "in-progress", "awaiting-deployment"]
-WORKABLE = PENDING
+# Dispatchable stages. awaiting-deployment is deliberately not one: the branch
+# already landed and was deleted, so the branch-exists refusal does not fire
+# and a re-dispatch redoes merged work on a fresh branch.
+WORKABLE = ["open", "in-progress"]
+# Stages that satisfy a blocked_by. awaiting-deployment counts — its code is
+# merged, only the deploy is owed — and it must, now that it is no longer
+# scheduled into a wave to unblock its dependents as a side effect.
+RESOLVING = DONE + ["awaiting-deployment"]
 
 
 def die(msg):
@@ -349,7 +356,13 @@ def jira_issue_to_ticket(issue):
     }
 
 
-def _jira_shadow_for_blocker(inward_issue):
+def _jira_project_of(key):
+    """The project prefix of a Jira key: 'LAB-227' -> 'LAB'."""
+    key = str(key or "")
+    return key.rsplit("-", 1)[0] if "-" in key else ""
+
+
+def _jira_shadow_for_blocker(inward_issue, fetched_projects):
     """A blocked_by target that the one JQL fetch excluded on purpose — it
     only asks for status not in (Completed, Cancelled), so a blocker that IS
     completed/cancelled never appears as its own issue in `issues`. Without
@@ -363,11 +376,26 @@ def _jira_shadow_for_blocker(inward_issue):
     maps to a DONE stage; anything else is left alone and surfaces through
     lint's normal "blocked_by '...' does not exist" check rather than being
     guessed at, since the nested fields are not guaranteed complete for a
-    live (not-Completed/Cancelled) issue outside the fetch scope."""
+    live (not-Completed/Cancelled) issue outside the fetch scope.
+
+    A blocker in a project the fetch never asked for is the other case: the
+    JQL is project-scoped, so its key cannot be in `issues` whatever its
+    status, and the nested status is the only evidence there is. It is taken
+    as-is rather than left to lint's "does not exist", which is wrong about
+    it. statusCategory settles Done-ness because another project's workflow
+    may name its statuses anything; a non-Done external blocker gets a stage
+    outside both WORKABLE and DONE, so it blocks without ever dispatching."""
     key = inward_issue.get("key")
-    status = ((inward_issue.get("fields") or {}).get("status") or {}).get("name", "")
+    if not key:
+        return None
+    jira_status = (inward_issue.get("fields") or {}).get("status") or {}
+    status = jira_status.get("name", "")
     stage = JIRA_STATUS_TO_STAGE.get(status)
-    if not key or stage not in DONE:
+    external = _jira_project_of(key) not in fetched_projects
+    if external:
+        done = stage in DONE or (jira_status.get("statusCategory") or {}).get("key") == "done"
+        stage = "completed" if done else f"jira-external:{status or '(none)'}"
+    elif stage not in DONE:
         return None
     return {
         "id": key, "title": "", "created": "", "updated": "",
@@ -377,6 +405,7 @@ def _jira_shadow_for_blocker(inward_issue):
         # Resolution stand-in only: lint()/board() skip it, and its stage is
         # never in WORKABLE, so waves()/nxt() need no special case.
         "_shadow": True,
+        "_external": external,
     }
 
 
@@ -393,6 +422,9 @@ def load_jira(jira_api, fixture):
 
     tickets = [jira_issue_to_ticket(i) for i in issues]
     have = {t["id"] for t in tickets}
+    # Derived from what came back, not from JIRA_PROJECT_KEY: it is the fetch's
+    # actual reach that decides whether a blocker could have been in it.
+    fetched_projects = {_jira_project_of(t["id"]) for t in tickets if t.get("id")}
     shadows = {}
     for issue in issues:
         for link in (issue.get("fields") or {}).get("issuelinks") or []:
@@ -401,7 +433,7 @@ def load_jira(jira_api, fixture):
             inward = link.get("inwardIssue")
             if not inward or inward.get("key") in have:
                 continue
-            shadow = _jira_shadow_for_blocker(inward)
+            shadow = _jira_shadow_for_blocker(inward, fetched_projects)
             if shadow:
                 shadows[shadow["id"]] = shadow
     tickets.extend(shadows.values())
@@ -423,6 +455,28 @@ def has_executor(t):
     matters most is a ticket captured from a chat conversation with only a
     title and description, before anyone reviewed its frontmatter."""
     return bool(t.get("executor"))
+
+
+_PATH_LIKE = re.compile(r"^[\w.@-]+\.\w+$")
+
+
+def _path_like(s):
+    """Could this name a file? A separator, a glob metacharacter, or a bare
+    filename with an extension. A prose annotation has none of the three."""
+    s = s.strip()
+    return bool(s) and ("/" in s or "*" in s or "?" in s or bool(_PATH_LIKE.match(s)))
+
+
+def _comma_joined_paths(entry):
+    """The paths in a touches item written as one comma-separated line, or []
+    for an ordinary single path. A path with a parenthetical annotation ("a/b
+    (untracked, outside every repo)") has one path-like piece, not two, so it
+    is not mistaken for a list."""
+    if "," not in entry:
+        return []
+    parts = [p.strip() for p in entry.split(",")]
+    paths = [p for p in parts if _path_like(p)]
+    return paths if len(paths) > 1 else []
 
 
 def overlap(a, b):
@@ -555,6 +609,10 @@ def lint(tickets, root):
         for dep in t.get("blocked_by") or []:
             if dep not in ids:
                 errs.append(f"{tid}: blocked_by '{dep}' does not exist")
+            dept = next((x for x in tickets if x.get("id") == dep), {})
+            if dept.get("_external") and dept["_stage"] not in RESOLVING:
+                warns.append(f"{tid}: blocked_by '{dep}' is in another project, "
+                             f"outside this fetch, and is not Done — not startable")
             if dep == tid:
                 errs.append(f"{tid}: blocked by itself")
 
@@ -574,6 +632,14 @@ def lint(tickets, root):
                 errs.append(f"{tid}: executor is {ex} but touches is unset — "
                             f"parallel safety cannot be checked")
 
+        for path in t.get("touches") or []:
+            joined = _comma_joined_paths(path)
+            if joined:
+                errs.append(f"{tid}: touches entry '{path}' is {len(joined)} "
+                            f"comma-separated paths on one line, not one path — "
+                            f"split it, or nothing matches it and every changed "
+                            f"file reads UNDECLARED")
+
         if stage == "completed" and t.get("blocked_by"):
             unresolved = [d for d in t["blocked_by"]
                           if next((x for x in tickets if x.get("id") == d), {}).get("_stage") not in DONE]
@@ -591,7 +657,7 @@ def lint(tickets, root):
             errs.append(f"{tid}: duplicated across {', '.join(paths)}")
 
     startable = [t for t in tickets if t["_stage"] in WORKABLE
-                 and all(next((x for x in tickets if x.get("id") == d), {}).get("_stage") in DONE
+                 and all(next((x for x in tickets if x.get("id") == d), {}).get("_stage") in RESOLVING
                          for d in (t.get("blocked_by") or []))]
     for i, a in enumerate(startable):
         for b in startable[i + 1:]:
@@ -685,7 +751,7 @@ def waves(tickets, root):
                and has_executor(t)]
 
     def resolved(dep):
-        return by_id.get(dep, {}).get("_stage") in DONE
+        return by_id.get(dep, {}).get("_stage") in RESOLVING
 
     remaining = list(pending)
     done = {t["id"] for t in tickets if t["_stage"] in DONE}
@@ -792,7 +858,7 @@ def board(tickets, root):
             else:
                 ex = {"agent": "", "human": "  [human]", "mixed": "  [mixed]"}.get(t.get("executor"), "")
             blocked = t.get("blocked_by") or []
-            b = f"  blocked_by {','.join(blocked)}" if blocked and stage in WORKABLE else ""
+            b = f"  blocked_by {','.join(blocked)}" if blocked and stage in PENDING else ""
             defer = f"  deferred until {t['defer_until']}" if is_deferred(t) else ""
             print(f"  {t.get('id','?'):<10} {t.get('title','')}{ex}{b}{defer}{epic_label(t, rollup)}")
 
@@ -821,7 +887,7 @@ def nxt(tickets, root):
             continue
         if not has_executor(t):
             continue
-        if all(by_id.get(d, {}).get("_stage") in DONE for d in (t.get("blocked_by") or [])):
+        if all(by_id.get(d, {}).get("_stage") in RESOLVING for d in (t.get("blocked_by") or [])):
             out.append(t)
     if not out:
         print("nothing startable — every open ticket is blocked")
@@ -940,6 +1006,7 @@ def selftest():
                          f"{board_count} total — shadow stand-in counted inconsistently")
 
     failures.extend(_scope_selftest())
+    failures.extend(_jira_fixture_selftest())
 
     if failures:
         print("SELFTEST FAILED")
@@ -949,8 +1016,89 @@ def selftest():
     print("SELFTEST OK — no-executor ticket excluded from next/waves, "
           "flagged [?] not startable: no executor in board; Done status "
           "maps to completed; lint/board ticket counts agree; scope "
-          "classifies touches/appends/UNDECLARED and exits 0/1/2")
+          "classifies touches/appends/UNDECLARED and exits 0/1/2; "
+          "awaiting-deployment is not dispatched but still resolves a "
+          "blocked_by; a cross-project blocker is external, not missing; "
+          "a comma-separated touches line is rejected")
     return 0
+
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "fixtures")
+
+
+def _jira_fixture_selftest():
+    """The three jira-mode defects of WO-021, each against a fixture derived
+    from a captured /rest/api/3 response rather than hand-typed. Offline:
+    load_jira() reads the file and never runs the jira-api wrapper."""
+    import io
+    import contextlib
+
+    def capture(fn, tickets):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = fn(tickets, "selftest")
+        return code, buf.getvalue()
+
+    failures = []
+
+    def load(name):
+        path = os.path.join(FIXTURES, name)
+        if not os.path.exists(path):
+            failures.append(f"fixture missing: {path}")
+            return None
+        return load_jira(None, path)
+
+    tickets = load("awaiting-deployment.json")
+    if tickets:
+        _, next_out = capture(nxt, tickets)
+        _, waves_out = capture(waves, tickets)
+        _, board_out = capture(board, tickets)
+        if "PROJ-42" in next_out:
+            failures.append("next: awaiting-deployment PROJ-42 is startable")
+        if "PROJ-42" in waves_out:
+            failures.append("waves: awaiting-deployment PROJ-42 was dispatched")
+        if "PROJ-43" not in next_out:
+            failures.append("next: open control PROJ-43 missing")
+        if "PROJ-44" not in next_out:
+            failures.append("next: PROJ-44 stranded behind awaiting-deployment "
+                            "PROJ-42, whose code is already merged")
+        if "cycle" in waves_out:
+            failures.append(f"waves: phantom cycle reported: {waves_out!r}")
+        if "PROJ-42" not in board_out:
+            failures.append("board: awaiting-deployment PROJ-42 stopped showing")
+
+    tickets = load("cross-project-blocked-by.json")
+    if tickets:
+        code, lint_out = capture(lint, tickets)
+        _, next_out = capture(nxt, tickets)
+        if "does not exist" in lint_out:
+            failures.append(f"lint: cross-project blocker read as a dangling "
+                            f"id: {lint_out!r}")
+        if code != 0:
+            failures.append(f"lint: cross-project fixture exited {code}, want 0")
+        if "PROJ-45" in next_out:
+            failures.append("next: PROJ-45 is startable although external "
+                            "blocker LAB-227 is In Progress")
+        if "PROJ-46" not in next_out:
+            failures.append("next: PROJ-46 not startable although external "
+                            "blocker LAB-228 is Done")
+
+    tickets = load("comma-separated-touches.json")
+    if tickets:
+        code, lint_out = capture(lint, tickets)
+        if code != 1 or "comma-separated" not in lint_out:
+            failures.append(f"lint: comma-separated touches accepted "
+                            f"(exit {code}): {lint_out!r}")
+
+    # The narrowing: only ANOTHER project's blocker is taken on its nested
+    # status. A same-project non-Done key is still a genuine dangling id.
+    same = {"key": "PROJ-99", "fields": {"status": {
+        "name": "In Progress", "statusCategory": {"key": "indeterminate"}}}}
+    if _jira_shadow_for_blocker(same, {"PROJ"}) is not None:
+        failures.append("shadow: a same-project non-Done blocker became a "
+                        "shadow instead of a 'does not exist' error")
+
+    return failures
 
 
 def _scope_selftest():
