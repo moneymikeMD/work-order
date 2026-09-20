@@ -7,7 +7,11 @@
   },
   "homepage": "https://github.com/moneymikeMD/work-order",
   "license": "MIT",
-  "keywords": ["work-order", "jira", "tickets"],
+  "keywords": [
+    "work-order",
+    "jira",
+    "tickets"
+  ],
   "dependencies": [
     {
       "name": "work-order",
