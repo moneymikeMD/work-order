@@ -171,12 +171,12 @@ EOF
     echo
     # Announced, never invoked: workflow-apply.sh's reads are not gated by its
     # own --dry-run, so calling it here would issue real credentialed GETs.
-    echo "4. would run (announced, not invoked here):"
+    echo "5. would run (announced, not invoked here):"
     echo "   $WORKFLOW_APPLY $PROJECT_KEY --http $HTTP --rules $RULES_PATH --yes"
     echo "   statuses: Open, In Progress, Awaiting Deployment, Completed, Cancelled"
     echo "   validators: from $RULES_PATH"
     echo
-    echo "5. would add each field to every screen of the project's issue-type screen scheme (screen and tab ids are only knowable from a live read):"
+    echo "4. would add each field to every screen of the project's issue-type screen scheme (screen and tab ids are only knowable from a live read):"
     echo "   GET /issuetypescreenscheme/project?projectId=<project id>"
     echo "   GET /issuetypescreenscheme/mapping?issueTypeScreenSchemeId=<id>"
     echo "   GET /screenscheme?id=<a>&id=<b>  (one call, repeated id= params — there is no per-id GET)"
@@ -347,8 +347,22 @@ field_lookup() {
 
 RESOLVED_FIELD_IDS=""
 
+# read_all_fields — /field plus /field/search, deduplicated by id.
+# GET /field omits a custom field that has no screen context, so a field
+# created earlier in this same run is invisible to it and a lookup that
+# trusted it alone would create a second one.
+read_all_fields() {
+    local base search
+    base=$(jira_get /field) || return 1
+    search=$(jira_get "/field/search?type=custom&maxResults=200") || return 1
+    jq -s '(.[0] + ((.[1].values // []) | map(. + {custom: true})))
+           | unique_by(.id)' \
+        <(printf '%s' "$base") <(printf '%s' "$search")
+}
+
+
 ensure_fields() {
-    ALL_FIELDS_JSON=$(jira_get /field) || die "could not read /field — cannot discover custom field ids by name"
+    ALL_FIELDS_JSON=$(read_all_fields) || die "could not read the site's fields — cannot discover custom field ids by name"
     local name type searcher lookup found_id found_type new_json ids=""
     while IFS="$(printf '\t')" read -r name type searcher; do
         [ -n "$name" ] || continue
@@ -366,7 +380,7 @@ ensure_fields() {
             new_json=$(jira_write POST /field "$new_json") || die "POST /field failed for '$name'"
             found_id=$(printf '%s' "$new_json" | jq -r '.id // empty') || die "could not parse .id from the create-field response for '$name'"
             [ -n "$found_id" ] || die "POST /field succeeded for '$name' but returned no .id"
-            ALL_FIELDS_JSON=$(jira_get /field) || die "could not re-read /field after creating '$name'"
+            ALL_FIELDS_JSON=$(read_all_fields) || die "could not re-read the site's fields after creating '$name'"
         fi
         ensure_field_searchable "$name" "$found_id" "$searcher"
         ids="$ids$found_id
@@ -495,8 +509,8 @@ EOF
 # exist yet fails the whole step.
 ensure_project
 ensure_fields
-apply_workflow
 add_fields_to_screens
+apply_workflow
 echo
 echo "Jira Space '$PROJECT_KEY' now conforms to work-order at the 'full' profile. Custom fields:"
 print_field_table
