@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/moneymikeMD/work-order/compare/v1.4.0...v1.5.0) (2026-09-20)
+
+
+### Features
+
+* the lifecycle is seven positions, with triage as the entry state ([#36](https://github.com/moneymikeMD/work-order/issues/36)) ([6778a19](https://github.com/moneymikeMD/work-order/commit/6778a1965bf7ee88b4c3484a54d0618f943431a9))
+
 ## [1.4.0](https://github.com/moneymikeMD/work-order/compare/v1.3.0...v1.4.0) (2026-09-20)
 
 

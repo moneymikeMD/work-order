@@ -1,6 +1,6 @@
 {
   "name": "work-order",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "The work-order ticket-as-contract specification, its reference implementation, the file binding, and the conformance validator.",
   "author": {
     "name": "Mike Garrett"
