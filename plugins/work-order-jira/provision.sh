@@ -158,15 +158,7 @@ if [ "$DRY_RUN" = "1" ]; then
     "$HTTP" --dry-run POST /project "$CREATE_BODY"
     echo
     echo "2. would ASSERT on the readback: .style == \"classic\", .projectTypeKey == \"software\", an issue type at .hierarchyLevel == 1."
-    echo
-    # Announced, never invoked: workflow-apply.sh's reads are not gated by its
-    # own --dry-run, so calling it here would issue real credentialed GETs.
-    echo "3. would run (announced, not invoked here):"
-    echo "   $WORKFLOW_APPLY $PROJECT_KEY --http $HTTP --rules $RULES_PATH --yes"
-    echo "   statuses: Open, In Progress, Awaiting Deployment, Completed, Cancelled"
-    echo "   validators: from $RULES_PATH"
-    echo
-    echo "4. would discover-or-create these custom fields (ids are per-site and never hardcoded):"
+    echo "3. would discover-or-create these custom fields (ids are per-site and never hardcoded):"
     "$HTTP" --dry-run GET /field
     while IFS="$(printf '\t')" read -r fname ftype fsearcher; do
         [ -n "$fname" ] || continue
@@ -197,6 +189,14 @@ EOF
     done <<EOF
 $(paste <(printf '%s\n' "$FIELD_NAMES") <(printf '%s\n' "$FIELD_SEARCHER_KEYS"))
 EOF
+    echo
+    echo
+    # Announced, never invoked: workflow-apply.sh's reads are not gated by its
+    # own --dry-run, so calling it here would issue real credentialed GETs.
+    echo "4. would run (announced, not invoked here):"
+    echo "   $WORKFLOW_APPLY $PROJECT_KEY --http $HTTP --rules $RULES_PATH --yes"
+    echo "   statuses: Open, In Progress, Awaiting Deployment, Completed, Cancelled"
+    echo "   validators: from $RULES_PATH"
     echo
     echo "5. would add each field to every screen of the project's issue-type screen scheme (screen and tab ids are only knowable from a live read):"
     echo "   GET /issuetypescreenscheme/project?projectId=<project id>"
@@ -512,9 +512,12 @@ EOF
     printf '%s' "$rows" | table "$(printf 'ID\tNAME\tTYPE')"
 }
 
+# Fields before the workflow: workflow-rules.json resolves {field:NAME}
+# placeholders against the site, so a validator naming a field that does not
+# exist yet fails the whole step.
 ensure_project
-apply_workflow
 ensure_fields
+apply_workflow
 add_fields_to_screens
 echo
 echo "Jira Space '$PROJECT_KEY' now conforms to work-order at the 'full' profile. Custom fields:"
