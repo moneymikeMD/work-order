@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.3.0...work-order-jira--v0.4.0) (2026-09-20)
+
+
+### Features
+
+* **work-order-jira:** create writes the whole ticket, not just a summary ([#31](https://github.com/moneymikeMD/work-order/issues/31)) ([9a953e3](https://github.com/moneymikeMD/work-order/commit/9a953e3ef1271f25fe30260795bea9d9a4bc61a3))
+
+
+### Bug Fixes
+
+* **jira:** add the fields to screens before the workflow, and see fields /field hides ([#32](https://github.com/moneymikeMD/work-order/issues/32)) ([172a551](https://github.com/moneymikeMD/work-order/commit/172a551f10042b28c6b7b9e0c6601a8da26cd15e))
+* **jira:** create the custom fields before applying the workflow ([#28](https://github.com/moneymikeMD/work-order/issues/28)) ([644ba32](https://github.com/moneymikeMD/work-order/commit/644ba32068d4bf8925d4ea702cc715f4014a460d))
+
 ## [0.3.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.2.0...work-order-jira--v0.3.0) (2026-09-20)
 
 
