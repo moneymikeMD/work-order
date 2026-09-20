@@ -9,6 +9,36 @@ permissions:
   contents: read
 
 jobs:
+  selftests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.x'
+      - name: jq is present, since every stub depends on it
+        run: jq --version
+      - name: Run every shell selftest found in the tree
+        run: |
+          set -euo pipefail
+          found=0
+          fail=0
+          while IFS= read -r t; do
+            found=$((found + 1))
+            echo "=== $t"
+            if ! "$t"; then
+              echo "FAILED: $t" >&2
+              fail=1
+            fi
+          done < <(find . -name '*selftest*.sh' -not -path './.git/*' | sort)
+          [ "$found" -gt 0 ] || { echo "no selftest found — the glob is wrong" >&2; exit 1; }
+          exit "$fail"
+      - name: Run the Python selftest entry points
+        run: |
+          set -euo pipefail
+          python3 reference/issues.py selftest
+          python3 conformance/validate.py --selftest
+
   validate:
     runs-on: ubuntu-latest
     steps:
