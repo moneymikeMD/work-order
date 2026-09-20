@@ -19,7 +19,7 @@
         }
       ],
       "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true
+      "initial-version": "0.1.0"
     },
     "plugins/work-order-jira": {
       "release-type": "simple",
@@ -34,7 +34,7 @@
         }
       ],
       "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true
+      "initial-version": "0.1.0"
     }
   }
 }
