@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.5.0...work-order-jira--v0.5.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* install work-order plugins from moneymike-plugins ([#41](https://github.com/moneymikeMD/work-order/issues/41)) ([1a569a7](https://github.com/moneymikeMD/work-order/commit/1a569a7507d8ac7e0d00d2b2eae8fec1e9753350))
+
 ## [0.5.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.4.0...work-order-jira--v0.5.0) (2026-09-20)
 
 
