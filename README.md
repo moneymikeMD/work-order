@@ -13,14 +13,15 @@ tickets live in a tracker instead.
 ## Install
 
 ```
-/plugin marketplace add moneymikeMD/work-order
-/plugin install work-order@work-order
+/plugin marketplace add moneymikeMD/moneymike-plugins
+/plugin install work-order@moneymike-plugins
 ```
 
-The marketplace publishes the `work-order` plugin from this repository's root,
-so installing it copies the whole tree — a Claude Code plugin install carries
+The [moneymike-plugins](https://github.com/moneymikeMD/moneymike-plugins)
+marketplace publishes the `work-order` plugin from this repository's root, so
+installing it copies the whole tree — a Claude Code plugin install carries
 exactly the subtree its marketplace entry names and nothing else. The Jira
-binding installs separately as `work-order-jira@work-order`.
+binding installs separately as `work-order-jira@moneymike-plugins`.
 
 ## What installing it gets you
 
