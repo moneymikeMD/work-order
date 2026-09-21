@@ -47,6 +47,35 @@ running the validator directly would.
 - It never invents a value a decision list did not supply. A decision missing
   a required field is a refusal, not a guess.
 
+## The contract lives in the fields, never in the prose
+
+A ticket has two representations — the body a human reads and the structured
+fields every tool reads — and nothing makes them agree by itself. Writing
+`verify:`, `executor:`, `touches:`, `blocked_by:` or `human_steps:` as a line
+of the body is not a way of setting that field. The field stays empty, `lint`
+sees a ticket with no contract, `next` and `waves` drop it, and the ticket sits
+unworkable while the set reports clean — the reader is the only party who ever
+saw the contract.
+
+So: put the value in the field. If a decision list carries one of those values
+as prose, the fix is the field, not a note in the body. `reference/issues.py
+lint` reports a prose contract line over an empty field as an **ERROR**, naming
+both the line and the field, and for `blocked_by` it also reports a prose line
+that disagrees with the ids the field carries. A body may of course *discuss*
+verification or blockers; what it may not do is be the only place they are
+stated.
+
+Three more shapes `lint` now refuses, for the same reason — an absent value is
+indistinguishable from a correct one, so silence reads as a pass:
+
+- an `agent` or `mixed` ticket whose `touches` is **empty**, not merely unset —
+  an empty Jira textarea parses to `[]`, which reads as "collides with
+  nothing";
+- a ticket past `triage` and not yet closed with **no executor at all** —
+  nothing can pick it up, so it is reported as declared-but-undispatchable
+  rather than only dropped from `next`;
+- a `touches` item holding two or more comma-separated paths on one line.
+
 ## Extending the format
 
 A decision object may carry fields beyond those `decision-list/FORMAT.md`

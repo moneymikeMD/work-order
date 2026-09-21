@@ -195,7 +195,7 @@ JIRA_FIELD_DEFER_UNTIL = "customfield_10048"
 
 JIRA_FIELDS = ",".join([
     "summary", "status", "labels", "issuelinks", "created", "updated", "parent",
-    "issuetype",
+    "issuetype", "description",
     JIRA_FIELD_TOUCHES, JIRA_FIELD_VERIFY, JIRA_FIELD_HUMAN_STEPS,
     JIRA_FIELD_APPENDS, JIRA_FIELD_EXECUTOR, JIRA_FIELD_DEFER_UNTIL,
 ])
@@ -384,7 +384,9 @@ def jira_issue_to_ticket(issue):
         "defer_until": f.get(JIRA_FIELD_DEFER_UNTIL),
         "_path": key,
         "_stage": stage,
-        "_body": "",
+        # The description is read for the prose-contract check, which is the
+        # only reason a Jira ticket carries a body at all.
+        "_body": _adf_text(f.get("description")),
     }
 
 
@@ -487,6 +489,66 @@ def has_executor(t):
     matters most is a ticket captured from a chat conversation with only a
     title and description, before anyone reviewed its frontmatter."""
     return bool(t.get("executor"))
+
+
+CONTRACT_FIELDS = ("verify", "executor", "touches", "blocked_by", "human_steps")
+
+_PROSE_CONTRACT = re.compile(
+    r"^\s*[-*>\s]*[*_`]*\s*(" + "|".join(CONTRACT_FIELDS) + r")[*_`]*\s*:",
+    re.IGNORECASE)
+
+
+def _clip(s, n=80):
+    s = " ".join(str(s or "").split())
+    return s if len(s) <= n else s[:n - 1] + "…"
+
+
+def prose_contract_fields(body):
+    """Contract field names restated as prose in a ticket's body, as
+    [(field, line)] in order of appearance. A ticket has two representations
+    and nothing else makes them agree: a reader sees `verify: ...` in the
+    description and believes the ticket is contracted, while every tool reads
+    the empty structured field and drops the ticket silently."""
+    out = []
+    for line in (body or "").splitlines():
+        m = _PROSE_CONTRACT.match(line)
+        if m:
+            out.append((m.group(1).lower(), line.strip()))
+    return out
+
+
+_TICKET_ID = re.compile(r"\b[A-Za-z][A-Za-z0-9]*-\d+\b")
+_PROSE_ABSENT = re.compile(r"^(none|n/?a|nothing|-{1,2})\b", re.IGNORECASE)
+
+
+def _prose_ids(value, known=()):
+    """Ticket ids a prose contract line claims, upper-cased. A lower-case
+    token counts only when the field already declares it, because `utf-8` and
+    `http-2` have the shape of a key and are not ids."""
+    known = set(known or ())
+    return {m.upper() for m in _TICKET_ID.findall(value)
+            if m == m.upper() or m.upper() in known}
+
+
+def prose_blocked_by_disagrees(line, declared):
+    """Why a prose `Blocked_by:` line and the structured field disagree, or
+    None when they agree. Only `blocked_by` gets this second arm: it is the
+    one contract field whose prose carries machine-comparable values (ticket
+    ids), so agreement can be checked rather than guessed at."""
+    value = line.split(":", 1)[1].strip() if ":" in line else ""
+    declared = list(declared or [])
+    known = {str(d).upper() for d in declared}
+    ids = _prose_ids(value, known)
+    if _PROSE_ABSENT.match(value) and not ids:
+        if declared:
+            return f"the field carries {sorted(declared)}"
+        return None
+    missing = ids - known
+    if missing:
+        return f"the field does not carry {sorted(missing)}"
+    if not ids:
+        return "the field carries no id for it, so no tool can see it"
+    return None
 
 
 _PATH_LIKE = re.compile(r"^[\w.@-]+\.\w+$")
@@ -656,12 +718,20 @@ def lint(tickets, root):
 
         ex = t.get("executor")
         is_epic = t.get("_is_epic")
-        # Epics are containers and cancelled tickets need no executor; a missing
-        # executor elsewhere is a warning, not an error (Jira can carry a null).
-        if stage != "cancelled" and not is_epic and not ex:
-            warns.append(f"{tid}: no executor — blocks dispatch: excluded from "
-                         f"`next` and every wave in `waves`, shown as [?] "
-                         f"'not startable: no executor' in `board`")
+        # Past triage and live, a missing executor is terminal rather than
+        # untidy: every verb drops the ticket and the set still reads clean.
+        if not is_epic and not ex and stage != "cancelled":
+            if stage in PENDING and stage != "triage":
+                errs.append(f"{tid}: no executor at `{stage}` — declared but "
+                            f"undispatchable: excluded from `next` and from "
+                            f"every wave in `waves`, shown as [?] 'not "
+                            f"startable: no executor' in `board`, and nothing "
+                            f"will ever move it; set executor to "
+                            f"agent/human/mixed")
+            else:
+                warns.append(f"{tid}: no executor — blocks dispatch: excluded "
+                             f"from `next` and every wave in `waves`, shown as "
+                             f"[?] 'not startable: no executor' in `board`")
         if ex and ex not in ("agent", "human", "mixed"):
             errs.append(f"{tid}: executor '{ex}' is not agent/human/mixed")
         if ex == "mixed" and not t.get("human_steps"):
@@ -700,9 +770,30 @@ def lint(tickets, root):
         elif not is_epic:
             if not t.get("verify"):
                 errs.append(f"{tid}: no verify — nobody can prove this is done")
-            if ex in ("agent", "mixed") and t.get("touches") is None:
-                errs.append(f"{tid}: executor is {ex} but touches is unset — "
-                            f"parallel safety cannot be checked")
+            # Empty, not just unset: a Jira textarea that was never filled in
+            # parses to [], which reads as a declaration of "touches nothing".
+            if ex in ("agent", "mixed") and not t.get("touches"):
+                errs.append(f"{tid}: executor is {ex} but touches is empty — "
+                            f"parallel safety cannot be checked, and every "
+                            f"file the branch changes reads UNDECLARED")
+
+            for field, line in prose_contract_fields(t.get("_body")):
+                value = line.split(":", 1)[1].strip() if ":" in line else ""
+                if not t.get(field):
+                    # A line that says the value is absent agrees with an empty
+                    # field; the rules above catch one that is required anyway.
+                    if _PROSE_ABSENT.match(value) and not _prose_ids(value):
+                        continue
+                    errs.append(f"{tid}: the body says '{_clip(line)}' but the "
+                                f"`{field}` field is empty — the contract lives "
+                                f"in the field; prose restating it is invisible "
+                                f"to lint, `next`, `waves` and `board`")
+                elif field == "blocked_by":
+                    why = prose_blocked_by_disagrees(line, t.get("blocked_by"))
+                    if why:
+                        errs.append(f"{tid}: the body says '{_clip(line)}' but "
+                                    f"{why} — the two representations disagree, "
+                                    f"and only the field is read")
 
         for path in t.get("touches") or []:
             joined = _comma_joined_paths(path)
@@ -1159,10 +1250,12 @@ def _lifecycle_selftest():
                    executor="agent", verify="", _path="ZZ-910", _stage="triage")
     parked = dict(base, id="ZZ-911", title="parked with a date",
                   executor="agent", verify="true", defer_until="2099-01-01",
-                  _path="ZZ-911", _stage="deferred")
+                  touches=["scratch/zz911/*"], _path="ZZ-911",
+                  _stage="deferred")
     undated = dict(base, id="ZZ-912", title="parked with no date",
                    executor="agent", verify="true",
-                   _path="ZZ-912", _stage="deferred")
+                   touches=["scratch/zz912/*"], _path="ZZ-912",
+                   _stage="deferred")
 
     failures = []
     out = capture(lint, [triaged, parked])
@@ -1171,6 +1264,53 @@ def _lifecycle_selftest():
                         "(SPEC.md MUST-46 excuses it)")
     if "ZZ-911" in out:
         failures.append("lint: a deferred ticket carrying defer_until was reported")
+
+    unowned_triage = dict(base, id="ZZ-913", title="captured, not yet triaged",
+                          executor=None, verify="", _path="ZZ-913",
+                          _stage="triage")
+    out = capture(lint, [unowned_triage])
+    if "undispatchable" in out:
+        failures.append("lint: a triage ticket with no executor was reported "
+                        "undispatchable — MUST-46 excuses it, and the entry "
+                        "state is exactly where nobody has chosen one yet")
+    if "ZZ-913: no executor" not in out:
+        failures.append(f"lint: a triage ticket with no executor lost its "
+                        f"warning entirely: {out!r}")
+
+    sketched = dict(base, id="ZZ-914", title="captured, contract sketched in prose",
+                    executor=None, verify="", _path="ZZ-914", _stage="triage",
+                    _body="Verify: the selftest passes\nExecutor: agent\n")
+    dropped = dict(base, id="ZZ-915", title="cancelled before any work started",
+                   executor=None, verify="", outcome="superseded by ZZ-910",
+                   _path="ZZ-915", _stage="cancelled",
+                   _body="Verify: n/a — nothing was built\nTouches: the runner\n")
+    container = dict(base, id="ZZ-916", title="an epic naming its children's work",
+                     executor=None, verify="", _is_epic=True, _path="ZZ-916",
+                     _stage="open", _body="Verify: each child's verify passes\n")
+    for t, position in ((sketched, "triage"), (dropped, "cancelled"),
+                        (container, "an epic")):
+        out = capture(lint, [t])
+        if "the body says" in out:
+            failures.append(f"lint: a prose contract line was reported at "
+                            f"{position}, which the field rules excuse: {out!r}")
+
+    agreed = dict(base, id="ZZ-917", title="fully automated, and its body says so",
+                  executor="agent", verify="true", touches=["scratch/zz917/*"],
+                  _path="ZZ-917", _stage="open",
+                  _body="Human_steps: none — fully automated\nBlocked_by: none\n")
+    out = capture(lint, [agreed])
+    if "the body says" in out:
+        failures.append(f"lint: a body line saying a contract value is absent "
+                        f"was reported against the empty field it agrees "
+                        f"with: {out!r}")
+
+    lowercased = dict(agreed, id="ZZ-918", title="its body writes the blocker in lower case",
+                      blocked_by=["ZZ-911"], touches=["scratch/zz918/*"],
+                      _path="ZZ-918", _body="Blocked_by: zz-911\n")
+    out = capture(lint, [lowercased, parked])
+    if "the body says" in out:
+        failures.append(f"lint: a prose blocker written in lower case was read "
+                        f"as disagreeing with the field that carries it: {out!r}")
 
     out = capture(lint, [undated])
     if "MUST-47" not in out:
@@ -1270,7 +1410,10 @@ def selftest():
           "file splits a wave under --landing parallel and only warns under "
           "serial, and preflight exits 0/1/2; triage is exempt from the "
           "contract and deferred requires defer_until, and neither is "
-          "dispatchable")
+          "dispatchable; a contract written as prose over an empty field, an "
+          "empty touches on an agent ticket, and a live ticket with no "
+          "executor are each an error naming the specific defect, while a "
+          "contracted control whose body names the same fields is silent")
     return 0
 
 
@@ -1278,9 +1421,10 @@ FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "fi
 
 
 def _jira_fixture_selftest():
-    """The three jira-mode defects of WO-021, each against a fixture derived
-    from a captured /rest/api/3 response rather than hand-typed. Offline:
-    load_jira() reads the file and never runs the jira-api wrapper."""
+    """The three jira-mode defects of WO-021, plus the unworkable-ticket
+    shapes of NWM-132, each against a fixture derived from a captured
+    /rest/api/3 response rather than hand-typed. Offline: load_jira() reads
+    the file and never runs the jira-api wrapper."""
     import io
     import contextlib
 
@@ -1340,6 +1484,35 @@ def _jira_fixture_selftest():
         if code != 1 or "comma-separated" not in lint_out:
             failures.append(f"lint: comma-separated touches accepted "
                             f"(exit {code}): {lint_out!r}")
+
+    tickets = load("prose-contract.json")
+    if tickets:
+        code, lint_out = capture(lint, tickets)
+        if code != 1:
+            failures.append(f"lint: prose-contract fixture exited {code}, want 1")
+        for tid, needle in (
+            ("PROJ-47", "the body says 'verify: issues.py selftest passes and "
+                        "lint reports this ticket.' but the `verify` field is empty"),
+            ("PROJ-47", "the body says 'executor: agent' but the `executor` "
+                        "field is empty"),
+            ("PROJ-48", "the body says 'Blocked_by: ai-toolkit existing and "
+                        "publishing the action' but the `blocked_by` field is empty"),
+            ("PROJ-49", "executor is agent but touches is empty"),
+            ("PROJ-50", "no executor at `open` — declared but undispatchable"),
+            ("PROJ-47", "no executor at `open` — declared but undispatchable"),
+            ("PROJ-47", "no verify — nobody can prove this is done"),
+            ("PROJ-52", "the body says 'Blocked_by: none' but the field "
+                        "carries ['PROJ-48']"),
+        ):
+            if f"{tid}: {needle}" not in lint_out:
+                failures.append(f"lint: {tid} not reported with "
+                                f"'{needle}': {lint_out!r}")
+        # A rule firing for the wrong reason passes every red-state check
+        # above; only a contracted control catches it.
+        for control in ("PROJ-51", "PROJ-53", "PROJ-54", "PROJ-55"):
+            if control in lint_out:
+                failures.append(f"lint: control {control} agrees with its own "
+                                f"fields but was reported: {lint_out!r}")
 
     # The narrowing: only ANOTHER project's blocker is taken on its nested
     # status. A same-project non-Done key is still a genuine dangling id.
