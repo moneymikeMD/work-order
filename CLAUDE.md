@@ -44,14 +44,19 @@ Why the second job exists: `validate` alone was green while 14 assertions in
 
 ## Packaging
 
-A Claude Code marketplace plugin installs exactly the subtree its
-`marketplace.json` `source` names and nothing else. So the `work-order` plugin
-publishes from `./` — this repository *is* the plugin, and `.claude-plugin/`
-holds both `marketplace.json` and `plugin.json`. Anything the plugin claims to
-ship must therefore live in the tree, not merely be referenced by it.
+A Claude Code marketplace plugin installs exactly the subtree its marketplace
+entry's `source` names and nothing else. This repository has no marketplace of
+its own: `moneymikeMD/moneymike-plugins` lists both plugins, with no `ref` or
+`sha`, so installs track this repository's default branch.
 
-`plugins/work-order-jira/` stays a subtree plugin because everything it needs
-is inside it.
+The `work-order` plugin is a `github` source for the whole repository, so the
+repository *is* the plugin and `.claude-plugin/plugin.json` sits at its root.
+Anything the plugin claims to ship must therefore live in the tree, not merely be
+referenced by it.
+
+`plugins/work-order-jira/` is a `git-subdir` source, because everything it needs
+is inside it. Its `work-order` dependency is resolved by git tag, so a pin no tag
+satisfies fails the install outright.
 
 ## Releases
 
