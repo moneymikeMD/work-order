@@ -12,7 +12,23 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v5.0.0
+      - id: release
+        uses: googleapis/release-please-action@v5.0.0
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # Plugin dependency ranges resolve against work-order--vX.Y.Z tags; release-please tags vX.Y.Z.
+      - name: Add the work-order--v tag for the plugin
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          ref="refs/tags/work-order--${RELEASE_TAG}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/work-order--${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "${ref} already exists"
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="${ref}" -f sha="${RELEASE_SHA}"
+          fi
