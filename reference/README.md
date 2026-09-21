@@ -60,6 +60,40 @@ python3 reference/issues.py lint bindings/file/examples/
 python3 reference/issues.py selftest
 ```
 
+## An unworkable ticket is an error, not an omission
+
+`lint` used to pass a ticket that could never be worked. On 2026-09-19 three
+tickets in one set were unworkable while it reported the set clean: a contract
+written as prose in the description with both structured fields empty, so the
+ticket was excluded from `next` and every wave and could never be dispatched; a
+`touches` field written as one comma-separated line, so a collision with two
+siblings was invisible; and a blocker declared only as a prose `Blocked_by:`
+line, so the ticket showed as startable.
+
+One property, not three typos. A ticket has two representations — the body and
+the structured fields — and nothing enforced that they agree or that the fields
+exist. Absence was indistinguishable from correctness, so silence read as a
+pass. `lint` now errors on each shape:
+
+| Shape | What it reports |
+| --- | --- |
+| `verify:` / `executor:` / `touches:` / `blocked_by:` / `human_steps:` as a body line over an empty field | the prose line **and** the empty field |
+| a prose `Blocked_by:` line naming ids the field does not carry, or saying "none" when it does | which side carries what |
+| `executor` is `agent`/`mixed` and `touches` is empty | parallel safety cannot be checked |
+| no executor, past `triage` and not closed | declared but undispatchable |
+| a `touches` item holding two or more comma-separated paths | split it, one path per line |
+
+`blocked_by` is the only field whose prose is compared against the field's
+value, because ticket ids are the only machine-comparable thing a contract line
+carries. `triage` keeps its `[MUST-46]` exemption throughout: it is the entry
+state, before the ticket is a contract, and a ticket there with no executor is
+still only a warning.
+
+Each rule is pinned by a fixture in `selftest` that asserts the **specific**
+error rather than a non-zero exit, so a rule that fires for the wrong reason
+cannot pass, and by a contracted control ticket whose body names the same
+fields and must stay silent.
+
 ## Stdlib only, on purpose
 
 `issues.py` imports nothing outside the Python standard library, and its
