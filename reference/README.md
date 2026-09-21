@@ -83,11 +83,23 @@ pass. `lint` now errors on each shape:
 | no executor, past `triage` and not closed | declared but undispatchable |
 | a `touches` item holding two or more comma-separated paths | split it, one path per line |
 
+A body line that says the value is *absent* — `Blocked_by: none`, `Human_steps:
+n/a` — agrees with an empty field and is silent. The two are only in conflict
+when the field carries something the prose denies, or denies something the
+prose names.
+
 `blocked_by` is the only field whose prose is compared against the field's
 value, because ticket ids are the only machine-comparable thing a contract line
-carries. `triage` keeps its `[MUST-46]` exemption throughout: it is the entry
-state, before the ticket is a contract, and a ticket there with no executor is
-still only a warning.
+carries. Every id on that line is read as a claimed blocker, a parenthetical
+aside included, so keep other tickets off it. An id written in lower case is
+recognised only when the field already declares it, because `utf-8` and
+`http-2` have the same shape as a key.
+
+The prose rules run exactly where the field rules run. `triage` keeps its
+`[MUST-46]` exemption throughout — it is the entry state, before the ticket is
+a contract, and a ticket there with no executor is still only a warning — and
+`cancelled` tickets and epics are excused in the same way and for the same
+reason they are excused from `verify`.
 
 Each rule is pinned by a fixture in `selftest` that asserts the **specific**
 error rather than a non-zero exit, so a rule that fires for the wrong reason

@@ -517,8 +517,17 @@ def prose_contract_fields(body):
     return out
 
 
-_TICKET_ID = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
+_TICKET_ID = re.compile(r"\b[A-Za-z][A-Za-z0-9]*-\d+\b")
 _PROSE_ABSENT = re.compile(r"^(none|n/?a|nothing|-{1,2})\b", re.IGNORECASE)
+
+
+def _prose_ids(value, known=()):
+    """Ticket ids a prose contract line claims, upper-cased. A lower-case
+    token counts only when the field already declares it, because `utf-8` and
+    `http-2` have the shape of a key and are not ids."""
+    known = set(known or ())
+    return {m.upper() for m in _TICKET_ID.findall(value)
+            if m == m.upper() or m.upper() in known}
 
 
 def prose_blocked_by_disagrees(line, declared):
@@ -527,13 +536,14 @@ def prose_blocked_by_disagrees(line, declared):
     one contract field whose prose carries machine-comparable values (ticket
     ids), so agreement can be checked rather than guessed at."""
     value = line.split(":", 1)[1].strip() if ":" in line else ""
-    ids = set(_TICKET_ID.findall(value))
-    declared = set(declared or [])
+    declared = list(declared or [])
+    known = {str(d).upper() for d in declared}
+    ids = _prose_ids(value, known)
     if _PROSE_ABSENT.match(value) and not ids:
         if declared:
             return f"the field carries {sorted(declared)}"
         return None
-    missing = ids - declared
+    missing = ids - known
     if missing:
         return f"the field does not carry {sorted(missing)}"
     if not ids:
@@ -708,10 +718,8 @@ def lint(tickets, root):
 
         ex = t.get("executor")
         is_epic = t.get("_is_epic")
-        # Epics are containers and cancelled tickets need no executor. Anywhere
-        # a ticket is live and past triage, a missing executor is terminal
-        # rather than untidy: nothing can ever pick it up, and every verb drops
-        # it silently, so the set reads clean while the ticket is stranded.
+        # Past triage and live, a missing executor is terminal rather than
+        # untidy: every verb drops the ticket and the set still reads clean.
         if not is_epic and not ex and stage != "cancelled":
             if stage in PENDING and stage != "triage":
                 errs.append(f"{tid}: no executor at `{stage}` — declared but "
@@ -763,12 +771,29 @@ def lint(tickets, root):
             if not t.get("verify"):
                 errs.append(f"{tid}: no verify — nobody can prove this is done")
             # Empty, not just unset: a Jira textarea that was never filled in
-            # parses to [], which read as a declaration of "touches nothing"
-            # and let a ticket collide with every sibling in its wave.
+            # parses to [], which reads as a declaration of "touches nothing".
             if ex in ("agent", "mixed") and not t.get("touches"):
                 errs.append(f"{tid}: executor is {ex} but touches is empty — "
                             f"parallel safety cannot be checked, and every "
                             f"file the branch changes reads UNDECLARED")
+
+            for field, line in prose_contract_fields(t.get("_body")):
+                value = line.split(":", 1)[1].strip() if ":" in line else ""
+                if not t.get(field):
+                    # A line that says the value is absent agrees with an empty
+                    # field; the rules above catch one that is required anyway.
+                    if _PROSE_ABSENT.match(value) and not _prose_ids(value):
+                        continue
+                    errs.append(f"{tid}: the body says '{_clip(line)}' but the "
+                                f"`{field}` field is empty — the contract lives "
+                                f"in the field; prose restating it is invisible "
+                                f"to lint, `next`, `waves` and `board`")
+                elif field == "blocked_by":
+                    why = prose_blocked_by_disagrees(line, t.get("blocked_by"))
+                    if why:
+                        errs.append(f"{tid}: the body says '{_clip(line)}' but "
+                                    f"{why} — the two representations disagree, "
+                                    f"and only the field is read")
 
         for path in t.get("touches") or []:
             joined = _comma_joined_paths(path)
@@ -783,19 +808,6 @@ def lint(tickets, root):
                           if next((x for x in tickets if x.get("id") == d), {}).get("_stage") not in DONE]
             if unresolved:
                 warns.append(f"{tid}: completed but blocked_by {unresolved} is not")
-
-        for field, line in prose_contract_fields(t.get("_body")):
-            if not t.get(field):
-                errs.append(f"{tid}: the body says '{_clip(line)}' but the "
-                            f"`{field}` field is empty — the contract lives "
-                            f"in the field; prose restating it is invisible "
-                            f"to lint, `next`, `waves` and `board`")
-            elif field == "blocked_by":
-                why = prose_blocked_by_disagrees(line, t.get("blocked_by"))
-                if why:
-                    errs.append(f"{tid}: the body says '{_clip(line)}' but "
-                                f"{why} — the two representations disagree, "
-                                f"and only the field is read")
 
         body = (t.get("_body") or "").lower()
         for phrase in ("as discussed", "as we agreed", "see above", "per our conversation"):
@@ -1265,6 +1277,41 @@ def _lifecycle_selftest():
         failures.append(f"lint: a triage ticket with no executor lost its "
                         f"warning entirely: {out!r}")
 
+    sketched = dict(base, id="ZZ-914", title="captured, contract sketched in prose",
+                    executor=None, verify="", _path="ZZ-914", _stage="triage",
+                    _body="Verify: the selftest passes\nExecutor: agent\n")
+    dropped = dict(base, id="ZZ-915", title="cancelled before any work started",
+                   executor=None, verify="", outcome="superseded by ZZ-910",
+                   _path="ZZ-915", _stage="cancelled",
+                   _body="Verify: n/a — nothing was built\nTouches: the runner\n")
+    container = dict(base, id="ZZ-916", title="an epic naming its children's work",
+                     executor=None, verify="", _is_epic=True, _path="ZZ-916",
+                     _stage="open", _body="Verify: each child's verify passes\n")
+    for t, position in ((sketched, "triage"), (dropped, "cancelled"),
+                        (container, "an epic")):
+        out = capture(lint, [t])
+        if "the body says" in out:
+            failures.append(f"lint: a prose contract line was reported at "
+                            f"{position}, which the field rules excuse: {out!r}")
+
+    agreed = dict(base, id="ZZ-917", title="fully automated, and its body says so",
+                  executor="agent", verify="true", touches=["scratch/zz917/*"],
+                  _path="ZZ-917", _stage="open",
+                  _body="Human_steps: none — fully automated\nBlocked_by: none\n")
+    out = capture(lint, [agreed])
+    if "the body says" in out:
+        failures.append(f"lint: a body line saying a contract value is absent "
+                        f"was reported against the empty field it agrees "
+                        f"with: {out!r}")
+
+    lowercased = dict(agreed, id="ZZ-918", title="its body writes the blocker in lower case",
+                      blocked_by=["ZZ-911"], touches=["scratch/zz918/*"],
+                      _path="ZZ-918", _body="Blocked_by: zz-911\n")
+    out = capture(lint, [lowercased, parked])
+    if "the body says" in out:
+        failures.append(f"lint: a prose blocker written in lower case was read "
+                        f"as disagreeing with the field that carries it: {out!r}")
+
     out = capture(lint, [undated])
     if "MUST-47" not in out:
         failures.append("lint: a deferred ticket with no defer_until was not "
@@ -1462,7 +1509,7 @@ def _jira_fixture_selftest():
                                 f"'{needle}': {lint_out!r}")
         # A rule firing for the wrong reason passes every red-state check
         # above; only a contracted control catches it.
-        for control in ("PROJ-51", "PROJ-53"):
+        for control in ("PROJ-51", "PROJ-53", "PROJ-54", "PROJ-55"):
             if control in lint_out:
                 failures.append(f"lint: control {control} agrees with its own "
                                 f"fields but was reported: {lint_out!r}")
