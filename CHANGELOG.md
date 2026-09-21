@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.6.0](https://github.com/moneymikeMD/work-order/compare/v1.5.0...v1.6.0) (2026-09-21)
+
+
+### Features
+
+* make an unworkable ticket a loud lint error ([625e821](https://github.com/moneymikeMD/work-order/commit/625e8218e534f969ce48a51e4ada80b80af44236))
+* register memory and release MCP servers in work-order ([8be145b](https://github.com/moneymikeMD/work-order/commit/8be145bd685dc77b352def8b8b15a0bf5d4a9e03))
+
+
+### Bug Fixes
+
+* install work-order plugins from moneymike-plugins ([#41](https://github.com/moneymikeMD/work-order/issues/41)) ([1a569a7](https://github.com/moneymikeMD/work-order/commit/1a569a7507d8ac7e0d00d2b2eae8fec1e9753350))
+* the prose-contract rule agrees with "none" and stops at triage ([24ce9f9](https://github.com/moneymikeMD/work-order/commit/24ce9f9ebd74fa804df346e8187bcf204f81ba56))
+
 ## [1.5.0](https://github.com/moneymikeMD/work-order/compare/v1.4.0...v1.5.0) (2026-09-20)
 
 
