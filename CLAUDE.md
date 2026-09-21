@@ -69,6 +69,14 @@ the repository is the plugin: it moved from its own `work-order--v0.2.0` line
 onto `version.txt`'s line at 1.2.0. Only `work-order-jira` still carries a
 separate `work-order-jira--vX.Y.Z` tag.
 
+The plugin's dependents pin it with a semver range, and Claude Code resolves that
+against `work-order--vX.Y.Z` tags on this repository, not against release-please's
+`vX.Y.Z`. The `release-please` workflow therefore adds a `work-order--v` tag on the
+release commit whenever the root package releases; `work-order--v1.3.0` through
+`--v1.5.0` were created by hand at the same commits as their `v` twins. Without the
+prefixed tag, an install through `moneymike-plugins` leaves the dependency
+unresolved.
+
 Known quirk: a commit pushed with the default `GITHUB_TOKEN` does not trigger
 other workflows, so the release PR's rebases do not re-run CI and its checks go
 stale. `gh pr close <n> && gh pr reopen <n>` re-triggers them.
