@@ -1,5 +1,6 @@
 .tokensave/
 .memorygraph/
+.serena/
 .DS_Store
 
 __pycache__/
