@@ -24,12 +24,19 @@ how the repository itself is worked.
 
 ## CI
 
-`.github/workflows/ci.yml` runs two jobs on push to `main` and on every pull
-request. `validate` parses every JSON and YAML file in the tree and compiles
-every Python file. `selftests` **discovers** every `*selftest*.sh` by glob and
-runs it, then runs the Python selftest entry points — `reference/issues.py
-selftest` and `conformance/validate.py --selftest`, which a filename glob cannot
-find. A selftest added later is covered with no workflow edit.
+`.github/workflows/ci.yml` runs **four** jobs on push to `main` and on every
+pull request: `selftests`, `validate`, `no-major` and `no-personal-paths`.
+
+`validate` parses every JSON and YAML file in the tree and compiles every Python
+file. `selftests` **discovers** every `*selftest*.sh` by glob and runs it, then
+runs the Python selftest entry points — `reference/issues.py selftest` and
+`conformance/validate.py --selftest`, which a filename glob cannot find. A
+selftest added later is covered with no workflow edit. `no-major` is the version
+cap, described below. `no-personal-paths` consumes an ai-toolkit action.
+
+**Only `validate` is a required status check.** Measured against the live
+rulesets API on 2026-09-21 and again 2026-09-22: the `main` ruleset requires the
+single context `validate`. The other three report; they do not gate.
 
 Every selftest here is offline by construction: each stubs its HTTP client on
 `PATH` and reaches no network, site or credential, which is what lets them run
@@ -95,9 +102,19 @@ release-please reads as a major bump — a `!` after the type or scope, and a
 applies to the pull request title too, because `pr-land.sh` squash-merges and
 the squash subject comes from the title.
 
-The `no-major` job in `.github/workflows/ci.yml` enforces it on every pull
+The `no-major` job in `.github/workflows/ci.yml` **reports** on every pull
 request and on every push to `main`; ai-toolkit and night-watchman run the same
-job. Lifting the cap is one commit per repo: delete the job.
+job. **It does not enforce anything.** Measured 2026-09-21 and again 2026-09-22:
+`no-major` is not among the required status check contexts in any of the three
+repos that run it — they require `validate`, `selftest, self-lint` and
+`selftests, docs-site, comment-lint` respectively. A pull request carrying a
+`feat!:` subject or a `BREAKING CHANGE:` footer goes red on a check nobody has
+to wait for.
+
+So the cap rests on this rule and on review, not on a gate. Whether it should
+gain one is **NWM-163**, which carries the precondition that would otherwise
+wedge a repo: a required context that never reports blocks a pull request
+forever. Lifting the cap is still one commit per repo: delete the job.
 
 ## Dependencies
 
