@@ -107,3 +107,20 @@ sees the same ticket set, and a ticket legitimately named e.g.
 
 `lint` is not the conformance validator. It answers "can this set be worked
 on", not "does this set conform to `SPEC.md` at profile X".
+
+## Gating a transition on its own ticket
+
+`lint --scope KEY[,KEY...]` prints the same full report and narrows only the
+exit code: it is 1 when an error belongs to a listed ticket, 0 otherwise. A
+collision error belongs to both tickets in the pair. Without the flag the
+exit code covers the whole set, as before.
+
+The reason is the tickets-protocol rule that a transition is blocked by a
+lint error on the ticket being moved, or on one in the active sprint — not
+by ungroomed intake elsewhere in the project. That narrowing used to live in
+prose a reader could skip; the tool now enforces it while keeping every error
+visible.
+
+```
+python3 reference/issues.py lint --source jira --scope PROJ-51
+```
