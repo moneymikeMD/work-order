@@ -92,13 +92,7 @@ on machines nobody prepared in advance, and a dependency is one more reason for
 that to fail. A change that adds a third-party import is a change to what this
 file is for.
 
-## Status
-
-Moved here unchanged from night-watchman's `to-issues` skill, deliberately: a
-move and a behaviour change in one step makes a regression impossible to
-attribute. Known defects travel with it and are fixed in follow-up tickets
-rather than in the move — `lint` under `--source jira` and the `scope` verb's
-handling of repository-prefixed globs are the two known areas.
+## Notes
 
 The loader excludes a `<id>.notes.md` progress note by its file suffix, per
 `[FILE-4]` of the file binding — every consumer (`lint`, `board`, `next`)

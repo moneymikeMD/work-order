@@ -19,13 +19,13 @@ printed and exit 0, which is what lets a set adopt the specification
 incrementally instead of facing a cliff. A usage or setup error exits 2.
 
 ```
-$ validate.py --profile full ~/code/issues/
+$ validate.py --profile full path/to/set/
 MUST-9     minimal     FAIL
-    completed/WO-026-dispatch-adapter.md: a check ends in '|| echo', which always exits 0
+    completed/EX-026-dispatch-adapter.md: a check ends in '|| echo', which always exits 0
 SHOULD-1   minimal     report
-    cancelled/WO-C01-work-order-inside-ai-toolkit.md: id 'WO-C01' is not of the form PREFIX-NNN
+    cancelled/EX-C01-inside-toolkit.md: id 'EX-C01' is not of the form PREFIX-NNN
 
-40 MUST and 11 SHOULD in profile `full`: 32 pass, 1 FAIL, 1 SHOULD reported, ...
+43 MUST and 11 SHOULD in profile `full`: 35 pass, 1 FAIL, 1 SHOULD reported, ...
 FAIL: 1 MUST violated at profile `full`: MUST-9
 ```
 

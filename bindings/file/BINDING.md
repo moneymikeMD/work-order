@@ -211,7 +211,7 @@ whose work spans more than one repository MUST make the repository's directory
 name the first component of every glob, and MUST say so in the set's `README`.
 
 The set root and the work root are different directories, and conflating them is
-the common mistake. A set at `~/code/issues/` whose tickets change three
+the common mistake. A set at `~/code/tickets/` whose tickets change three
 repositories under `~/code/` declares `night-watchman/scripts/land-branch.sh`,
 not `scripts/land-branch.sh`: the glob is resolved against `~/code/`, where the
 work happens, not against the directory the tickets live in.

@@ -13,13 +13,12 @@ valid one and emits tickets.
 
 ## Why JSON, and why a separate field per concern
 
-The producer half (night-watchman's mining step, WO-011) and the authoring
-half (this ticket) are different processes running at different times,
-sometimes different sessions. A format loose enough to let either side infer
-structure from prose reintroduces exactly the coupling the split exists to
-remove — see the "Decisions" section of this ticket. JSON keeps the schema
-mechanically checkable and keeps the two sides honest about what they hand
-each other.
+The producer half (night-watchman's `to-issues-mine` skill) and the authoring
+half (`skills/emit-tickets/`) are different processes running at different
+times, sometimes different sessions. A format loose enough to let either side
+infer structure from prose reintroduces exactly the coupling the split exists
+to remove. JSON keeps the schema mechanically checkable and keeps the two sides
+honest about what they hand each other.
 
 Each field below exists because a numbered requirement in `SPEC.md` needs it
 to produce a ticket at the **`full`** profile — not because it seemed useful.
