@@ -253,7 +253,7 @@ alone, and a reader should know which:
 ## 5. The reference implementation
 
 [`reference/issues.py`](../../reference/issues.py) reads a set in this binding
-and is the executable account of it: `lint`, `board`, `next`, `waves` and
+and is the executable account of it: `lint`, `board`, `next` and
 `scope`, stdlib-only, no install step. See
 [`reference/README.md`](../../reference/README.md).
 

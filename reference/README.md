@@ -1,9 +1,8 @@
 # The reference implementation
 
 `issues.py` reads a ticket set and answers the questions that decide whether it
-can be worked on: is every ticket well formed, what is startable right now, what
-can run in parallel without two executors colliding, and did a branch change
-anything its ticket did not declare.
+can be worked on: is every ticket well formed, what is startable right now, and
+did a branch change anything its ticket did not declare.
 
 It is the executable account of [the file binding](../bindings/file/BINDING.md),
 and it also reads a set out of Jira, which is why the same grouping and
@@ -13,42 +12,20 @@ collision logic has to behave identically for both.
 python3 reference/issues.py lint   <dir>   errors that make a ticket unworkable
 python3 reference/issues.py board  <dir>   what is where
 python3 reference/issues.py next   <dir>   tickets startable right now
-python3 reference/issues.py waves  <dir>   a parallel execution plan
-python3 reference/issues.py preflight <dir> files two or more startable
-                                           tickets would write
 python3 reference/issues.py scope  <id> <base-ref> [<dir>]
                                            declared vs undeclared changed paths
 python3 reference/issues.py selftest       built-in fixture checks, no <dir>
 ```
 
-## Which landing path a wave will use
+## Wave computation is not here
 
-`waves` and `preflight` take `--landing serial|parallel`, defaulting to
-`serial`.
-
-`touches` overlap is a collision under either mode. `appends` overlap is the
-deliberately softer sibling — two tickets appending the same file produce a
-small merge, not a conflict — but that is true only because the branches merge
-**one at a time**. Under a landing path that merges them concurrently, the first
-merge wins and the rest go `DIRTY`. `--landing parallel` promotes an `appends`
-overlap to a wave-splitting constraint, exactly as `touches` already is.
-
-The mode is an explicit input because the planner cannot infer it, and the
-default is `serial` because every existing caller assumes it.
-
-`preflight` reports, before dispatch rather than after: every file two or more
-startable tickets would write, with the ticket ids and whether the file is
-reached through `touches` or `appends`; the wave count under each mode, so the
-cost of parallel landing is visible; and an exit code that distinguishes
-collisions found (1) from no wave plan at all (2).
-
-```
-python3 reference/issues.py preflight reference/tests/fixtures/preflight --landing parallel
-```
-
-It reports; it does not fix. The right response to a shared file depends on
-whether it is a log, a generated index, or real shared code, so the decision
-stays with the caller.
+`waves` and `preflight`, and their `--landing serial|parallel` flag, were
+removed on 2026-09-24 (WO-73). Work-order owns the contract — what a ticket
+must carry to be workable — and not the dispatch plan built on top of it.
+That plan, grouping startable tickets into parallel waves and reporting the
+files two of them would both write, lives one layer down in night-watchman's
+`scripts/waves.py`, which reads the same ticket set and applies the same
+`touches`/`appends` overlap rule `lint` already enforces.
 
 `<dir>` is a set root in the file binding: the directory holding `open/`,
 `in-progress/`, `awaiting-deployment/`, `completed/` and `cancelled/`. To read a
@@ -124,8 +101,8 @@ rather than in the move — `lint` under `--source jira` and the `scope` verb's
 handling of repository-prefixed globs are the two known areas.
 
 The loader excludes a `<id>.notes.md` progress note by its file suffix, per
-`[FILE-4]` of the file binding — every consumer (`lint`, `board`, `waves`,
-`next`) sees the same ticket set, and a ticket legitimately named e.g.
+`[FILE-4]` of the file binding — every consumer (`lint`, `board`, `next`)
+sees the same ticket set, and a ticket legitimately named e.g.
 `T-009-notes-format.md` still loads.
 
 `lint` is not the conformance validator. It answers "can this set be worked

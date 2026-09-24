@@ -53,7 +53,7 @@ A ticket has two representations — the body a human reads and the structured
 fields every tool reads — and nothing makes them agree by itself. Writing
 `verify:`, `executor:`, `touches:`, `blocked_by:` or `human_steps:` as a line
 of the body is not a way of setting that field. The field stays empty, `lint`
-sees a ticket with no contract, `next` and `waves` drop it, and the ticket sits
+sees a ticket with no contract, `next` drops it, and the ticket sits
 unworkable while the set reports clean — the reader is the only party who ever
 saw the contract.
 
