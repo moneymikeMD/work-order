@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.5.1...work-order-jira--v0.6.0) (2026-09-24)
+
+
+### Features
+
+* blocked_by_external gives a cross-repo blocker a structured home (WO-70) ([#53](https://github.com/moneymikeMD/work-order/issues/53)) ([fe16872](https://github.com/moneymikeMD/work-order/commit/fe1687255f85bf6966e8df6d0eabfeadbd7776a7))
+
 ## [0.5.1](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.5.0...work-order-jira--v0.5.1) (2026-09-21)
 
 
