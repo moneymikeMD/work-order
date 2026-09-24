@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Validate and plan a set of frontmatter tickets.
 
-    issues.py lint     <dir>   errors that make a ticket unworkable
+    issues.py lint     <dir> [--scope KEY[,KEY...]]
+                                errors that make a ticket unworkable. Every
+                                error is printed; with --scope the exit code
+                                is 1 only for an error on a listed ticket,
+                                so a transition is gated by the ticket being
+                                moved, not by intake elsewhere in the set
     issues.py board    <dir>   what is where
     issues.py next     <dir>   tickets startable right now
     issues.py scope    <ticket-id> <base-ref> [<dir>] [--repo PATH]
@@ -700,12 +705,22 @@ def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
     return 1 if undeclared else 0
 
 
-def lint(tickets, root):
+def lint(tickets, root, scope=None):
+    """Report every error and warning in the set. The exit code is 1 on any
+    error — or, with `scope` (a set of ticket ids), only on an error that
+    belongs to one of those tickets: a transition is gated by the ticket
+    being moved, not by ungroomed intake elsewhere in the project. The full
+    list is printed either way, so nothing is hidden by narrowing."""
     if not tickets:
         print(f"no tickets under {root}")
         return 1
     ids = {t.get("id") for t in tickets if t.get("id")}
     errs, warns = [], []
+
+    def err(owners, msg):
+        if not isinstance(owners, (tuple, list, set)):
+            owners = (owners,)
+        errs.append((frozenset(str(o).upper() for o in owners if o), msg))
 
     seen = defaultdict(list)
     for t in tickets:
@@ -713,7 +728,7 @@ def lint(tickets, root):
         where = _where(t, root)
 
         if not tid:
-            errs.append(f"{where}: no id")
+            err((), f"{where}: no id")
             continue
         seen[tid].append(where)
 
@@ -725,7 +740,7 @@ def lint(tickets, root):
         required = ["title", "created", "updated"]
         for f in required:
             if not t.get(f):
-                errs.append(f"{tid}: missing `{f}`")
+                err(tid, f"{tid}: missing `{f}`")
 
         ex = t.get("executor")
         is_epic = t.get("_is_epic")
@@ -733,7 +748,7 @@ def lint(tickets, root):
         # untidy: every verb drops the ticket and the set still reads clean.
         if not is_epic and not ex and stage != "cancelled":
             if stage in PENDING and stage != "triage":
-                errs.append(f"{tid}: no executor at `{stage}` — declared but "
+                err(tid, f"{tid}: no executor at `{stage}` — declared but "
                             f"undispatchable: excluded from `next`, shown as "
                             f"[?] 'not startable: no executor' in `board`, and "
                             f"nothing will ever move it; set executor to "
@@ -743,34 +758,34 @@ def lint(tickets, root):
                              f"from `next`, shown as [?] 'not startable: no "
                              f"executor' in `board`")
         if ex and ex not in ("agent", "human", "mixed"):
-            errs.append(f"{tid}: executor '{ex}' is not agent/human/mixed")
+            err(tid, f"{tid}: executor '{ex}' is not agent/human/mixed")
         if ex == "mixed" and not t.get("human_steps"):
-            errs.append(f"{tid}: executor is mixed but human_steps is empty — "
+            err(tid, f"{tid}: executor is mixed but human_steps is empty — "
                         f"an agent cannot tell where to stop")
 
         for dep in t.get("blocked_by") or []:
             if dep not in ids:
-                errs.append(f"{tid}: blocked_by '{dep}' does not exist")
+                err(tid, f"{tid}: blocked_by '{dep}' does not exist")
             dept = next((x for x in tickets if x.get("id") == dep), {})
             if dept.get("_external") and dept["_stage"] not in RESOLVING:
                 warns.append(f"{tid}: blocked_by '{dep}' is in another project, "
                              f"outside this fetch, and is not Done — not startable")
             if dep == tid:
-                errs.append(f"{tid}: blocked by itself")
+                err(tid, f"{tid}: blocked by itself")
 
         defer = t.get("defer_until")
         if defer and parse_iso_date(defer) is None:
-            errs.append(f"{tid}: defer_until '{defer}' is not an ISO date "
+            err(tid, f"{tid}: defer_until '{defer}' is not an ISO date "
                         f"(YYYY-MM-DD)")
 
         if stage == "deferred" and not t.get("defer_until"):
-            errs.append(f"{tid}: in deferred with no defer_until — nothing says "
+            err(tid, f"{tid}: in deferred with no defer_until — nothing says "
                         f"when it comes back, so nobody looks at it again "
                         f"(SPEC.md MUST-47)")
 
         if stage == "cancelled":
             if not t.get("outcome"):
-                errs.append(f"{tid}: cancelled with no outcome — the reader "
+                err(tid, f"{tid}: cancelled with no outcome — the reader "
                             f"learns it lost but not why, and re-proposes it")
         elif stage == "triage":
             # SPEC.md MUST-46: triage is the entry state, before the ticket is
@@ -779,11 +794,11 @@ def lint(tickets, root):
             pass
         elif not is_epic:
             if not t.get("verify"):
-                errs.append(f"{tid}: no verify — nobody can prove this is done")
+                err(tid, f"{tid}: no verify — nobody can prove this is done")
             # Empty, not just unset: a Jira textarea that was never filled in
             # parses to [], which reads as a declaration of "touches nothing".
             if ex in ("agent", "mixed") and not t.get("touches"):
-                errs.append(f"{tid}: executor is {ex} but touches is empty — "
+                err(tid, f"{tid}: executor is {ex} but touches is empty — "
                             f"parallel safety cannot be checked, and every "
                             f"file the branch changes reads UNDECLARED")
 
@@ -794,21 +809,21 @@ def lint(tickets, root):
                     # field; the rules above catch one that is required anyway.
                     if _PROSE_ABSENT.match(value) and not _prose_ids(value):
                         continue
-                    errs.append(f"{tid}: the body says '{_clip(line)}' but the "
+                    err(tid, f"{tid}: the body says '{_clip(line)}' but the "
                                 f"`{field}` field is empty — the contract lives "
                                 f"in the field; prose restating it is invisible "
                                 f"to lint, `next` and `board`")
                 elif field == "blocked_by":
                     why = prose_blocked_by_disagrees(line, t.get("blocked_by"))
                     if why:
-                        errs.append(f"{tid}: the body says '{_clip(line)}' but "
+                        err(tid, f"{tid}: the body says '{_clip(line)}' but "
                                     f"{why} — the two representations disagree, "
                                     f"and only the field is read")
 
         for path in t.get("touches") or []:
             joined = _comma_joined_paths(path)
             if joined:
-                errs.append(f"{tid}: touches entry '{path}' is {len(joined)} "
+                err(tid, f"{tid}: touches entry '{path}' is {len(joined)} "
                             f"comma-separated paths on one line, not one path — "
                             f"split it, or nothing matches it and every changed "
                             f"file reads UNDECLARED")
@@ -827,7 +842,7 @@ def lint(tickets, root):
 
     for tid, paths in seen.items():
         if len(paths) > 1:
-            errs.append(f"{tid}: duplicated across {', '.join(paths)}")
+            err(tid, f"{tid}: duplicated across {', '.join(paths)}")
 
     startable = [t for t in tickets if t["_stage"] in WORKABLE
                  and all(next((x for x in tickets if x.get("id") == d), {}).get("_stage") in RESOLVING
@@ -837,7 +852,7 @@ def lint(tickets, root):
             clash = {x for x in (a.get("touches") or [])
                      for y in (b.get("touches") or []) if overlap(x, y)}
             if clash:
-                errs.append(f"{a['id']} and {b['id']} are both startable and both "
+                err((a['id'], b['id']), f"{a['id']} and {b['id']} are both startable and both "
                             f"touch {sorted(clash)} — add a blocked_by or merge them")
             # Shared append-mostly files are touched by nearly every ticket; hard
             # collisions there would serialise everything, so they are warnings.
@@ -847,14 +862,23 @@ def lint(tickets, root):
                 warns.append(f"{a['id']} and {b['id']} both append to {sorted(soft)} "
                              f"— expect a small merge, not a conflict")
 
-    for e in errs:
+    for _, e in errs:
         print(f"  ERROR  {e}")
     for w in warns:
         print(f"  warn   {w}")
     # Shadows excluded so this total agrees with board()'s.
     real = [t for t in tickets if not t.get("_shadow")]
     print(f"\n{len(real)} tickets, {len(errs)} errors, {len(warns)} warnings")
-    return 1 if errs else 0
+    if scope is None:
+        return 1 if errs else 0
+    scope = {str(k).upper() for k in scope}
+    gating = [e for owners, e in errs if owners & scope]
+    unknown = sorted(scope - {str(i).upper() for i in ids})
+    if unknown:
+        print(f"  scope: {', '.join(unknown)} not in the set — nothing gates on it")
+    print(f"  scope {', '.join(sorted(scope))}: {len(gating)} of {len(errs)} "
+          f"error(s) gate the exit code")
+    return 1 if gating else 0
 
 
 def compute_epic_rollup(tickets):
@@ -1181,6 +1205,7 @@ def selftest():
     failures.extend(_scope_selftest())
     failures.extend(_jira_fixture_selftest())
     failures.extend(_notes_md_selftest())
+    failures.extend(_lint_scope_selftest())
 
     if failures:
         print("SELFTEST FAILED")
@@ -1400,6 +1425,60 @@ def _scope_selftest():
     return failures
 
 
+def _lint_scope_selftest():
+    """WO-69: `lint --scope` prints every error but exits non-zero only for
+    an error on a scoped ticket, so a transition is gated by the ticket being
+    moved rather than by ungroomed intake elsewhere in the set."""
+    import io
+    import contextlib
+    failures = []
+
+    def run(tickets, scope=None):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = lint(tickets, "selftest", scope=scope)
+        return code, buf.getvalue()
+
+    base = {"created": "2026-01-01", "updated": "2026-01-01", "tags": [],
+            "blocked_by": [], "human_steps": [], "appends": [], "epic": None,
+            "defer_until": None, "_is_epic": False, "_body": "",
+            "executor": "agent", "_stage": "open"}
+    clean = dict(base, id="ZZ-920", title="contracted", verify="true",
+                 touches=["scratch/zz920/*"], _path="ZZ-920")
+    broken = dict(base, id="ZZ-921", title="no verify", verify="",
+                  touches=["scratch/zz921/*"], _path="ZZ-921")
+    tickets = [clean, broken]
+
+    code, out = run(tickets)
+    if code != 1:
+        failures.append(f"lint: unscoped run with one broken ticket exited {code}, want 1")
+
+    code, out = run(tickets, scope={"ZZ-920"})
+    if code != 0:
+        failures.append(f"lint --scope on the clean ticket exited {code}, want 0")
+    if "ZZ-921: no verify" not in out:
+        failures.append(f"lint --scope hid the out-of-scope error: {out!r}")
+
+    code, out = run(tickets, scope={"zz-921"})
+    if code != 1:
+        failures.append(f"lint --scope on the broken ticket exited {code}, want 1 "
+                        f"(ids compare case-insensitively)")
+
+    # A pair collision belongs to both tickets, so either id gates on it.
+    rival = dict(base, id="ZZ-922", title="collides with the clean one",
+                 verify="true", touches=["scratch/zz920/*"], _path="ZZ-922")
+    code, out = run([clean, rival], scope={"ZZ-920"})
+    if code != 1 or "both startable" not in out:
+        failures.append(f"lint --scope: a collision error did not gate on one of "
+                        f"its two tickets (exit {code}): {out!r}")
+
+    code, out = run(tickets, scope={"ZZ-999"})
+    if code != 0 or "not in the set" not in out:
+        failures.append(f"lint --scope with an unknown id exited {code} or did "
+                        f"not say so: {out!r}")
+    return failures
+
+
 def _notes_md_selftest():
     """load_files() must exclude a `<id>.notes.md` progress note by suffix
     (see `[FILE-4]`, WO-046) without swallowing a ticket whose slug merely
@@ -1467,6 +1546,7 @@ def parse_args(argv):
     fixture = None
     repo_path = None
     repo_name = None
+    scope_ids = None
     positional = []
 
     i = 0
@@ -1504,6 +1584,13 @@ def parse_args(argv):
                 die("--repo-name needs a value")
             repo_name = rest[i + 1]
             i += 2
+        elif a == "--scope":
+            if i + 1 >= len(rest):
+                die("--scope needs a value (KEY or KEY,KEY,...)")
+            scope_ids = {k.strip() for k in rest[i + 1].split(",") if k.strip()}
+            if not scope_ids:
+                die("--scope needs at least one ticket id")
+            i += 2
         elif a in ("-h", "--help"):
             print(__doc__)
             sys.exit(0)
@@ -1518,6 +1605,8 @@ def parse_args(argv):
         die(f"--repo applies to scope only, not '{cmd}'")
     if repo_name is not None and cmd != "scope":
         die(f"--repo-name applies to scope only, not '{cmd}'")
+    if scope_ids is not None and cmd != "lint":
+        die(f"--scope applies to lint only, not '{cmd}'")
 
     if cmd == "scope":
         if len(positional) < 2:
@@ -1528,18 +1617,18 @@ def parse_args(argv):
         if source == "files" and not root:
             print(__doc__)
             sys.exit(2)
-        return cmd, source, root, jira_api, fixture, (ticket_id, base_ref), repo_path, repo_name
+        return cmd, source, root, jira_api, fixture, (ticket_id, base_ref), repo_path, repo_name, None
 
     root = positional[0].rstrip("/") if positional else None
     if cmd != "selftest" and source == "files" and not root:
         print(__doc__)
         sys.exit(2)
 
-    return cmd, source, root, jira_api, fixture, None, repo_path, repo_name
+    return cmd, source, root, jira_api, fixture, None, repo_path, repo_name, scope_ids
 
 
 def main(argv):
-    cmd, source, root, jira_api, fixture, scope_args, repo_path, repo_name = parse_args(argv)
+    cmd, source, root, jira_api, fixture, scope_args, repo_path, repo_name, scope_ids = parse_args(argv)
     if cmd == "selftest":
         return selftest()
     if source == "jira":
@@ -1555,6 +1644,8 @@ def main(argv):
         # ticket directory (e.g. ~/code/issues), which is not a git repo
         # and made every `scope` call here exit 128.
         return scope(ticket_id, base_ref, tickets, cwd=repo_path, repo=repo_name)
+    if cmd == "lint" and scope_ids is not None:
+        return lint(tickets, label, scope=scope_ids)
     return CMDS[cmd](tickets, label)
 
 
