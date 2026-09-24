@@ -407,6 +407,10 @@ def is_startable(t, by_id, today):
         other = by_id.get(dep)
         if other is None or other["_stage"] not in TERMINAL:
             return False
+    if as_list(t.get("blocked_by_external")) or (
+            "blocked_by_external" in t["_fields"]
+            and as_list(t.get("blocked_by_external")) is None):
+        return False
     return True
 
 
@@ -578,6 +582,17 @@ def check_blocked_by_resolves(t, ctx):
     missing = [d for d in paths_of(t, "blocked_by") if d not in ctx.by_id]
     if missing:
         return f"'blocked_by' names {missing}, which resolve to no ticket in the set"
+    return None
+
+
+def check_blocked_by_external(t, _ctx):
+    if "blocked_by_external" not in t["_fields"]:
+        return None
+    items = as_list(t.get("blocked_by_external"))
+    if items is None:
+        return "'blocked_by_external' is not a list"
+    if any(not isinstance(x, str) or not x.strip() for x in items):
+        return "'blocked_by_external' holds an empty item; each entry names what is waited on"
     return None
 
 
@@ -857,6 +872,7 @@ CHECKS = {
     "MUST-39": per_ticket(check_reserved_fields),
     "MUST-40": check_claim,
     "MUST-47": per_ticket(check_deferred_date, at_triage=True),
+    "MUST-48": per_ticket(check_blocked_by_external),
     "SHOULD-1": per_ticket(should_id_form),
     "SHOULD-2": should_tag_vocabulary,
     "SHOULD-4": per_ticket(should_say_manual),

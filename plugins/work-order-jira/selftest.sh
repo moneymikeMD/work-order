@@ -104,7 +104,8 @@ fi
 ADDED_FIELDS='[{"id":"customfield_10050","name":"human_steps","custom":true,"schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}},
 {"id":"customfield_10051","name":"appends","custom":true,"schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}},
 {"id":"customfield_10052","name":"defer_until","custom":true,"schema":{"type":"date","custom":"com.atlassian.jira.plugin.system.customfieldtypes:datepicker"}},
-{"id":"customfield_10053","name":"outcome","custom":true,"schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}}]'
+{"id":"customfield_10053","name":"outcome","custom":true,"schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}},
+{"id":"customfield_10054","name":"blocked_by_external","custom":true,"schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}}]'
 
 wf_search() {
     case "${WO_TEST_WF:-live}" in
@@ -585,7 +586,7 @@ BAREcalls=$(grep -cv -- '--dry-run' "$LOG" || true)
 eq "  every call the stub saw carried --dry-run" "0" "$BAREcalls"
 eq "  and workflow-apply was announced, not invoked" "" "$(cat "$WORK/wfspy.log")"
 not_contains "  no curl was reached" "curl was called" "$OUT"
-for f in touches executor verify human_steps appends defer_until outcome; do
+for f in touches executor verify human_steps appends defer_until outcome blocked_by_external; do
     contains "  the plan names the $f field" "\"name\":\"$f\"" "$OUT"
 done
 contains "  the plan names the create transition it would retarget" "create transition" "$OUT"
@@ -618,12 +619,12 @@ eq "provision converges an existing conforming project" "0" "$RC"
 not_contains "  without creating the project again" "creating it" "$OUT"
 contains "  invoking workflow-apply for the lifecycle" "workflow-apply invoked" "$(cat "$WORK/wfspy.log")"
 CREATED=$(printf '%s' "$OUT" | grep -c "absent — creating" || true)
-eq "  creating exactly the four fields the site lacks" "4" "$CREATED"
+eq "  creating exactly the five fields the site lacks" "5" "$CREATED"
 contains "  reusing the field that is already present" "field 'verify' already present" "$OUT"
 contains "  leaving the executor option that exists alone" "executor option 'agent' already present" "$OUT"
 contains "  adding the executor options that do not" "executor option 'mixed' absent" "$OUT"
 ADDS=$(grep -c 'POST /screens/' "$LOG" || true)
-eq "  adding 7 fields to each of the 3 screens" "21" "$ADDS"
+eq "  adding 8 fields to each of the 3 screens" "24" "$ADDS"
 contains "  and printing the resolved field ids" "customfield_" "$OUT"
 
 reset_log prov-unsearchable
@@ -633,7 +634,7 @@ eq "provision repairs a field JQL cannot search" "0" "$RC"
 contains "  treating the HTTP 400 as the signal" "confirmed via HTTP 400" "$OUT"
 contains "  and re-probing after the repair" "JQL-searchable after repair" "$OUT"
 PUTS=$(grep -c '^PUT /field/' "$LOG" || true)
-eq "  with one searcherKey PUT per field" "7" "$PUTS"
+eq "  with one searcherKey PUT per field" "8" "$PUTS"
 
 reset_log prov-create
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_PROJECT=missing WO_TEST_FIELDS=live \

@@ -192,6 +192,7 @@ here, as `[SPEC.md MUST-41]` requires:
 | `executor` | scalar, exactly `agent`, `human` or `mixed` |
 | `tags` | inline list, or block list; `[]` when empty |
 | `blocked_by` | inline list of ids in the same set; `[]` when empty |
+| `blocked_by_external` | block list of free-text dependencies outside the set (`[SPEC.md MUST-48]`); absent or `[]` when none |
 | `touches` | block list of paths or globs (`[FILE-15]`) |
 | `appends` | block list of paths or globs (`[FILE-15]`) |
 | `verify` | block scalar |
@@ -201,8 +202,8 @@ here, as `[SPEC.md MUST-41]` requires:
 | `epic` | scalar, the grouping's id |
 | problem, solution, out-of-scope | headed sections of the Markdown body |
 
-`defer_until` and `epic` carry the meanings `[SPEC.md MUST-39]` reserves for
-them and no others.
+`defer_until`, `epic` and `blocked_by_external` carry the meanings
+`[SPEC.md MUST-39]` reserves for them and no others.
 
 [FILE-15] `full` — `touches` and `appends` globs are relative to the root the
 set names, which is the root `[SPEC.md MUST-14]` requires a set to define. A set

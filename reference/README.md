@@ -108,6 +108,20 @@ sees the same ticket set, and a ticket legitimately named e.g.
 `lint` is not the conformance validator. It answers "can this set be worked
 on", not "does this set conform to `SPEC.md` at profile X".
 
+## A blocker outside the set
+
+`blocked_by` names tickets in the set. A dependency on work the set does not
+own — another repository's release, a vendor, an approval held elsewhere —
+goes in `blocked_by_external`, one free-text entry per line, optionally
+ending in a URL (`SPEC.md MUST-48`). While it is non-empty, `next` excludes
+the ticket and `board` shows `waits on: ...` beside it, exactly as an
+unsatisfied `blocked_by` edge would. `lint` reports a scalar value as an
+error and warns on every workable ticket that is waiting.
+
+Before the field existed the only place to write such a blocker was prose,
+which no tool reads, so the ticket showed as startable and a dispatcher acting
+on the tool's word sent a worker into a wall (NWM-128, 2026-09-19).
+
 ## Gating a transition on its own ticket
 
 `lint --scope KEY[,KEY...]` prints the same full report and narrows only the

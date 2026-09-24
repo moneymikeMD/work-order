@@ -26,6 +26,11 @@ Wave computation (`waves`, `preflight`, `--landing`) is not this file's job:
 it belongs to the dispatch layer (night-watchman's scripts/waves.py). This
 file answers what is workable, not how to run it in parallel.
 
+A ticket whose `blocked_by_external` is non-empty waits on work outside the
+set (SPEC.md MUST-48): it is excluded from `next` and shown in `board` with
+`waits on: ...`. It is the structured home for a dependency `blocked_by`
+cannot name, so it never has to live as prose that no tool reads.
+
 A ticket with no executor (missing/None/empty) is never startable: it is
 excluded from `next`, and shown in `board` under its real stage with a `[?]`
 marker and the suffix "not startable: no executor" — regardless of source
@@ -189,12 +194,14 @@ JIRA_FIELD_HUMAN_STEPS = "customfield_10045"
 JIRA_FIELD_APPENDS = "customfield_10046"
 JIRA_FIELD_EXECUTOR = "customfield_10047"
 JIRA_FIELD_DEFER_UNTIL = "customfield_10048"
+JIRA_FIELD_BLOCKED_BY_EXTERNAL = "customfield_10049"
 
 JIRA_FIELDS = ",".join([
     "summary", "status", "labels", "issuelinks", "created", "updated", "parent",
     "issuetype", "description",
     JIRA_FIELD_TOUCHES, JIRA_FIELD_VERIFY, JIRA_FIELD_HUMAN_STEPS,
     JIRA_FIELD_APPENDS, JIRA_FIELD_EXECUTOR, JIRA_FIELD_DEFER_UNTIL,
+    JIRA_FIELD_BLOCKED_BY_EXTERNAL,
 ])
 
 # The legacy /rest/api/3/search is 410 Gone on newer sites; /search/jql
@@ -370,6 +377,7 @@ def jira_issue_to_ticket(issue):
         "updated": (f.get("updated") or "")[:10],
         "tags": f.get("labels") or [],
         "blocked_by": blocked_by,
+        "blocked_by_external": _lines(f.get(JIRA_FIELD_BLOCKED_BY_EXTERNAL)),
         "touches": _lines(f.get(JIRA_FIELD_TOUCHES)),
         "verify": _adf_text(f.get(JIRA_FIELD_VERIFY)).strip(),
         "human_steps": _lines(f.get(JIRA_FIELD_HUMAN_STEPS)),
@@ -617,6 +625,18 @@ def parse_iso_date(s):
         return None
 
 
+def external_blockers(t):
+    """The `blocked_by_external` entries as a list of strings. A scalar is
+    read as one entry so a ticket written that way still reads as blocked;
+    lint reports the shape."""
+    v = t.get("blocked_by_external")
+    if not v:
+        return []
+    if isinstance(v, str):
+        return [v.strip()] if v.strip() else []
+    return [str(x).strip() for x in v if str(x).strip()]
+
+
 def is_deferred(t, today=None):
     """True only for a *valid, future* defer_until. A bad value is lint()'s
     problem, not schedulability's — treating it as deferred here would hide
@@ -773,6 +793,16 @@ def lint(tickets, root, scope=None):
             if dep == tid:
                 err(tid, f"{tid}: blocked by itself")
 
+        ext = t.get("blocked_by_external")
+        if ext is not None and ext != [] and not isinstance(ext, list):
+            err(tid, f"{tid}: blocked_by_external is not a list — one entry per "
+                     f"line, each naming what outside the set is waited on")
+        elif isinstance(ext, list) and any(not str(x).strip() for x in ext):
+            err(tid, f"{tid}: blocked_by_external holds an empty entry")
+        if external_blockers(t) and stage in WORKABLE:
+            warns.append(f"{tid}: waits on {external_blockers(t)} outside this "
+                         f"set — not startable until the field is cleared")
+
         defer = t.get("defer_until")
         if defer and parse_iso_date(defer) is None:
             err(tid, f"{tid}: defer_until '{defer}' is not an ISO date "
@@ -845,6 +875,7 @@ def lint(tickets, root, scope=None):
             err(tid, f"{tid}: duplicated across {', '.join(paths)}")
 
     startable = [t for t in tickets if t["_stage"] in WORKABLE
+                 and not external_blockers(t)
                  and all(next((x for x in tickets if x.get("id") == d), {}).get("_stage") in RESOLVING
                          for d in (t.get("blocked_by") or []))]
     for i, a in enumerate(startable):
@@ -957,7 +988,9 @@ def board(tickets, root):
             blocked = t.get("blocked_by") or []
             b = f"  blocked_by {','.join(blocked)}" if blocked and stage in PENDING else ""
             defer = f"  deferred until {t['defer_until']}" if is_deferred(t) else ""
-            print(f"  {t.get('id','?'):<10} {t.get('title','')}{ex}{b}{defer}{epic_label(t, rollup)}")
+            ext = external_blockers(t)
+            w = f"  waits on: {'; '.join(ext)}" if ext and stage in PENDING else ""
+            print(f"  {t.get('id','?'):<10} {t.get('title','')}{ex}{b}{w}{defer}{epic_label(t, rollup)}")
 
     if epics:
         print(f"\nEpics  ({len(epics)})")
@@ -983,6 +1016,8 @@ def nxt(tickets, root):
         if t.get("_is_epic"):
             continue
         if not has_executor(t):
+            continue
+        if external_blockers(t):
             continue
         if all(by_id.get(d, {}).get("_stage") in RESOLVING for d in (t.get("blocked_by") or [])):
             out.append(t)
@@ -1206,6 +1241,7 @@ def selftest():
     failures.extend(_jira_fixture_selftest())
     failures.extend(_notes_md_selftest())
     failures.extend(_lint_scope_selftest())
+    failures.extend(_external_blocker_selftest())
 
     if failures:
         print("SELFTEST FAILED")
@@ -1476,6 +1512,59 @@ def _lint_scope_selftest():
     if code != 0 or "not in the set" not in out:
         failures.append(f"lint --scope with an unknown id exited {code} or did "
                         f"not say so: {out!r}")
+    return failures
+
+
+def _external_blocker_selftest():
+    """WO-70: a non-empty blocked_by_external excludes a ticket from `next`,
+    marks it in `board`, and keeps it out of lint's startable-collision
+    pairs; a scalar value is a lint error naming the shape."""
+    import io
+    import contextlib
+    failures = []
+
+    def capture(fn, tickets):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = fn(tickets, "selftest")
+        return code, buf.getvalue()
+
+    base = {"created": "2026-01-01", "updated": "2026-01-01", "tags": [],
+            "blocked_by": [], "human_steps": [], "appends": [], "epic": None,
+            "defer_until": None, "_is_epic": False, "_body": "",
+            "executor": "agent", "verify": "true", "_stage": "open"}
+    waiting = dict(base, id="ZZ-930", title="waits on another repo",
+                   touches=["scratch/zz930/*"], _path="ZZ-930",
+                   blocked_by_external=["ai-toolkit publishing the known-issue action"])
+    free = dict(base, id="ZZ-931", title="nothing external", touches=["scratch/zz931/*"],
+                _path="ZZ-931", blocked_by_external=[])
+    rival = dict(base, id="ZZ-932", title="same files as the waiting one",
+                 touches=["scratch/zz930/*"], _path="ZZ-932")
+
+    _, next_out = capture(nxt, [waiting, free])
+    if "ZZ-930" in next_out:
+        failures.append("next: a ticket with blocked_by_external was startable")
+    if "ZZ-931" not in next_out:
+        failures.append("next: an empty blocked_by_external excluded the control")
+
+    _, board_out = capture(board, [waiting, free])
+    row = next((l for l in board_out.splitlines() if "ZZ-930" in l), "")
+    if "waits on: ai-toolkit publishing" not in row:
+        failures.append(f"board: ZZ-930 row does not name what it waits on: {row!r}")
+
+    code, lint_out = capture(lint, [waiting, rival])
+    if "both startable" in lint_out:
+        failures.append(f"lint: an externally blocked ticket was paired as "
+                        f"startable in a collision: {lint_out!r}")
+    if "waits on" not in lint_out:
+        failures.append(f"lint: no warning names the external wait: {lint_out!r}")
+
+    scalar = dict(free, id="ZZ-933", _path="ZZ-933",
+                  blocked_by_external="written as one line")
+    code, lint_out = capture(lint, [scalar])
+    if code != 1 or "blocked_by_external is not a list" not in lint_out:
+        failures.append(f"lint: a scalar blocked_by_external was not reported "
+                        f"(exit {code}): {lint_out!r}")
     return failures
 
 

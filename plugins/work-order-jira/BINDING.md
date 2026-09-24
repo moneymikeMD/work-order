@@ -49,6 +49,7 @@ representation it takes here.
 | `executor` | custom field `executor`, single `select` | options exactly `agent`, `human`, `mixed` |
 | `tags` | `fields.labels` | Jira labels cannot contain spaces |
 | `blocked_by` | inward `Blocks` issue links | "is blocked by" on the ticket |
+| `blocked_by_external` | custom field `blocked_by_external`, `textarea` | one dependency outside the set per line, `[MUST-48]` meaning |
 | `touches` | custom field `touches`, `textarea` | one path or glob per line |
 | `appends` | custom field `appends`, `textarea` | one path or glob per line |
 | `human_steps` | custom field `human_steps`, `textarea` | one step per line |
@@ -294,6 +295,15 @@ project = KEY AND status in (Open, "To Do")
 Jira's own boards and backlogs present tickets by rank and sprint and know
 nothing about `blocked_by`, so a board is not a startable list. The set's
 startable query is authoritative; the board is a view.
+
+A blocker outside the set has no issue a `Blocks` link can name — another
+project's release, a vendor, an approval held elsewhere. It goes in the
+`blocked_by_external` textarea, one per line, and the reference
+implementation's `next` and `board` read it exactly as an unsatisfied
+`Blocks` link (`[MUST-48]`). Add `blocked_by_external is EMPTY` to the
+startable query above. Cross-project `Blocks` links stay what they were: a
+blocker in a project the fetch never asked for is read on its nested status,
+not as an external dependency.
 
 **`[MUST-32]` — a startable ticket's body MUST NOT change except when its
 acceptance contract changes.** Jira permits any edit at any position. This is
