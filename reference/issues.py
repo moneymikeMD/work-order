@@ -9,8 +9,11 @@
                                 paths, run in --repo (default: cwd), vs the
                                 ticket's touches/appends -- a leading
                                 <repo-name>/ component is stripped from each
-                                glob, scoped to --repo's basename, before
-                                matching; exit 0 all declared, 1 any
+                                glob, scoped to the repository's name (the
+                                main worktree's basename, so a linked
+                                worktree resolves the same), before
+                                matching; --repo-name NAME overrides it;
+                                exit 0 all declared, 1 any
                                 UNDECLARED, 2 unresolved ticket or ref
     issues.py selftest         run built-in fixture checks, no <dir> needed
 
@@ -628,6 +631,28 @@ def _where(t, root):
     return path
 
 
+def _repo_name(cwd=None):
+    """The repository's name for `<repo>/` prefix stripping: the basename
+    of the MAIN worktree, which is the parent of `git rev-parse
+    --git-common-dir`. A linked worktree's own directory (`wt-nwm-174`) is
+    not the repo name, and reading it as one made every prefixed glob
+    report UNDECLARED exactly where scope is meant to run (WO-74). Falls
+    back to the directory basename when git cannot answer."""
+    here = os.path.abspath(cwd or os.getcwd()).rstrip(os.sep)
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, timeout=30, cwd=here,
+        )
+    except (OSError, subprocess.SubprocessError):
+        proc = None
+    if proc is not None and proc.returncode == 0:
+        common = (proc.stdout or "").strip()
+        if common:
+            return os.path.basename(os.path.dirname(common.rstrip(os.sep)))
+    return os.path.basename(here)
+
+
 def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
     """Classify every path in `git diff --name-only <base_ref>...HEAD`,
     run in `cwd` (the repo checkout being diffed — never the ticket
@@ -636,7 +661,7 @@ def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
     changed path and returns 0 when every path is declared, 1 when any path
     is UNDECLARED, 2 when the ticket or ref cannot be resolved. `repo`
     scopes the `<repo>/` prefix stripped from touches/appends before
-    matching; if omitted, it is the basename of `cwd` (or the process cwd).
+    matching; if omitted, it is the repository's name — see _repo_name().
     Adapted from mattpocock/skills code-review (spec axis), 2026-09-14."""
     ticket = next((t for t in tickets if t.get("id") == ticket_id), None)
     if ticket is None:
@@ -657,10 +682,7 @@ def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
               file=sys.stderr)
         return 2
     paths = [p for p in (proc.stdout or "").splitlines() if p]
-    effective_repo = repo
-    if effective_repo is None:
-        effective_repo = os.path.basename(
-            os.path.abspath(cwd or os.getcwd()).rstrip(os.sep))
+    effective_repo = repo if repo is not None else _repo_name(cwd)
     touches = _strip_repo_prefix(ticket.get("touches") or [], effective_repo)
     appends = _strip_repo_prefix(ticket.get("appends") or [], effective_repo)
     undeclared = 0
@@ -1348,6 +1370,33 @@ def _scope_selftest():
         if code != 2:
             failures.append(f"scope: unresolved-ref case exited {code}, want 2")
 
+        # WO-74: a dispatched worker runs in a linked worktree named after
+        # the ticket, not the repository. The `<repo>/` prefix must still
+        # strip there, or every declared path reads UNDECLARED.
+        repo_name = os.path.basename(repo)
+        wt = os.path.join(os.path.dirname(repo), f"wt-zz904-{os.getpid()}")
+        git("worktree", "add", "-q", wt, "HEAD")
+        try:
+            prefixed = [dict(ticket, touches=[
+                f"{repo_name}/scratch/zz904/*", f"{repo_name}/elsewhere.txt",
+            ])]
+            if _repo_name(wt) != repo_name:
+                failures.append(f"scope: _repo_name in a linked worktree gave "
+                                f"{_repo_name(wt)!r}, want {repo_name!r}")
+            code, out = capture(scope, "ZZ-904", "base", prefixed, cwd=wt)
+            if code != 0:
+                failures.append(f"scope: linked-worktree case exited {code}, "
+                                f"want 0 — the repo name was read from the "
+                                f"worktree directory: {out!r}")
+            code, _ = capture(scope, "ZZ-904", "base", prefixed, cwd=wt,
+                              repo="other-repo")
+            if code != 1:
+                failures.append(f"scope: an explicit repo override exited "
+                                f"{code}, want 1 (globs for another repo never "
+                                f"match)")
+        finally:
+            git("worktree", "remove", "--force", wt)
+
     return failures
 
 
@@ -1394,11 +1443,13 @@ def parse_args(argv):
     is where tickets are loaded from, and is NOT a git repo, so it is never
     used as `git diff`'s cwd.
 
-    `--repo PATH` (scope only) is the checkout `git diff` runs in and whose
-    basename scopes the `<repo>/` prefix stripped from touches/appends
-    before matching. Defaults to the current directory when omitted, so
-    `issues.py scope <id> <base-ref>` run from inside the repo being
-    reviewed needs no flag.
+    `--repo PATH` (scope only) is the checkout `git diff` runs in. Defaults
+    to the current directory when omitted, so `issues.py scope <id>
+    <base-ref>` run from inside the repo being reviewed needs no flag. The
+    `<repo>/` prefix stripped from touches/appends is scoped to the
+    repository's name, read from git's main worktree (see _repo_name());
+    `--repo-name NAME` (scope only) overrides that for a caller whose
+    checkout directory is not named after the repository.
 
     `--help` prints this and exits 0, so the flag list is discoverable
     without reading the file."""
@@ -1415,6 +1466,7 @@ def parse_args(argv):
     jira_api = os.environ.get("ISSUES_JIRA_API")
     fixture = None
     repo_path = None
+    repo_name = None
     positional = []
 
     i = 0
@@ -1447,6 +1499,11 @@ def parse_args(argv):
                 die("--repo needs a path")
             repo_path = rest[i + 1]
             i += 2
+        elif a == "--repo-name":
+            if i + 1 >= len(rest):
+                die("--repo-name needs a value")
+            repo_name = rest[i + 1]
+            i += 2
         elif a in ("-h", "--help"):
             print(__doc__)
             sys.exit(0)
@@ -1459,6 +1516,8 @@ def parse_args(argv):
 
     if repo_path is not None and cmd != "scope":
         die(f"--repo applies to scope only, not '{cmd}'")
+    if repo_name is not None and cmd != "scope":
+        die(f"--repo-name applies to scope only, not '{cmd}'")
 
     if cmd == "scope":
         if len(positional) < 2:
@@ -1469,18 +1528,18 @@ def parse_args(argv):
         if source == "files" and not root:
             print(__doc__)
             sys.exit(2)
-        return cmd, source, root, jira_api, fixture, (ticket_id, base_ref), repo_path
+        return cmd, source, root, jira_api, fixture, (ticket_id, base_ref), repo_path, repo_name
 
     root = positional[0].rstrip("/") if positional else None
     if cmd != "selftest" and source == "files" and not root:
         print(__doc__)
         sys.exit(2)
 
-    return cmd, source, root, jira_api, fixture, None, repo_path
+    return cmd, source, root, jira_api, fixture, None, repo_path, repo_name
 
 
 def main(argv):
-    cmd, source, root, jira_api, fixture, scope_args, repo_path = parse_args(argv)
+    cmd, source, root, jira_api, fixture, scope_args, repo_path, repo_name = parse_args(argv)
     if cmd == "selftest":
         return selftest()
     if source == "jira":
@@ -1495,7 +1554,7 @@ def main(argv):
         # process's own cwd. NEVER `root` -- in files mode that is the
         # ticket directory (e.g. ~/code/issues), which is not a git repo
         # and made every `scope` call here exit 128.
-        return scope(ticket_id, base_ref, tickets, cwd=repo_path)
+        return scope(ticket_id, base_ref, tickets, cwd=repo_path, repo=repo_name)
     return CMDS[cmd](tickets, label)
 
 
