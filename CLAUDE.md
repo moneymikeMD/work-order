@@ -10,13 +10,11 @@ how the repository itself is worked.
 ## Workflow
 
 - `main` is protected by a ruleset named `main`: every change lands through a
-  pull request, and deletion and force-pushes are rejected. Confirm it is
-  actually in place with `gh api repos/moneymikeMD/work-order/rulesets` — the
-  ruleset is the last step of the landing script, so a run that stopped early
-  leaves this paragraph describing an intention rather than a fact.
-- Outside contributors need one approving review. The owner is a bypass actor,
-  so the owner's own PRs merge without waiting. That makes the review and the
-  required check advisory for the owner and gating for everyone else.
+  pull request, deletion and force-pushes are rejected, `validate` is the one
+  required status check, and one approving review is required. The repository
+  admin role is a bypass actor, so the owner's own PRs merge without waiting —
+  `ai-toolkit/scripts/pr-land.sh` takes that path when every required check is
+  green and nothing else on the head SHA has failed.
 - Squash merge, branch deleted on merge.
 - Conventional Commits are required, not optional: `release-please` derives the
   version bump and `CHANGELOG.md` from the commit subjects. A non-conforming
@@ -28,26 +26,18 @@ how the repository itself is worked.
 pull request: `selftests`, `validate`, `no-major` and `no-personal-paths`.
 
 `validate` parses every JSON and YAML file in the tree and compiles every Python
-file. `selftests` **discovers** every `*selftest*.sh` by glob and runs it, then
+file. `selftests` discovers every `*selftest*.sh` by glob and runs it, then
 runs the Python selftest entry points — `reference/issues.py selftest` and
 `conformance/validate.py --selftest`, which a filename glob cannot find. A
 selftest added later is covered with no workflow edit. `no-major` is the version
 cap, described below. `no-personal-paths` consumes an ai-toolkit action.
 
-**Only `validate` is a required status check.** Measured against the live
-rulesets API on 2026-09-21 and again 2026-09-22: the `main` ruleset requires the
-single context `validate`. The other three report; they do not gate.
+Only `validate` is a required status check; the other three report. A red
+selftest suite therefore does not block a merge by itself.
 
 Every selftest here is offline by construction: each stubs its HTTP client on
 `PATH` and reaches no network, site or credential, which is what lets them run
 on a public repository with no secret.
-
-`validate` is a required status check on `main`; add `selftests` to the ruleset
-so a red suite blocks a merge.
-
-Why the second job exists: `validate` alone was green while 14 assertions in
-`plugins/work-order-jira/selftest.sh` were failing, because nothing ran them
-(WO-052).
 
 ## Packaging
 
@@ -72,17 +62,14 @@ satisfies fails the install outright.
 through a release PR. Nothing in those files is edited by hand.
 
 The `work-order` plugin is versioned by the repository's own release, because
-the repository is the plugin: it moved from its own `work-order--v0.2.0` line
-onto `version.txt`'s line at 1.2.0. Only `work-order-jira` still carries a
-separate `work-order-jira--vX.Y.Z` tag.
+the repository is the plugin. `work-order-jira` carries a separate
+`work-order-jira--vX.Y.Z` tag line.
 
 The plugin's dependents pin it with a semver range, and Claude Code resolves that
 against `work-order--vX.Y.Z` tags on this repository, not against release-please's
 `vX.Y.Z`. The `release-please` workflow therefore adds a `work-order--v` tag on the
-release commit whenever the root package releases; `work-order--v1.3.0` through
-`--v1.5.0` were created by hand at the same commits as their `v` twins. Without the
-prefixed tag, an install through `moneymike-plugins` leaves the dependency
-unresolved.
+release commit whenever the root package releases. Without the prefixed tag, an
+install through `moneymike-plugins` leaves the dependency unresolved.
 
 Known quirk: a commit pushed with the default `GITHUB_TOKEN` does not trigger
 other workflows, so the release PR's rebases do not re-run CI and its checks go
@@ -102,19 +89,13 @@ release-please reads as a major bump — a `!` after the type or scope, and a
 applies to the pull request title too, because `pr-land.sh` squash-merges and
 the squash subject comes from the title.
 
-The `no-major` job in `.github/workflows/ci.yml` **reports** on every pull
-request and on every push to `main`; ai-toolkit and night-watchman run the same
-job. **It does not enforce anything.** Measured 2026-09-21 and again 2026-09-22:
-`no-major` is not among the required status check contexts in any of the three
-repos that run it — they require `validate`, `selftest, self-lint` and
-`selftests, docs-site, comment-lint` respectively. A pull request carrying a
-`feat!:` subject or a `BREAKING CHANGE:` footer goes red on a check nobody has
-to wait for.
-
-So the cap rests on this rule and on review, not on a gate. Whether it should
-gain one is **NWM-163**, which carries the precondition that would otherwise
-wedge a repo: a required context that never reports blocks a pull request
-forever. Lifting the cap is still one commit per repo: delete the job.
+The `no-major` job in `.github/workflows/ci.yml` reports on every pull request
+and on every push to `main`; ai-toolkit and night-watchman run the same job.
+It is not a required status check in any of the three, so a `feat!:` subject
+or a `BREAKING CHANGE:` footer goes red on a check nobody has to wait for. The
+cap rests on this rule and on review. Making the job required is NWM-163,
+approved by the owner and not yet applied to the rulesets. Lifting the cap is
+one commit per repo: delete the job.
 
 ## Dependencies
 

@@ -47,8 +47,8 @@ A wave — a batch of startable tickets grouped for parallel dispatch by
 disjoint `touches` (`[MUST-15]`) — is computed over whatever set is in view.
 Under this extension, that set is the active sprint's startable tickets rather
 than the whole set. The grouping itself, and the dispatch that acts on it, are
-not properties of a ticket and do not belong here; per this ticket's own
-out-of-scope boundary, they stay in night-watchman as its layer-2 concern.
+not properties of a ticket and do not belong here; per the out-of-scope
+section below, they stay in night-watchman as its layer-2 concern.
 This extension defines only the input wave computation is scoped to, not how
 it computes.
 

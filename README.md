@@ -38,10 +38,11 @@ binding installs separately as `work-order-jira@moneymike-plugins`.
 
 ## Versions
 
-Three numbers move independently. `VERSION-spec` is the specification's own
-version. `version.txt` is this repository's release version, and the
-`work-order` plugin ships at that same number because the plugin is this
-repository. `plugins/work-order-jira/` carries its own.
+Five numbers move independently. `VERSION-spec` is the specification's own
+version and `bindings/file/VERSION` the file binding's. `version.txt` is this
+repository's release version, and the `work-order` plugin ships at that same
+number because the plugin is this repository. `plugins/work-order-jira/`
+carries its own, and `decision-list/` its `decision_list_version`.
 
 ## License
 
