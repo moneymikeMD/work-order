@@ -6,6 +6,8 @@ updated: 2026-09-14
 executor: agent
 tags: [export, docs]
 blocked_by: [CF-001]
+blocked_by_external:
+  - the docs site publishing its column-table macro, https://example.test/docs-macro/issues/12
 touches:
   - docs/export.md
 appends:

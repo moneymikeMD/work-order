@@ -22,13 +22,15 @@ verify
 human_steps
 appends
 defer_until
-outcome'
+outcome
+blocked_by_external'
 WO_JIRA_FIELD_TYPE_KEYS='com.atlassian.jira.plugin.system.customfieldtypes:textarea
 com.atlassian.jira.plugin.system.customfieldtypes:select
 com.atlassian.jira.plugin.system.customfieldtypes:textarea
 com.atlassian.jira.plugin.system.customfieldtypes:textarea
 com.atlassian.jira.plugin.system.customfieldtypes:textarea
 com.atlassian.jira.plugin.system.customfieldtypes:datepicker
+com.atlassian.jira.plugin.system.customfieldtypes:textarea
 com.atlassian.jira.plugin.system.customfieldtypes:textarea'
 # executor's searcherKey is multiselectsearcher, not selectsearcher: a select
 # field's PUT with selectsearcher is HTTP 400, measured live.
@@ -38,6 +40,7 @@ com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
 com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
 com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
 com.atlassian.jira.plugin.system.customfieldtypes:daterange
+com.atlassian.jira.plugin.system.customfieldtypes:textsearcher
 com.atlassian.jira.plugin.system.customfieldtypes:textsearcher'
 WO_JIRA_EXECUTOR_OPTIONS='agent
 human

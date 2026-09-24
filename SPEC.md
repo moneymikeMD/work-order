@@ -211,8 +211,16 @@ transitively.
 
 [MUST-21] `full` — A ticket is **startable** exactly when its lifecycle
 position is `open`, every ticket named in its `blocked_by` has reached a
-terminal position, and it carries no `defer_until` still in the future. An
-implementation MUST NOT present any other ticket as available to pick up.
+terminal position, its `blocked_by_external` is absent or empty, and it
+carries no `defer_until` still in the future. An implementation MUST NOT
+present any other ticket as available to pick up.
+
+A dependency on work outside the set has no identifier `blocked_by` can name.
+Before `blocked_by_external` existed (section 9) the only place to record one
+was prose, which no tool reads, so the ticket showed as startable and a
+dispatcher acting on the tool's word sent a worker into a wall. The field
+gives that dependency a structured home without inventing a placeholder ticket
+for work the set does not own.
 
 The three other positions a live ticket can occupy are each excluded for their
 own reason: `triage` because the ticket is not yet a contract (`[MUST-46]`),
@@ -410,9 +418,27 @@ regardless of `blocked_by`. It is required of a ticket at `deferred`
 
 `epic` — the identifier of a grouping the ticket belongs to.
 
+`blocked_by_external` — a list of dependencies on work outside the set, each
+one free text naming what is waited on, optionally ending in a URL that
+locates it. It is the structured counterpart of `blocked_by` for a blocker
+that has no identifier in the set: another repository's release, a vendor,
+an approval held elsewhere.
+
 [MUST-39] `minimal` — An implementation that carries a field named
-`defer_until` or `epic` MUST give it the meaning stated in this section. No
-profile requires either field.
+`defer_until`, `epic` or `blocked_by_external` MUST give it the meaning stated
+in this section. No profile requires any of the three.
+
+[MUST-48] `full` — A ticket that carries `blocked_by_external` MUST carry it
+as a list of non-empty strings. While the list is non-empty the ticket is not
+startable (`[MUST-21]`), and an implementation that presents the set MUST show
+what the ticket waits on beside it, so the dependency is as visible as a
+`blocked_by` edge. An empty list means the same as an absent field.
+
+`MUST-48` is a new requirement inside an existing profile, which section 12
+classes as MAJOR; under the version cap it is released as MINOR (0.3.0), and
+this sentence is the demotion stated in prose. It cannot invalidate a claim
+made against 0.2: a set with no `blocked_by_external` field satisfies it
+vacuously.
 
 ## 10. Conformance profiles
 
@@ -507,6 +533,7 @@ shorter than they are.
 | `executor` | `full` | `agent`, `human` or `mixed` |
 | `tags` | `full` | Flat list, possibly empty |
 | `blocked_by` | `full` | Identifiers in the same set, possibly empty |
+| `blocked_by_external` | optional, reserved | What outside the set this waits on; non-empty means not startable |
 | `touches` | `full`, for `agent` and `mixed` | Paths this ticket owns |
 | `appends` | optional | Shared paths that merge without reasoning |
 | `human_steps` | `full`, when `mixed` | What the person does, and where automation stops |

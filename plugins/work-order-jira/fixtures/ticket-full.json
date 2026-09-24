@@ -22,19 +22,28 @@
         "Create the Jira API token and export WORK_ORDER_JIRA_TOKEN.",
         "Confirm the target project key before the first live run."
       ],
-      "tags": ["work-order", "jira", "binding"],
+      "tags": [
+        "work-order",
+        "jira",
+        "binding"
+      ],
       "blocked_by": [],
       "touches": [
         "plugins/work-order-jira/provider.sh",
         "plugins/work-order-jira/lib/common.sh"
       ],
-      "appends": ["plugins/work-order-jira/BINDING.md"],
+      "appends": [
+        "plugins/work-order-jira/BINDING.md"
+      ],
       "verify": "plugins/work-order-jira/selftest.sh\nplugins/work-order-jira/provider.sh --dry-run create WO Task s \\\n  --ticket plugins/work-order-jira/fixtures/ticket-full.json",
       "verify_fails_today": "create takes a summary and nothing else, so the dry-run body carries no description.",
       "created": "2026-09-20",
       "updated": "2026-09-20",
       "defer_until": "2026-10-01",
-      "outcome": "Carried so this fixture exercises all seven provisioned fields."
+      "outcome": "Carried so this fixture exercises all seven provisioned fields.",
+      "blocked_by_external": [
+        "the Jira site enabling the textarea searcher, https://example.test/support/4711"
+      ]
     }
   ]
 }

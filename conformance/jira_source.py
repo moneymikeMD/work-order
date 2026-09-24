@@ -96,6 +96,7 @@ def resolve_field_ids(field_list):
         "appends": issues.JIRA_FIELD_APPENDS,
         "executor": issues.JIRA_FIELD_EXECUTOR,
         "defer_until": issues.JIRA_FIELD_DEFER_UNTIL,
+        "blocked_by_external": issues.JIRA_FIELD_BLOCKED_BY_EXTERNAL,
         "outcome": None,
     }
     for entry in field_list or []:
@@ -116,6 +117,7 @@ def _canonical_ids():
         "appends": issues.JIRA_FIELD_APPENDS,
         "executor": issues.JIRA_FIELD_EXECUTOR,
         "defer_until": issues.JIRA_FIELD_DEFER_UNTIL,
+        "blocked_by_external": issues.JIRA_FIELD_BLOCKED_BY_EXTERNAL,
     }
 
 
@@ -139,7 +141,8 @@ def _present(ticket, fields, raw_outcome):
         names.add("tags")
     if "issuelinks" in fields:
         names.add("blocked_by")
-    for name in ("touches", "appends", "human_steps", "verify", "executor", "epic"):
+    for name in ("touches", "appends", "human_steps", "verify", "executor", "epic",
+                 "blocked_by_external"):
         if ticket.get(name):
             names.add(name)
     if ticket.get("defer_until") is not None:
