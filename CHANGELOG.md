@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.0](https://github.com/moneymikeMD/work-order/compare/v1.6.0...v1.7.0) (2026-09-24)
+
+
+### Features
+
+* blocked_by_external gives a cross-repo blocker a structured home (WO-70) ([#53](https://github.com/moneymikeMD/work-order/issues/53)) ([fe16872](https://github.com/moneymikeMD/work-order/commit/fe1687255f85bf6966e8df6d0eabfeadbd7776a7))
+* lint --scope gates the exit code on the named tickets only (WO-69) ([#52](https://github.com/moneymikeMD/work-order/issues/52)) ([922a768](https://github.com/moneymikeMD/work-order/commit/922a7686a8178638b9c7ca44db5e69e7f3fa8182))
+* remove waves and preflight from reference/issues.py (WO-73) ([#49](https://github.com/moneymikeMD/work-order/issues/49)) ([d0656b3](https://github.com/moneymikeMD/work-order/commit/d0656b3b835c19206693a3814d7e21a9cf0b9e43))
+
+
+### Bug Fixes
+
+* scope reads the repo name from git's main worktree, not the cwd basename (WO-74) ([#51](https://github.com/moneymikeMD/work-order/issues/51)) ([6f446f3](https://github.com/moneymikeMD/work-order/commit/6f446f37fbc8b56a8c745edb172993fd72617b50))
+
 ## [1.6.0](https://github.com/moneymikeMD/work-order/compare/v1.5.0...v1.6.0) (2026-09-21)
 
 
