@@ -71,9 +71,15 @@ against `work-order--vX.Y.Z` tags on this repository, not against release-please
 release commit whenever the root package releases. Without the prefixed tag, an
 install through `moneymike-plugins` leaves the dependency unresolved.
 
-Known quirk: a commit pushed with the default `GITHUB_TOKEN` does not trigger
-other workflows, so the release PR's rebases do not re-run CI and its checks go
-stale. `gh pr close <n> && gh pr reopen <n>` re-triggers them.
+A commit pushed with the default `GITHUB_TOKEN` does not trigger other
+workflows, so a release PR pushed with it carries no checks. The
+`release-please` workflow therefore runs with the `RELEASE_PLEASE_TOKEN`
+repository secret, a fine-grained PAT with Contents and Pull requests
+read/write, so its pushes run CI like any other. That PAT expires within a
+year of 2026-09-26; once it does, release PRs come back with no checks, and
+the fix is a new PAT in the same secret. Until then, `gh pr close <n> && gh pr
+reopen <n>` is the one-off remedy for a release PR already sitting with no
+checks.
 
 ### No repo here goes past v1.x
 
