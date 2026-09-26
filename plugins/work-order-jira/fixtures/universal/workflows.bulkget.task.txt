@@ -1,0 +1,431 @@
+# POST /workflows '{"workflowNames":["Universal Managed Workflow"]}' — version 1, no validators
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "statuses": [
+    {
+      "id": "1",
+      "statusReference": "1",
+      "name": "Open",
+      "statusCategory": "TODO",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10014",
+      "statusReference": "10014",
+      "name": "Completed",
+      "statusCategory": "DONE",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10012",
+      "statusReference": "10012",
+      "name": "Awaiting Deployment",
+      "statusCategory": "IN_PROGRESS",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10011",
+      "statusReference": "10011",
+      "name": "Triage",
+      "statusCategory": "TODO",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "3",
+      "statusReference": "3",
+      "name": "In Progress",
+      "statusCategory": "IN_PROGRESS",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10013",
+      "statusReference": "10013",
+      "name": "Deferred",
+      "statusCategory": "TODO",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10015",
+      "statusReference": "10015",
+      "name": "Cancelled",
+      "statusCategory": "DONE",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    }
+  ],
+  "workflows": [
+    {
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "version": {
+        "versionNumber": 1,
+        "id": "e7327d92-05d2-4890-99d1-e4453e2c7a70"
+      },
+      "id": "30e05e9d-7edf-4ef2-9602-180bdbddc6f9",
+      "name": "Universal Managed Workflow",
+      "description": "Universal workflow for all projects",
+      "isEditable": true,
+      "startPointLayout": {
+        "x": 1577.091602815526,
+        "y": -423.5839057599327
+      },
+      "statuses": [
+        {
+          "statusReference": "1",
+          "layout": {
+            "x": 1556.755665315526,
+            "y": -254.210392494903
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10011",
+          "layout": {
+            "x": 1550.790821565526,
+            "y": -322.8556306090735
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10012",
+          "layout": {
+            "x": 1502.189259065526,
+            "y": -69.33031144738696
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10015",
+          "layout": {
+            "x": 1460.771290315526,
+            "y": 44.72979721922184
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10014",
+          "layout": {
+            "x": 1627.8558402230778,
+            "y": 44.72979721922184
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "3",
+          "layout": {
+            "x": 1534.2380375994614,
+            "y": -154.72045004793227
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10013",
+          "layout": {
+            "x": 1418.0772514343262,
+            "y": -254.210392494903
+          },
+          "properties": {},
+          "deprecated": false
+        }
+      ],
+      "transitions": [
+        {
+          "id": "1",
+          "type": "INITIAL",
+          "toStatusReference": "10011",
+          "links": [
+            {
+              "toPort": 1
+            }
+          ],
+          "name": "Create",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "3",
+          "type": "DIRECTED",
+          "toStatusReference": "3",
+          "links": [
+            {
+              "fromStatusReference": "1",
+              "fromPort": 5,
+              "toPort": 1
+            }
+          ],
+          "name": "start work",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "8",
+          "type": "DIRECTED",
+          "toStatusReference": "10013",
+          "links": [
+            {
+              "fromStatusReference": "1",
+              "fromPort": 7,
+              "toPort": 3
+            }
+          ],
+          "name": "defer",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "2",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "10011",
+              "fromPort": 5,
+              "toPort": 1
+            }
+          ],
+          "name": "refine to work",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "7",
+          "type": "DIRECTED",
+          "toStatusReference": "10013",
+          "links": [
+            {
+              "fromStatusReference": "10011",
+              "fromPort": 7,
+              "toPort": 1
+            }
+          ],
+          "name": "defer",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "5",
+          "type": "DIRECTED",
+          "toStatusReference": "10014",
+          "links": [
+            {
+              "fromStatusReference": "10012",
+              "fromPort": 4,
+              "toPort": 1
+            }
+          ],
+          "name": "complete",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "6",
+          "type": "DIRECTED",
+          "toStatusReference": "10015",
+          "links": [
+            {
+              "fromStatusReference": "10012",
+              "fromPort": 6,
+              "toPort": 1
+            }
+          ],
+          "name": "cancel",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "15",
+          "type": "DIRECTED",
+          "toStatusReference": "3",
+          "links": [
+            {
+              "fromStatusReference": "10012",
+              "fromPort": 3,
+              "toPort": 3
+            }
+          ],
+          "name": "re-work",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "13",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "10015",
+              "fromPort": 6,
+              "toPort": 6
+            }
+          ],
+          "name": "re-open",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "12",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "10014",
+              "fromPort": 5,
+              "toPort": 4
+            }
+          ],
+          "name": "re-open",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "4",
+          "type": "DIRECTED",
+          "toStatusReference": "10012",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 5,
+              "toPort": 1
+            }
+          ],
+          "name": "ready for verification",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "9",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 3,
+              "toPort": 3
+            }
+          ],
+          "name": "re-open",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "10",
+          "type": "DIRECTED",
+          "toStatusReference": "10014",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 4,
+              "toPort": 3
+            }
+          ],
+          "name": "complete (no verify)",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "11",
+          "type": "DIRECTED",
+          "toStatusReference": "10015",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 7,
+              "toPort": 7
+            }
+          ],
+          "name": "cancel",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "14",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "10013",
+              "fromPort": 5,
+              "toPort": 6
+            }
+          ],
+          "name": "open",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        }
+      ],
+      "loopedTransitionContainerLayout": {}
+    }
+  ]
+}

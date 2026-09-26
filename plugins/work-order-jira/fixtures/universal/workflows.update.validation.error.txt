@@ -1,0 +1,24 @@
+# POST /workflows/update/validation with a transition to status 999999, which does not exist
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "errors": [
+    {
+      "type": "TRANSITION",
+      "message": "Transition refers to a status that does not exist within this workflow.",
+      "code": "TRANSITION_REFERENCES_A_STATUS_THAT_IS_NOT_IN_WORKFLOW",
+      "level": "ERROR",
+      "elementReference": {
+        "transitionId": "16"
+      }
+    },
+    {
+      "type": "TRANSITION",
+      "message": "Transition references an unknown status.",
+      "code": "TRANSITION_REFERENCES_AN_UNKNOWN_STATUS_REFERENCE",
+      "level": "ERROR",
+      "elementReference": {
+        "transitionId": "16"
+      }
+    }
+  ]
+}

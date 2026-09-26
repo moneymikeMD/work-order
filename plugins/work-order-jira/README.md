@@ -16,8 +16,12 @@ re-release because an endpoint moved.
 - **`provision.sh`** — create or converge a conforming Space.
 - **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`.
 - **`workflow-apply.sh`** — provisioning step 3 on its own.
+- **`universal-apply.sh`** — converge the two site-wide Universal workflows
+  and their shared workflow scheme towards `universal-workflows.json`,
+  additively. `--dry-run` first; it validates against Jira and writes nothing.
 - **`fixtures/`** — responses recorded from a live Jira site.
-- **`selftest.sh`** — offline; stubs the HTTP client and reaches no network.
+- **`selftest.sh`**, **`universal-apply-selftest.sh`** — offline; stub the HTTP
+  client and reach no network.
 
 ## Requirements
 

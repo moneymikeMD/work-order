@@ -38,6 +38,22 @@ line, then the body. `.json` files are bodies alone.
 | `issue.transitions.json` | `GET /issue/<key>/transitions` response |
 | `issue.status.json` | `GET /issue/<key>?fields=status` response |
 
+### `universal/`
+
+Read-only responses recorded 2026-09-26 for `universal-apply.sh`, before any
+write: both Universal workflows at version 1 with no validators, and no
+Universal scheme yet.
+
+| Fixture | Request |
+| --- | --- |
+| `workflows.bulkget.task.txt` | `POST /workflows` for `Universal Managed Workflow` |
+| `workflows.bulkget.epic.txt` | `POST /workflows` for `Universal Managed Epic Workflow`, before its rename |
+| `workflows.bulkget.absent.txt` | `POST /workflows` naming an absent workflow — the whole request 404s, even when other listed names exist |
+| `statuses.search.txt`, `field.list.txt`, `issuetype.list.txt` | the site-wide lists names are resolved against |
+| `workflowscheme.list.txt` | `GET /workflowscheme?startAt=0&maxResults=50` |
+| `workflows.update.validation.ok.txt` | `POST /workflows/update/validation`, no errors |
+| `workflows.update.validation.error.txt` | the same with a transition to a status that does not exist |
+
 ## Requests, not responses
 
 Two files here are inputs rather than recordings, and are marked as such

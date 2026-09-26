@@ -1,0 +1,5 @@
+# POST /workflows/update/validation with an unchanged payload
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "errors": []
+}
