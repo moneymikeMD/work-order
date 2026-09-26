@@ -295,8 +295,8 @@ eq "provider position maps a bound status to its lifecycle position" "awaiting-d
 
 reset_log position-todo
 OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" position PROJ-1 2>/dev/null); RC=$?
-eq "provider position reads the template's To Do as the open position" "open" "$OUT"
-eq "  and exits 0, because a documented alias is not an unmapped status" "0" "$RC"
+eq "provider position reports the template's To Do as unmapped (WO-81 retired the alias)" "4" "$RC"
+contains "  naming the status on stdout" "unmapped-status	To Do" "$OUT"
 
 reset_log position-triage
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Triage" \
@@ -337,7 +337,7 @@ contains "provider transition cancelled resolves its own transition" \
 
 reset_log transition-open
 WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" transition PROJ-1 open >/dev/null 2>&1
-contains "provider transition open resolves the transition into Open, not the To Do alias" \
+contains "provider transition open resolves the transition into Open" \
     '{"transition":{"id":"51"}}' "$(cat "$LOG")"
 
 reset_log transition-triage

@@ -164,9 +164,9 @@
     "status": {
      "description": "",
      "iconUrl": "https://example.atlassian.net/images/icons/statuses/generic.png",
-     "id": "10009",
-     "name": "To Do",
-     "self": "https://example.atlassian.net/rest/api/3/status/10009",
+     "id": "10001",
+     "name": "Open",
+     "self": "https://example.atlassian.net/rest/api/3/status/10001",
      "statusCategory": {
       "colorName": "blue-gray",
       "id": 2,

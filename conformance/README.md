@@ -128,10 +128,9 @@ in the binding's own "What this binding cannot satisfy" section:
 - **`[MUST-26]`** — the lifecycle position is `fields.status` and nothing else,
   and no field this binding reads can carry a second copy of it.
 
-The status map is `issues.py`'s: the binding's seven status names plus the two
-read-only aliases it documents (`To Do` → `open`, `Done` → `completed`). Any
-other status is reported under `[MUST-25]` as a ticket with no lifecycle
-position, per `[JIRA-3]`, rather than guessed at.
+The status map is `issues.py`'s: the binding's seven status names. Any other
+status is reported under `[MUST-25]` as a ticket with no lifecycle position,
+per `[JIRA-3]`, rather than guessed at.
 
 ## Layouts
 

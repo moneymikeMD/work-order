@@ -85,39 +85,20 @@ Both types run the Grouping workflow, which carries no validators.
 | Position | Status | |
 | --- | --- | --- |
 | `triage` | `Triage` | the entry state, `[MUST-46]` |
-| `open` | `Open` | ready to work, `[JIRA-15]` |
+| `open` | `Open` | ready to work |
 | `in-progress` | `In Progress` | |
 | `awaiting-deployment` | `Awaiting Deployment` | |
 | `deferred` | `Deferred` | exit is time-based, `[MUST-47]` |
 | `completed` | `Completed` | terminal |
 | `cancelled` | `Cancelled` | terminal |
 
-[JIRA-15] The `open` position MUST bind to the Jira status `Open`. `Open` is
-*a ticket that is ready to be worked on; it meets our criteria as something that
-is startable* — `[MUST-25]`'s definition of the position, and what the file
-binding's `open/` directory has always meant. An implementation MUST NOT bind
-the position to any other status, and MUST NOT retire `Open` on the evidence
-that it is holding no issues: how many issues sit in a status is a fact about
-one moment, and this binding is a contract.
-
-### Legacy statuses, read only
-
-| Status | Read as | |
-| --- | --- | --- |
-| `To Do` | `open` | the scrum template's default ready-to-work status |
-| `Done` | `completed` | the scrum template's closed status |
-
-An implementation MAY accept these two on read, and MUST NOT write either, MUST
-NOT provision either, and MUST NOT accept any status outside this table and the
-one above. The alias is one-way, and it is here so that a Space provisioned from
-the Jira project template — which ships `To Do` and `Done` and neither of the
-statuses those two alias — stays readable rather than reporting every issue as
-having no position at all. That is what happened to all 58 issues of one import.
-This is not the guess `[JIRA-3]` forbids: an alias is stated here by name, and
-the set of them is closed.
-
-Whether `To Do` survives on the prototype's board is a separate question, open
-in WO-058, and it is the owner's to answer. Nothing in this binding decides it.
+[JIRA-15] Retired (WO-81). It bound the `open` position to the Jira status
+`Open` and defined two legacy aliases, `To Do` → `open` and `Done` →
+`completed`, so a Space still on the Jira project template stayed readable.
+The Universal Managed Workflow Scheme now used by every contract project has
+no `To Do` and no `Done` status, so there is nothing left for an alias to
+translate; `open` binding to `Open` is stated once, plainly, in the table
+above, with no special requirement number needed.
 
 Jira offers several other places a position could appear to live, and none of
 them is one: `fields.resolution`, the `statusCategory` (three values, not
@@ -126,11 +107,15 @@ write a position anywhere but `status`, per `[MUST-26]`. `statusCategory` in
 particular collapses `Triage`, `Open` and `Deferred` into one value and cannot
 be derived back.
 
-[JIRA-3] A ticket whose status is not one of the seven above, or one of the two
-legacy aliases, has no lifecycle position under this binding. An implementation
-MUST report that as an error and MUST NOT guess a position from the status name,
-its category, or its position on a board. A project MAY carry other statuses for
-work outside the set.
+[JIRA-3] A ticket whose status is not one of the seven above has no lifecycle
+position under this binding. An implementation MUST report that as an error
+and MUST NOT guess a position from the status name, its category, or its
+position on a board. A project MAY carry other statuses for work outside the
+set. A ticket found in `To Do` or `Done` — the scrum template's own ready and
+closed statuses — is a stray under this rule like any other unmapped status;
+the read-only aliases that used to translate them were retired in WO-81 once
+every contract project moved onto the Universal Managed Workflow Scheme,
+which carries neither status.
 
 [JIRA-11] An implementation reporting a ticket's position MUST distinguish "the
 status is not one this binding binds" from "the position could not be read",
@@ -191,8 +176,9 @@ this binding depend on it and would otherwise look arbitrary:
 
 - An automation that parks issues in a status the binding cannot read is worse
   than no automation, so the status it moves an issue into MUST be one section 3
-  binds. `Open` is; `To Do` stays readable, as the one-way alias above, for a
-  project not yet on the shared scheme.
+  binds. `Open` is. A project not yet on the shared scheme, still on the
+  template's own workflow, is not a conforming Space and this binding makes no
+  claim about it.
 - The `defer` transition requires `verify` as well as `defer_until` (section
   4), so that an issue the automation later moves out through `open` can always
   satisfy that transition's own validator. The gate is placed on the way in,
@@ -233,11 +219,6 @@ the lifecycle is the assertion `[MUST-46]` describes, and no route back to the
 ready-to-work position skips that assertion. A validator on the way in would reject the ticket at the one moment
 nobody has written the contract yet; no validator on the way out would leave
 the entry state a formality.
-
-The requirement also covers the `To Do` alias: an implementation MUST require
-`verify` on any transition into `To Do` wherever one exists. Neither shared
-workflow has one, so on a project on the shared scheme there is nothing to apply
-it to.
 
 [JIRA-14] The `defer` transition MUST require `defer_until`, per `[MUST-47]`,
 and MUST also require `verify`. The first is what makes `Deferred` bounded. The
@@ -328,7 +309,7 @@ which a set boundary forbids. External check.
 ticket as available.** Startability is derived, not stored:
 
 ```
-project = KEY AND status in (Open, "To Do")
+project = KEY AND status = Open
   AND (defer_until is EMPTY OR defer_until <= now())
   AND issueFunction not in linkedIssuesOf("...")   -- blockers not terminal
 ```
