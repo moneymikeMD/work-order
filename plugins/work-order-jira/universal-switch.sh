@@ -218,6 +218,19 @@ CURRENT_SCHEME=$(current_scheme) || die "could not read the workflow scheme of p
 CURRENT_SCHEME_ID=$(printf '%s' "$CURRENT_SCHEME" | jq -r '.id // "" | tostring')
 CURRENT_SCHEME_NAME=$(printf '%s' "$CURRENT_SCHEME" | jq -r '.name // ""')
 
+# Jira also demands mappings for issue types the old scheme maps explicitly,
+# even when the project does not list them.
+EXTRA_TYPE_IDS=$(jq -rn --argjson s "$CURRENT_SCHEME" --argjson t "$ISSUE_TYPES" \
+    '(($s.issueTypeMappings // {}) | keys) - ($t | map(.id)) | .[]') \
+    || die "could not read the issue types scheme '$CURRENT_SCHEME_NAME' maps"
+if [ -n "$EXTRA_TYPE_IDS" ]; then
+    ALL_TYPES=$(http_get /issuetype) || die "could not read GET /issuetype"
+    ISSUE_TYPES=$(jq -cn --argjson t "$ISSUE_TYPES" --argjson all "$ALL_TYPES" --arg extra "$EXTRA_TYPE_IDS" '
+        ($extra | split("\n") | map(select(length > 0))) as $ids
+        | $t + [$all[] | select((.id | tostring) as $i | $ids | index($i)) | {id: (.id | tostring), name, level: (.hierarchyLevel // 0)}]') \
+        || die "could not add the scheme's extra issue types"
+fi
+
 SWITCHED=0
 
 # ---- 3-4. plan, pre-drain, switch --------------------------------------
