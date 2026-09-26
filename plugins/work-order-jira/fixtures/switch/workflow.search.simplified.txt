@@ -1,0 +1,34 @@
+# GET /workflow/search?workflowName=Universal%20Simpllfied%20Workflow&expand=statuses — the Simplified tier workflow (name typo is real)
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "self": "https://example.atlassian.net/rest/api/3/workflow/search?expand=statuses&maxResults=50&startAt=0",
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "isLast": true,
+  "values": [
+    {
+      "id": {
+        "name": "Universal Simpllfied Workflow",
+        "entityId": "0184d04c-22c3-4397-b23b-bf9db253d65f"
+      },
+      "description": "A simple workflow for simple projects.",
+      "statuses": [
+        {
+          "id": "1",
+          "name": "Open"
+        },
+        {
+          "id": "10010",
+          "name": "Done"
+        },
+        {
+          "id": "3",
+          "name": "In Progress"
+        }
+      ],
+      "created": "2026-09-26T17:28:36.629-0400",
+      "updated": "2026-09-26T17:30:43.328-0400"
+    }
+  ]
+}

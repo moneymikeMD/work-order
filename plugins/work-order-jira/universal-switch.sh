@@ -1,33 +1,45 @@
 #!/bin/bash
 #
-# universal-switch.sh — move one company-managed Jira project off its own
-# "<KEY>: Software Simplified Workflow Scheme" and onto the shared Universal
-# workflow scheme that universal-apply.sh creates, then delete the project's
-# old per-project workflows and scheme. Idempotent: a project already switched
-# and cleaned up reports "0 changes".
+# universal-switch.sh — move one company-managed Jira project onto a tier's
+# shared workflow scheme, issue type scheme and issue type screen scheme (all
+# made by universal-apply.sh), then delete the project's old per-project
+# workflows, workflow scheme, issue type scheme, issue type screen scheme,
+# screen schemes and screens. Idempotent: a project already switched and
+# cleaned up reports "0 changes".
 #
 # Usage:
-#   universal-switch.sh PROJECT_KEY [--http PATH] [--scheme NAME]
+#   universal-switch.sh PROJECT_KEY [--tier managed|simplified] [--http PATH]
+#                                   [--spec PATH] [--scheme NAME]
 #                                   [--dry-run] [--yes]
 #
+#   --tier T       managed (default) or simplified: the tier in the spec's
+#                  "tiers" map, naming the three shared schemes and the
+#                  status rules of the switch.
 #   --http PATH    a jira-http.sh-shaped client. Default: lib/jira-http.sh.
-#   --scheme NAME  the target workflow scheme. Default:
-#                  'Universal Managed Workflow Scheme'.
+#   --spec PATH    Default: universal-workflows.json beside this file.
+#   --scheme NAME  override the tier's workflow scheme.
 #   --dry-run      run every read, print every write it would send, send none.
 #   --yes          actually send the writes. This flag is the only gate.
 #
 # Steps:
-#   1. refuse unless the target scheme exists;
+#   1. refuse unless the target workflow scheme exists;
 #   2. if the project is already on it, go straight to 5;
-#   3. pre-drain: every Task/Story/Bug in To Do whose verify field is set is
-#      moved to Open through its current workflow;
-#   4. switch the scheme, mapping To Do -> Triage (Task/Story/Bug) or Open
-#      (Epic/Sub-task) and Done -> Completed, and wait for Jira's async task;
-#      any other in-use status the target workflow lacks stops the run;
-#   5. verify the project is on the target scheme and nothing is left in
-#      To Do or Done;
+#   3. managed only, pre-drain: every Task/Story/Bug in To Do whose verify
+#      field is set is moved to Open through its current workflow;
+#   4. switch the scheme, mapping old statuses by the tier's status rules
+#      (managed: To Do -> Triage for Task/Story/Bug, Open for Epic/Sub-task,
+#      Done -> Completed; simplified: To Do/Triage/Deferred -> Open,
+#      Awaiting Deployment -> In Progress, Completed/Cancelled -> Done), and
+#      wait for Jira's async task; any other in-use status the target workflow
+#      lacks stops the run;
+#   5. verify the project is on the target scheme and nothing is left in the
+#      tier's retired statuses;
 #   6. delete the old workflows and scheme, each only once no scheme or
-#      project uses it.
+#      project uses it;
+#   7. assign the tier's issue type scheme and issue type screen scheme when
+#      the project is on others, then delete the project's old
+#      '<KEY>: Scrum ...' issue type scheme, issue type screen scheme, screen
+#      schemes and screens, each only once nothing uses it.
 #
 # Exit status:
 #   0  done, nothing to do, or --dry-run completed.
@@ -48,7 +60,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PROJECT_KEY=""
 HTTP=""
-TARGET_SCHEME_NAME="Universal Managed Workflow Scheme"
+SPEC=""
+TIER="managed"
+TARGET_SCHEME_NAME=""
 DRY_RUN=0
 ASSUME_YES=0
 POLL_SECONDS="${WO_SWITCH_POLL_SECONDS:-2}"
@@ -57,11 +71,18 @@ TIMEOUT_SECONDS="${WO_SWITCH_TIMEOUT_SECONDS:-600}"
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
-            sed -n '3,41p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,52p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --http)
             [ $# -ge 2 ] || die "--http needs a path"
             HTTP="$2"; shift 2 ;;
+        --spec)
+            [ $# -ge 2 ] || die "--spec needs a path"
+            SPEC="$2"; shift 2 ;;
+        --tier)
+            [ $# -ge 2 ] || die "--tier needs managed or simplified"
+            case "$2" in managed|simplified) TIER="$2" ;; *) die "--tier must be managed or simplified, got '$2'" ;; esac
+            shift 2 ;;
         --scheme)
             [ $# -ge 2 ] && [ -n "$2" ] || die "--scheme needs a workflow scheme name"
             TARGET_SCHEME_NAME="$2"; shift 2 ;;
@@ -87,6 +108,22 @@ case "$TIMEOUT_SECONDS" in ''|*[!0-9]*) die "WO_SWITCH_TIMEOUT_SECONDS must be a
 need jq
 trap tmpclean EXIT
 
+[ -n "$SPEC" ] || SPEC="$DIR/universal-workflows.json"
+[ -f "$SPEC" ] || die "--spec file not found: '$SPEC'"
+TIER_JSON=$(jq -c --arg t "$TIER" '
+    (.tiers[$t] // error("the spec has no tier \"" + $t + "\"")) as $c
+    | if ([$c.workflow_scheme, $c.issue_type_scheme, $c.issue_type_screen_scheme, $c.fallback_status] | all(type == "string"))
+         and ($c.status_rules.ticket | type) == "object" and ($c.status_rules.grouping | type) == "object"
+         and ($c.retired_statuses | type) == "array" and ($c.pre_drain | type) == "boolean"
+      then $c else error("tier \"" + $t + "\" needs workflow_scheme, issue_type_scheme, issue_type_screen_scheme, status_rules.ticket, status_rules.grouping, fallback_status, pre_drain and retired_statuses") end' "$SPEC") \
+    || die "could not read tier '$TIER' from '$SPEC'"
+[ -n "$TARGET_SCHEME_NAME" ] || TARGET_SCHEME_NAME=$(printf '%s' "$TIER_JSON" | jq -r '.workflow_scheme')
+TARGET_ITS_NAME=$(printf '%s' "$TIER_JSON" | jq -r '.issue_type_scheme')
+TARGET_ITSS_NAME=$(printf '%s' "$TIER_JSON" | jq -r '.issue_type_screen_scheme')
+PRE_DRAIN=$(printf '%s' "$TIER_JSON" | jq -r '.pre_drain')
+RETIRED_JQL=$(printf '%s' "$TIER_JSON" | jq -r '.retired_statuses | map("\"" + . + "\"") | join(", ")')
+RETIRED_TEXT=$(printf '%s' "$TIER_JSON" | jq -r '.retired_statuses | join(", ")')
+
 OLD_SCHEME_NAME="$PROJECT_KEY: Software Simplified Workflow Scheme"
 OLD_WORKFLOW_NAMES="Software Simplified Workflow for Project $PROJECT_KEY
 Epic Software Simplified Workflow for Project $PROJECT_KEY"
@@ -101,6 +138,7 @@ CHANGES=0
 http_get()  { "$HTTP" GET "$1"; }
 http_post() { "$HTTP" POST "$1" "$2"; }
 http_delete() { "$HTTP" DELETE "$1"; }
+http_put()  { "$HTTP" PUT "$1" "$2"; }
 
 # delete_retrying PATH — DELETE, retried while Jira reports a running workflow
 # task holds the workflow lock (HTTP 500 "Cannot acquire workflow lock").
@@ -268,19 +306,17 @@ build_plan() {
         old_st=$(workflow_statuses "$old_wf") || die "could not read the statuses of workflow '$old_wf'"
         new_st=$(workflow_statuses "$new_wf") || die "could not read the statuses of workflow '$new_wf'"
         entry=$(jq -cn --arg tid "$tid" --argjson level "$level" --arg ow "$old_wf" --arg nw "$new_wf" \
-            --argjson old "$old_st" --argjson new "$new_st" '
-            (if $level == 0 then {"To Do": "Triage", "Done": "Completed"}
-             else {"To Do": "Open", "Done": "Completed",
-                   "Awaiting Deployment": "In Progress", "Deferred": "Open"} end) as $rules
+            --argjson old "$old_st" --argjson new "$new_st" --argjson tier "$TIER_JSON" '
+            (if $level == 0 then $tier.status_rules.ticket else $tier.status_rules.grouping end) as $rules
             | ($new | map(.name)) as $newNames
             | [$old[] | select(.name as $n | $newNames | index($n) | not)] as $gone
-            | ([$new[] | select(.name == "Triage")][0].id // null) as $fallback
+            | ([$new[] | select(.name == $tier.fallback_status)][0].id // null) as $fallback
             | {issueTypeId: $tid, level: $level, oldWorkflow: $ow, newWorkflow: $nw,
                mappings: ([$gone[] | select($rules[.name] != null) | . as $o
                    | {oldStatusId: $o.id, old: $o.name, new: $rules[$o.name],
                       newStatusId: ([$new[] | select(.name == $rules[$o.name])][0].id // null)}]
                  + [$gone[] | select($rules[.name] == null)
-                   | {oldStatusId: .id, old: .name, new: "Triage", newStatusId: $fallback, unused: true}]),
+                   | {oldStatusId: .id, old: .name, new: $tier.fallback_status, newStatusId: $fallback, unused: true}]),
                unmapped: [$gone[] | select($rules[.name] == null)]}') \
             || die "could not compute the status mappings for issue type $tid"
         plan=$(jq -cn --argjson p "$plan" --argjson e "$entry" '$p + [$e]')
@@ -418,7 +454,7 @@ do_switch() {
     plan=$(build_plan) || exit 1
     printf '%s' "$plan" | jq -r '.[] | "  issue type \(.issueTypeId): \(.oldWorkflow) -> \(.newWorkflow)\(if (.mappings | length) > 0 then "; " + ([.mappings[] | "\(.old) -> \(.new)"] | join(", ")) else "" end)"'
     check_unmapped "$plan"
-    pre_drain "$plan"
+    if [ "$PRE_DRAIN" = "true" ]; then pre_drain "$plan"; else echo "pre-drain: not part of the $TIER tier"; fi
 
     body=$(jq -cn --arg p "$PROJECT_ID" --arg t "$TARGET_SCHEME_ID" --argjson plan "$plan" '
         [$plan[] | select((.mappings | length) > 0)
@@ -476,10 +512,10 @@ else
     NOW=$(current_scheme) || die "could not re-read the workflow scheme of project $PROJECT_KEY"
     [ "$(printf '%s' "$NOW" | jq -r '.name // ""')" = "$TARGET_SCHEME_NAME" ] \
         || die "project $PROJECT_KEY is on '$(printf '%s' "$NOW" | jq -r '.name // "?"')', not '$TARGET_SCHEME_NAME'"
-    case "$(jql_any "project = $PROJECT_KEY AND status in (\"To Do\", Done)")" in
-        no)  echo "verify: $PROJECT_KEY is on '$TARGET_SCHEME_NAME' and no issue is in To Do or Done" ;;
-        yes) die "project $PROJECT_KEY still has issues in To Do or Done after the switch" ;;
-        *)   die "could not count $PROJECT_KEY issues in To Do or Done" ;;
+    case "$(jql_any "project = $PROJECT_KEY AND status in ($RETIRED_JQL)")" in
+        no)  echo "verify: $PROJECT_KEY is on '$TARGET_SCHEME_NAME' and no issue is in $RETIRED_TEXT" ;;
+        yes) die "project $PROJECT_KEY still has issues in $RETIRED_TEXT after the switch" ;;
+        *)   die "could not count $PROJECT_KEY issues in $RETIRED_TEXT" ;;
     esac
 fi
 
@@ -542,12 +578,176 @@ done <<EOF
 $OLD_WORKFLOW_NAMES
 EOF
 
+# ---- 7. category, issue type scheme, issue type screen scheme, screens ---
+
+# list_all PATH MAX — every .values entry of a startAt-paged GET.
+list_all() {
+    local start=0 page all='[]' n last sep='?'
+    case "$1" in *\?*) sep='&' ;; esac
+    while :; do
+        page=$(http_get "$1${sep}startAt=$start&maxResults=$2") || return 1
+        all=$(jq -cn --argjson a "$all" --argjson p "$page" '$a + ($p.values // [])') || return 1
+        n=$(printf '%s' "$page" | jq '(.values // []) | length') || return 1
+        last=$(printf '%s' "$page" | jq -r '.isLast // true') || return 1
+        if [ "$last" = "true" ] || [ "$n" = "0" ]; then break; fi
+        start=$((start + n))
+    done
+    printf '%s' "$all"
+}
+
+# one_named LIST_JSON NAME — the one object named NAME. Returns 1 when absent,
+# 2 when the name is ambiguous.
+one_named() {
+    local n
+    n=$(printf '%s' "$1" | jq --arg n "$2" '[.[] | select(.name == $n)] | length') || return 2
+    [ "$n" = "0" ] && return 1
+    [ "$n" = "1" ] || return 2
+    printf '%s' "$1" | jq -c --arg n "$2" '.[] | select(.name == $n)'
+}
+
+TARGET_CATEGORY_NAME=$(printf '%s' "$TIER_JSON" | jq -r '.project_category // empty')
+if [ -n "$TARGET_CATEGORY_NAME" ]; then
+    CATS=$(http_get /projectCategory) || die "could not read GET /projectCategory"
+    CAT=$(one_named "$CATS" "$TARGET_CATEGORY_NAME") && rc=0 || rc=$?
+    CAT_NOW=$(printf '%s' "$PROJECT_JSON" | jq -r '.projectCategory.id // "" | tostring')
+    case "$rc" in
+        0)
+            CAT_ID=$(printf '%s' "$CAT" | jq -r '.id | tostring')
+            if [ "$CAT_NOW" = "$CAT_ID" ]; then
+                echo "project $PROJECT_KEY is already in category '$TARGET_CATEGORY_NAME'"
+            else
+                show_write PUT "/project/$PROJECT_KEY" "$(jq -cn --argjson c "$CAT_ID" '{categoryId: $c}')"
+                CHANGES=$((CHANGES + 1))
+                if [ "$PLAN" != "1" ]; then
+                    http_put "/project/$PROJECT_KEY" "$(jq -cn --argjson c "$CAT_ID" '{categoryId: $c}')" >/dev/null \
+                        || die "PUT /project/$PROJECT_KEY {categoryId: $CAT_ID} failed"
+                    echo "project $PROJECT_KEY is now in category '$TARGET_CATEGORY_NAME'"
+                fi
+            fi ;;
+        2) die "more than one project category is named '$TARGET_CATEGORY_NAME' — refusing to guess" ;;
+        *)
+            [ "$PLAN" = "1" ] || die "project category '$TARGET_CATEGORY_NAME' does not exist — create it first (universal-apply.sh)"
+            echo "WOULD PUT /rest/api/3/project/$PROJECT_KEY {\"categoryId\":<id of '$TARGET_CATEGORY_NAME', not on this site yet: universal-apply.sh creates it>}"
+            CHANGES=$((CHANGES + 1)) ;;
+    esac
+fi
+
+# assign_scheme KIND LIST_PATH PROJECT_PATH ID_KEY TARGET_NAME — put the
+# project on the named shared scheme. Sets ASSIGN_PENDING=1 when plan mode
+# leaves the project on its old scheme.
+ASSIGN_PENDING=0
+assign_scheme() {
+    local kind="$1" list target now target_id now_id now_name body rc
+    list=$(list_all "$2" 50) || die "could not list ${kind}s"
+    ASSIGN_PENDING=0
+    now=$(http_get "$3?projectId=$PROJECT_ID") || die "could not read the $kind of project $PROJECT_KEY"
+    now=$(printf '%s' "$now" | jq -c --arg p "$PROJECT_ID" --arg k "$4" \
+        '[.values[] | select((.projectIds // []) | map(tostring) | index($p))][0] | .[$k] // empty') \
+        || die "could not parse the $kind of project $PROJECT_KEY"
+    now_id=$(printf '%s' "$now" | jq -r '.id // "" | tostring')
+    now_name=$(printf '%s' "$now" | jq -r '.name // ""')
+    target=$(one_named "$list" "$5") && rc=0 || rc=$?
+    case "$rc" in
+        0) ;;
+        2) die "more than one $kind is named '$5' — refusing to guess" ;;
+        *)
+            [ "$PLAN" = "1" ] || die "$kind '$5' does not exist — create it first (universal-apply.sh)"
+            echo "WOULD PUT /rest/api/3$3 — onto '$5', not on this site yet: universal-apply.sh creates it"
+            CHANGES=$((CHANGES + 1)); ASSIGN_PENDING=1
+            return 0 ;;
+    esac
+    target_id=$(printf '%s' "$target" | jq -r '.id | tostring')
+    if [ "$now_id" = "$target_id" ]; then
+        echo "project $PROJECT_KEY is already on $kind '$5'"
+        return 0
+    fi
+    echo "project $PROJECT_KEY is on $kind '${now_name:-?}' (id ${now_id:-?})"
+    body=$(jq -cn --arg k "$6" --arg s "$target_id" --arg p "$PROJECT_ID" '{($k): $s, projectId: $p}')
+    show_write PUT "$3" "$body"
+    CHANGES=$((CHANGES + 1))
+    if [ "$PLAN" = "1" ]; then ASSIGN_PENDING=1; return 0; fi
+    http_put "$3" "$body" >/dev/null || die "PUT $3 failed — the project stays on '$now_name'"
+    now=$(http_get "$3?projectId=$PROJECT_ID") || die "could not re-read the $kind of project $PROJECT_KEY"
+    now_id=$(printf '%s' "$now" | jq -r --arg p "$PROJECT_ID" --arg k "$4" \
+        '[.values[] | select((.projectIds // []) | map(tostring) | index($p))][0] | .[$k].id // "" | tostring')
+    [ "$now_id" = "$target_id" ] || die "PUT $3 returned, but project $PROJECT_KEY is still on $kind id '$now_id'"
+    echo "project $PROJECT_KEY is now on $kind '$5'"
+}
+
+# delete_if_unused KIND NAME LIST_JSON USERS_JQ DELETE_PREFIX DROP — delete the
+# object named NAME when USERS_JQ lists nothing but DROP. Sets DELETED_ID to
+# its id when the delete was sent or, in plan mode, would be.
+DELETED_ID=""
+delete_if_unused() {
+    local obj rc id users
+    DELETED_ID=""
+    obj=$(one_named "$3" "$2") && rc=0 || rc=$?
+    case "$rc" in
+        0) ;;
+        1) return 0 ;;
+        *) die "more than one $1 is named '$2' — refusing to guess which to delete" ;;
+    esac
+    id=$(printf '%s' "$obj" | jq -r '.id | tostring')
+    users=$(printf '%s' "$obj" | jq -r "$4 | tostring" | drop_line "$6")
+    if [ -n "$users" ]; then
+        BLOCKED="${BLOCKED}$1 '$2' (used by $(printf '%s' "$users" | tr '\n' ' ' | sed 's/ $//')), "
+        return 0
+    fi
+    show_write DELETE "$5/$id"
+    CHANGES=$((CHANGES + 1))
+    DELETED_ID="$id"
+    [ "$PLAN" = "1" ] && return 0
+    delete_retrying "$5/$id" || die "DELETE $5/$id ('$2') failed"
+    echo "deleted $1 '$2'"
+}
+
+assign_scheme "issue type scheme" /issuetypescheme /issuetypescheme/project issueTypeScheme "$TARGET_ITS_NAME" issueTypeSchemeId
+DROP_PROJECT=""
+[ "$ASSIGN_PENDING" = "0" ] || DROP_PROJECT="$PROJECT_ID"
+ITS_ALL=$(list_all "/issuetypescheme?expand=projects" 50) || die "could not list issue type schemes"
+delete_if_unused "issue type scheme" "$PROJECT_KEY: Scrum Issue Type Scheme" "$ITS_ALL" \
+    '(.projects.values // [])[] | "project " + (.key // .id | tostring)' /issuetypescheme \
+    "$([ -z "$DROP_PROJECT" ] || printf '%s' "$PROJECT_JSON" | jq -r '"project " + .key')"
+
+assign_scheme "issue type screen scheme" /issuetypescreenscheme /issuetypescreenscheme/project issueTypeScreenScheme "$TARGET_ITSS_NAME" issueTypeScreenSchemeId
+DROP_PROJECT=""
+[ "$ASSIGN_PENDING" = "0" ] || DROP_PROJECT="$PROJECT_ID"
+ITSS_ALL=$(list_all "/issuetypescreenscheme?expand=projects" 50) || die "could not list issue type screen schemes"
+delete_if_unused "issue type screen scheme" "$PROJECT_KEY: Scrum Issue Type Screen Scheme" "$ITSS_ALL" \
+    '(.projects.values // [])[] | "project " + (.key // .id | tostring)' /issuetypescreenscheme \
+    "$([ -z "$DROP_PROJECT" ] || printf '%s' "$PROJECT_JSON" | jq -r '"project " + .key')"
+DROP_ITSS=""
+[ -z "$DELETED_ID" ] || DROP_ITSS="issue type screen scheme $DELETED_ID"
+
+SS_ALL=$(list_all "/screenscheme?expand=issueTypeScreenSchemes" 50) || die "could not list screen schemes"
+DROP_SS=""
+for SS_KIND in Default Bug Epic; do
+    delete_if_unused "screen scheme" "$PROJECT_KEY: Scrum $SS_KIND Screen Scheme" "$SS_ALL" \
+        '(.issueTypeScreenSchemes.values // [])[] | "issue type screen scheme " + (.id | tostring)' /screenscheme "$DROP_ITSS"
+    [ -z "$DELETED_ID" ] || DROP_SS="${DROP_SS}$DELETED_ID
+"
+done
+
+[ "$PLAN" = "1" ] || SS_ALL=$(list_all "/screenscheme?expand=issueTypeScreenSchemes" 50) || die "could not re-list screen schemes"
+SCREENS_ALL=$(list_all /screens 100) || die "could not list screens"
+# Each screen gains a "users" list: the screen schemes naming it, minus the
+# ones this run deletes. A workflow transition using a screen is invisible
+# here; Jira refuses that DELETE, and the run stops on it.
+SCREENS_ALL=$(jq -cn --argjson scr "$SCREENS_ALL" --argjson ss "$SS_ALL" --arg drop "$DROP_SS" '
+    ($drop | split("\n") | map(select(length > 0))) as $d
+    | $scr | map(.id as $i | . + {users: [$ss[] | select((.id | tostring) as $s | $d | index($s) | not)
+        | select([(.screens // {})[] | tostring] | index($i | tostring)) | "screen scheme " + (.id | tostring)]})') \
+    || die "could not work out which screen schemes use which screens"
+for SCREEN_NAME in "Scrum Default Issue Screen" "Scrum Bug Screen" "Scrum Epic Screen"; do
+    delete_if_unused "screen" "$PROJECT_KEY: $SCREEN_NAME" "$SCREENS_ALL" '.users[]' /screens ""
+done
+
 [ -z "$BLOCKED" ] || die "still in use, so not deleted: ${BLOCKED%, }"
 
 # ---- summary -----------------------------------------------------------
 
 if [ "$CHANGES" = "0" ]; then
-    echo "0 changes: $PROJECT_KEY is on '$TARGET_SCHEME_NAME' and its old workflows and scheme are gone."
+    echo "0 changes: $PROJECT_KEY is on the $TIER tier ('$TARGET_SCHEME_NAME', '$TARGET_ITS_NAME', '$TARGET_ITSS_NAME') and its old workflows, schemes and screens are gone."
     exit 0
 fi
 if [ "$DRY_RUN" = "1" ]; then

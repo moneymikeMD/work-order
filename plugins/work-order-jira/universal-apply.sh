@@ -1,8 +1,10 @@
 #!/bin/bash
 #
-# universal-apply.sh — converge the site-wide Universal workflows and their
-# shared workflow scheme towards universal-workflows.json. Both workflows are
-# GLOBAL and serve every contract project, so this script takes no project.
+# universal-apply.sh — converge the site-wide Universal workflows, their
+# shared workflow scheme, and the two tiers' shared screens, screen schemes,
+# issue type screen schemes and issue type schemes towards
+# universal-workflows.json. Everything here is shared by every project of a
+# tier, so this script takes no project.
 #
 # Usage:
 #   universal-apply.sh [--http PATH] [--spec PATH] [--dry-run] [--yes]
@@ -17,9 +19,13 @@
 # Convergence is additive. A workflow present only under its spec
 # `renamed_from` name is renamed; a missing status, transition (matched by
 # from -> to, never by name) or validator (matched by ruleKey + parameters) is
-# added; a missing scheme mapping is added. Nothing is ever changed or removed,
-# and whatever Jira holds that the spec does not name is printed as
-# "not in spec (left alone)".
+# added; a missing scheme mapping is added. A missing project category,
+# screen, screen scheme, issue type screen scheme or issue type scheme is
+# created; a missing field,
+# mapping or issue type is added to an existing one. Nothing is ever changed or
+# removed: a differing value is printed as "differs", and whatever Jira holds
+# that the spec does not name as "not in spec (left alone)". The declared
+# workflow schemes are only reported.
 #
 # Exit status:
 #   0  0 changes, --dry-run completed, or every write succeeded and the
@@ -45,7 +51,7 @@ ASSUME_YES=0
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
-            sed -n '3,31p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,37p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --http)
             [ $# -ge 2 ] || die "--http needs a path"
@@ -390,9 +396,222 @@ printf '%s' "$SPLAN" | jq -r --arg n "$SCHEME_NAME" '
 SN=$(printf '%s' "$SPLAN" | jq '.changes')
 TOTAL=$((TOTAL + SN))
 
+# ---- screens, screen schemes, issue type schemes ---------------------------
+
+# list_all PATH MAX — every .values entry of a startAt-paged GET as one array.
+list_all() {
+    local start=0 page all='[]' n last sep='?'
+    case "$1" in *\?*) sep='&' ;; esac
+    while :; do
+        page=$(http_get "$1${sep}startAt=$start&maxResults=$2") || return 1
+        all=$(jq -cn --argjson a "$all" --argjson p "$page" '$a + ($p.values // [])') || return 1
+        n=$(printf '%s' "$page" | jq '(.values // []) | length') || return 1
+        last=$(printf '%s' "$page" | jq -r '.isLast // true') || return 1
+        if [ "$last" = "true" ] || [ "$n" = "0" ]; then break; fi
+        start=$((start + n))
+    done
+    printf '%s' "$all"
+}
+
+HAS_LAYOUT=$(printf '%s' "$SPEC_JSON" | jq -r 'if ((.screens // []) + (.project_categories // [])) | length > 0 then 1 else 0 end')
+
+# read_layout — the site's screens (with each spec-named screen's tab fields),
+# screen schemes, issue type screen schemes and issue type schemes, with their
+# mappings, as one JSON object in $LAYOUT.
+LAYOUT='{}'
+read_layout() {
+    local scr ss itss itssm its itsm cats state='{}' name sid tabs tid fields
+    scr=$(list_all /screens 100) || die "could not list screens: $(http_err)"
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        sid=$(printf '%s' "$scr" | jq -r --arg n "$name" '[.[] | select(.name == $n)] | if length == 1 then .[0].id | tostring else empty end')
+        [ -n "$sid" ] || continue
+        tabs=$(http_get "/screens/$sid/tabs") || die "could not read GET /screens/$sid/tabs: $(http_err)"
+        state=$(jq -cn --argjson s "$state" --arg n "$name" --arg id "$sid" '$s + {($n): {id: $id, tabs: []}}')
+        for tid in $(printf '%s' "$tabs" | jq -r '.[].id'); do
+            fields=$(http_get "/screens/$sid/tabs/$tid/fields") || die "could not read GET /screens/$sid/tabs/$tid/fields: $(http_err)"
+            state=$(jq -cn --argjson s "$state" --arg n "$name" --arg t "$tid" --argjson f "$fields" \
+                '$s | .[$n].tabs += [{id: $t, fields: [$f[].id]}]')
+        done
+    done <<EOF
+$(printf '%s' "$SPEC_JSON" | jq -r '.screens[].name')
+EOF
+    ss=$(list_all /screenscheme 50) || die "could not list screen schemes: $(http_err)"
+    itss=$(list_all /issuetypescreenscheme 50) || die "could not list issue type screen schemes: $(http_err)"
+    itssm=$(list_all /issuetypescreenscheme/mapping 100) || die "could not list issue type screen scheme mappings: $(http_err)"
+    its=$(list_all /issuetypescheme 50) || die "could not list issue type schemes: $(http_err)"
+    itsm=$(list_all /issuetypescheme/mapping 100) || die "could not list issue type scheme mappings: $(http_err)"
+    cats=$(http_get /projectCategory) || die "could not list project categories: $(http_err)"
+    LAYOUT=$(jq -cn --argjson scr "$scr" --argjson state "$state" --argjson ss "$ss" --argjson itss "$itss" \
+        --argjson itssm "$itssm" --argjson its "$its" --argjson itsm "$itsm" --argjson cats "$cats" \
+        '{screens: $scr, state: $state, ss: $ss, itss: $itss, itssm: $itssm, its: $its, itsm: $itsm, cats: $cats}')
+}
+
+# layout_plan — compare the spec's layout sections with $LAYOUT and $SCHEMES.
+# Prints {errors, lines, actions, changes}; a reference to an object this run
+# creates is left as {"$screen": NAME} or {"$screenscheme": NAME}.
+layout_plan() {
+    jq -cn --argjson spec "$SPEC_JSON" --argjson l "$LAYOUT" --argjson fields "$FIELDS" \
+        --argjson types "$ISSUETYPES" --argjson wfs "$SCHEMES" '
+        def uniq: reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end);
+        def fid($f): if ($f | test("^\\{field:.+\\}$")) then
+                ($f | capture("^\\{field:(?<n>.+)\\}$").n) as $n | [$fields[] | select(.name == $n)]
+                | if length == 1 then .[0].id else "UNRESOLVED:field:" + $n end
+            elif any($fields[]; .id == $f) then $f else "UNRESOLVED:field:" + $f end;
+        def fname($id): ([$fields[] | select(.id == $id) | .name][0] // $id) + " (" + $id + ")";
+        def tids($n): [$types[] | select(.name == $n and ((.scope.type // "GLOBAL") != "PROJECT")) | .id | tostring]
+            | if length == 0 then ["UNRESOLVED:issuetype:" + $n] else . end;
+        def tname($id): if $id == "default" then "default" else ([$types[] | select((.id | tostring) == $id) | .name][0] // "issue type") + " (" + $id + ")" end;
+        def named($list; $n): [$list[] | select(.name == $n)];
+        def idof($list; $n): (named($list; $n) | if length == 1 then .[0].id | tostring else null end);
+        def many($kind; $n; $m): "\($m | length) \($kind) are named \"\($n)\"";
+
+        [($spec.project_categories // [])[] | . as $c | named($l.cats; $c.name) as $m
+            | if ($m | length) > 1 then {errors: [many("project categories"; $c.name; $m)]}
+              elif ($m | length) == 0 then {kind: "category", name: $c.name, create: true, changes: 1,
+                  body: {name: $c.name, description: ($c.description // "")}, lines: ["  create"]}
+              else {kind: "category", name: $c.name, id: ($m[0].id | tostring), changes: 0,
+                  lines: (if ($m[0].description // "") != ($c.description // "") then ["  differs: description (left alone)"] else [] end)}
+              end
+            | . + {title: "project category \"\($c.name)\""}] as $cats
+
+        | [($spec.screens // [])[] | . as $s
+            | ([$s.field_sets[] as $k | ($spec.field_sets[$k] // error("unknown field set " + $k))[] | fid(.)] | uniq) as $want
+            | named($l.screens; $s.name) as $m
+            | if ($m | length) > 1 then {errors: [many("screens"; $s.name; $m)]}
+              elif ($m | length) == 0 then
+                {kind: "screen", name: $s.name, create: true, description: ($s.description // ""), fields: $want, changes: 1,
+                 lines: ["  create: \($want | length) fields: \($want | map(fname(.)) | join(", "))"]}
+              else ($l.state[$s.name] // {id: ($m[0].id | tostring), tabs: []}) as $st
+                | ([$st.tabs[].fields[]]) as $have
+                | [$want[] | select(. as $f | $have | index([$f]) | not)] as $add
+                | {kind: "screen", name: $s.name, id: $st.id, tab: ($st.tabs[0].id // null), add: $add, changes: ($add | length),
+                   errors: (if ($st.tabs | length) == 0 and ($add | length) > 0 then ["screen \"\($s.name)\" has no tab to add fields to"] else [] end),
+                   lines: ([$add[] | "  add field:        \(fname(.))"]
+                           + [$have[] | select(. as $f | $want | index([$f]) | not) | "  not in spec (left alone): field \(fname(.))"])}
+              end
+            | . + {title: "screen \"\($s.name)\""}] as $screens
+
+        | [($spec.screen_schemes // [])[] | . as $s
+            | named($l.ss; $s.name) as $m
+            | if ($m | length) > 1 then {errors: [many("screen schemes"; $s.name; $m)]}
+              elif ($m | length) == 0 then
+                {kind: "screenscheme", name: $s.name, create: true, description: ($s.description // ""), changes: 1,
+                 screens: ($s.screens | map_values({"$screen": .})),
+                 lines: ["  create: " + ($s.screens | to_entries | map("\(.key) -> \"\(.value)\"") | join(", "))]}
+              else {kind: "screenscheme", name: $s.name, id: ($m[0].id | tostring), changes: 0,
+                    lines: [$s.screens | to_entries[] | . as $e | ($m[0].screens[$e.key] // null) as $have
+                        | idof($l.screens; $e.value) as $w
+                        | select($have == null or ($w != null and ($have | tostring) != $w))
+                        | "  differs: \($e.key) screen is \($have // "unset"), spec says \"\($e.value)\" (left alone)"]}
+              end
+            | . + {title: "screen scheme \"\($s.name)\""}] as $sschemes
+
+        | [($spec.issue_type_screen_schemes // [])[] | . as $s
+            | [$s.mappings | to_entries[] | .value as $v
+                | (if .key == "default" then ["default"] else tids(.key) end)[] | {issueTypeId: ., screenScheme: $v}] as $desired
+            | named($l.itss; $s.name) as $m
+            | if ($m | length) > 1 then {errors: [many("issue type screen schemes"; $s.name; $m)]}
+              elif ($m | length) == 0 then
+                {kind: "itss", name: $s.name, create: true, description: ($s.description // ""), changes: 1,
+                 mappings: [$desired[] | {issueTypeId, screenSchemeId: {"$screenscheme": .screenScheme}}],
+                 lines: ["  create: " + ($desired | map("\(tname(.issueTypeId)) -> \"\(.screenScheme)\"") | join(", "))]}
+              else ($m[0].id | tostring) as $id
+                | [$l.itssm[] | select((.issueTypeScreenSchemeId | tostring) == $id)] as $have
+                | [$desired[] | select(.issueTypeId as $t | any($have[]; .issueTypeId == $t) | not)] as $add
+                | {kind: "itss", name: $s.name, id: $id, changes: ($add | length),
+                   add: [$add[] | {issueTypeId, screenSchemeId: {"$screenscheme": .screenScheme}}],
+                   lines: ([$add[] | "  add mapping:      \(tname(.issueTypeId)) -> \"\(.screenScheme)\""]
+                     + [$desired[] | . as $d | idof($l.ss; $d.screenScheme) as $w
+                         | $have[] | select(.issueTypeId == $d.issueTypeId and $w != null and (.screenSchemeId | tostring) != $w)
+                         | "  differs: \(tname(.issueTypeId)) maps to screen scheme \(.screenSchemeId), spec says \"\($d.screenScheme)\" (left alone)"]
+                     + [$have[] | select(.issueTypeId as $t | any($desired[]; .issueTypeId == $t) | not)
+                         | "  not in spec (left alone): mapping \(tname(.issueTypeId)) -> screen scheme \(.screenSchemeId)"])}
+              end
+            | . + {title: "issue type screen scheme \"\($s.name)\""}] as $itss
+
+        | [($spec.issue_type_schemes // [])[] | . as $s
+            | ([$s.issueTypes[] | tids(.)[]] | uniq) as $want
+            | (tids($s.defaultIssueType) | if length == 1 then .[0] else "UNRESOLVED:default issue type:" + $s.defaultIssueType end) as $def
+            | named($l.its; $s.name) as $m
+            | if ($m | length) > 1 then {errors: [many("issue type schemes"; $s.name; $m)]}
+              elif ($m | length) == 0 then
+                {kind: "its", name: $s.name, create: true, changes: 1,
+                 body: {name: $s.name, description: ($s.description // ""), defaultIssueTypeId: $def, issueTypeIds: $want},
+                 lines: ["  create: " + ($want | map(tname(.)) | join(", ")) + "; default \(tname($def))"]}
+              else ($m[0].id | tostring) as $id
+                | [$l.itsm[] | select((.issueTypeSchemeId | tostring) == $id) | .issueTypeId | tostring] as $have
+                | [$want[] | select(. as $t | $have | index([$t]) | not)] as $add
+                | {kind: "its", name: $s.name, id: $id, changes: ($add | length), add: $add,
+                   lines: ([$add[] | "  add issue type:   \(tname(.))"]
+                     + (if (($m[0].defaultIssueTypeId // "") | tostring) != $def
+                        then ["  differs: default issue type is \(tname(($m[0].defaultIssueTypeId // "none") | tostring)), spec says \(tname($def)) (left alone)"] else [] end)
+                     + [$have[] | select(. as $t | $want | index([$t]) | not) | "  not in spec (left alone): issue type \(tname(.))"])}
+              end
+            | . + {title: "issue type scheme \"\($s.name)\""}] as $itschemes
+
+        | [($spec.declared_workflow_schemes // [])[] | . as $d | named($wfs; $d.name) as $m
+            | {title: "declared workflow scheme \"\($d.name)\"", changes: 0,
+               lines: (if ($m | length) == 0 then ["  absent: this script declares it and never creates it"]
+                       elif ($m | length) > 1 then ["  \($m | length) workflow schemes carry this name"]
+                       elif $m[0].defaultWorkflow != $d.defaultWorkflow then ["  differs: default workflow is \"\($m[0].defaultWorkflow)\", spec says \"\($d.defaultWorkflow)\" (left alone)"]
+                       else ["  present, default \"\($d.defaultWorkflow)\""] end)}] as $declared
+
+        | ($cats + $screens + $sschemes + $itss + $itschemes + $declared) as $all
+        | {errors: ([$all[] | (.errors // [])[]] + [$all | .. | strings | select(startswith("UNRESOLVED:"))] | unique),
+           lines: [$all[] | .title + ":", (.lines // [])[], "  \(.changes) change\(if .changes == 1 then "" else "s" end)"],
+           actions: [$all[] | select(.changes > 0) | del(.lines, .title, .errors)],
+           changes: ([$all[].changes] | add // 0)}'
+}
+
+LPLAN='{"errors":[],"lines":[],"actions":[],"changes":0}'
+if [ "$HAS_LAYOUT" = "1" ]; then
+    read_layout
+    LPLAN=$(layout_plan) || die "could not compare the spec's screens and schemes against the site's"
+    LERRS=$(printf '%s' "$LPLAN" | jq -r '.errors | join("; ")')
+    [ -z "$LERRS" ] || die "screens and schemes: $LERRS"
+    printf '%s' "$LPLAN" | jq -r '.lines[]'
+    LN=$(printf '%s' "$LPLAN" | jq '.changes')
+    TOTAL=$((TOTAL + LN))
+fi
+
+# IDS maps each kind to {name: id} for the objects this run can reference.
+IDS=$(printf '%s' "$LAYOUT" | jq -c '{screen: ((.screens // []) | map({key: .name, value: (.id | tostring)}) | from_entries),
+    screenscheme: ((.ss // []) | map({key: .name, value: (.id | tostring)}) | from_entries)}')
+
+# resolve_refs JSON — replace each {"$screen": N} / {"$screenscheme": N} with
+# the id IDS holds, or a readable placeholder when the object is not made yet.
+resolve_refs() {
+    jq -c --argjson ids "$IDS" 'walk(if type == "object" and has("$screen") then ($ids.screen[.["$screen"]] // ("<id of screen \"" + .["$screen"] + "\">"))
+        elif type == "object" and has("$screenscheme") then ($ids.screenscheme[.["$screenscheme"]] // ("<id of screen scheme \"" + .["$screenscheme"] + "\">"))
+        else . end)' <<EOF
+$1
+EOF
+}
+
+# action_requests ACTION — the writes one layout action sends, one per line as
+# "METHOD PATH BODY", with references resolved as far as IDS allows.
+action_requests() {
+    local a
+    a=$(resolve_refs "$1") || return 1
+    printf '%s' "$a" | jq -r '
+        def num: if type == "string" and test("^[0-9]+$") then tonumber else . end;
+        if .kind == "category" then "POST /projectCategory " + (.body | tojson)
+        elif .kind == "screen" and .create then
+            "POST /screens " + ({name, description} | tojson),
+            (.fields[] | "POST /screens/<new id>/tabs/<its first tab>/fields " + ({fieldId: .} | tojson))
+        elif .kind == "screen" then (.add[] as $f | "POST /screens/\(.id)/tabs/\(.tab)/fields " + ({fieldId: $f} | tojson))
+        elif .kind == "screenscheme" then "POST /screenscheme " + ({name, description, screens: (.screens | map_values(num))} | tojson)
+        elif .kind == "itss" and .create then "POST /issuetypescreenscheme " + ({name, description, issueTypeMappings: (.mappings | map(.screenSchemeId |= tostring))} | tojson)
+        elif .kind == "itss" then "PUT /issuetypescreenscheme/\(.id)/mapping " + ({issueTypeMappings: (.add | map(.screenSchemeId |= tostring))} | tojson)
+        elif .kind == "its" and .create then "POST /issuetypescheme " + (.body | tojson)
+        elif .kind == "its" then "PUT /issuetypescheme/\(.id)/issuetype " + ({issueTypeIds: .add} | tojson)
+        else error("unknown layout action " + .kind) end'
+}
+
 echo
 if [ "$TOTAL" -eq 0 ]; then
-    echo "0 changes: every workflow, transition, validator and scheme mapping in '$SPEC' is already in Jira."
+    echo "0 changes: every workflow, transition, validator, scheme mapping, project category, screen, screen scheme and issue type scheme in '$SPEC' is already in Jira."
     exit 0
 fi
 echo "$TOTAL changes planned."
@@ -413,6 +632,18 @@ if [ "$(printf '%s' "$SPLAN" | jq -r '.exists')" = "false" ]; then
     printf '%s' "$SPLAN" | jq '.create'
 else
     printf '%s' "$SPLAN" | jq -r '.id as $id | .add[] | "\nPUT /rest/api/3/workflowscheme/\($id)/issuetype/\(.id)\n" + ({issueType: .id, workflow} | tojson)'
+fi
+LACTIONS=$(printf '%s' "$LPLAN" | jq -c '.actions[]')
+if [ -n "$LACTIONS" ]; then
+    echo
+    echo "Screen and scheme requests, in order (<...> is an id Jira assigns on create):"
+    while IFS= read -r a; do
+        [ -n "$a" ] || continue
+        action_requests "$a" | sed 's#^\([A-Z]*\) #\1 /rest/api/3#' \
+            || die "could not render the requests for $(printf '%s' "$a" | jq -r '.kind + " " + .name')"
+    done <<EOF
+$LACTIONS
+EOF
 fi
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -499,6 +730,78 @@ $ADDS
 EOF
 fi
 
+# remember KIND NAME ID — record an id this run created so later references resolve.
+remember() {
+    IDS=$(jq -cn --argjson ids "$IDS" --arg k "$1" --arg n "$2" --arg id "$3" '$ids | .[$k][$n] = $id') \
+        || die "could not record the id of $1 '$2'"
+}
+
+# create_screen ACTION — POST /screens, then its default tab (created when
+# Jira made none), then each field in spec order.
+create_screen() {
+    local name body resp sid tabs tab have f
+    name=$(printf '%s' "$1" | jq -r '.name')
+    body=$(printf '%s' "$1" | jq -c '{name, description}')
+    resp=$(http_post /screens "$body") || die "POST /screens for '$name' failed: $(http_err)"
+    sid=$(printf '%s' "$resp" | jq -r '.id // empty | tostring')
+    [ -n "$sid" ] || die "POST /screens for '$name' returned no id: $resp"
+    echo "created screen '$name' (id $sid)"
+    remember screen "$name" "$sid"
+    tabs=$(http_get "/screens/$sid/tabs") || die "could not read the tabs of new screen $sid: $(http_err)"
+    tab=$(printf '%s' "$tabs" | jq -r '.[0].id // empty | tostring')
+    if [ -z "$tab" ]; then
+        resp=$(http_post "/screens/$sid/tabs" '{"name":"Field Tab"}') || die "POST /screens/$sid/tabs failed: $(http_err)"
+        tab=$(printf '%s' "$resp" | jq -r '.id // empty | tostring')
+        [ -n "$tab" ] || die "POST /screens/$sid/tabs returned no id: $resp"
+    fi
+    have=$(http_get "/screens/$sid/tabs/$tab/fields") || die "could not read the fields of new screen $sid: $(http_err)"
+    for f in $(printf '%s' "$1" | jq -r --argjson have "$have" '.fields[] | select(. as $f | [$have[].id] | index([$f]) | not)'); do
+        http_post "/screens/$sid/tabs/$tab/fields" "$(jq -cn --arg f "$f" '{fieldId: $f}')" >/dev/null \
+            || die "POST /screens/$sid/tabs/$tab/fields for $f failed: $(http_err)"
+    done
+    echo "screen '$name': added $(printf '%s' "$1" | jq '.fields | length') fields to tab $tab"
+}
+
+# run_action ACTION — send one layout action's writes.
+run_action() {
+    local kind name reqs req method path body resp id
+    kind=$(printf '%s' "$1" | jq -r '.kind')
+    name=$(printf '%s' "$1" | jq -r '.name')
+    if [ "$kind" = "screen" ] && [ "$(printf '%s' "$1" | jq -r '.create // false')" = "true" ]; then
+        create_screen "$1"
+        return 0
+    fi
+    reqs=$(action_requests "$1") || die "could not render the requests for $kind '$name'"
+    while IFS= read -r req; do
+        [ -n "$req" ] || continue
+        method=${req%% *}; req=${req#* }; path=${req%% *}; body=${req#* }
+        case "$body" in *'"<id of '*) die "$kind '$name' still references an object that was not created: $body" ;; esac
+        if [ "$method" = "PUT" ]; then
+            resp=$(http_put "$path" "$body") || die "PUT $path failed: $(http_err)"
+        else
+            resp=$(http_post "$path" "$body") || die "POST $path failed: $(http_err)"
+        fi
+        case "$kind" in
+            screenscheme)
+                id=$(printf '%s' "$resp" | jq -r '.id // empty | tostring')
+                [ -n "$id" ] || die "POST /screenscheme for '$name' returned no id: $resp"
+                remember screenscheme "$name" "$id"
+                echo "created screen scheme '$name' (id $id)" ;;
+            *) echo "$kind '$name': $method $path" ;;
+        esac
+    done <<EOF
+$reqs
+EOF
+}
+
+LACTIONS=$(printf '%s' "$LPLAN" | jq -c '.actions[]')
+while IFS= read -r a; do
+    [ -n "$a" ] || continue
+    run_action "$a"
+done <<EOF
+$LACTIONS
+EOF
+
 # ---- read-back -------------------------------------------------------------
 
 REMAINING=0
@@ -515,6 +818,12 @@ SCHEMES=$(list_schemes) || die "could not re-list workflow schemes: $(http_err)"
 SPLAN=$(scheme_plan "$SCHEMES") || die "could not re-read the scheme"
 N=$(printf '%s' "$SPLAN" | jq '.changes')
 [ "$N" = "0" ] || { warn "read-back: scheme '$SCHEME_NAME' still needs $N change(s)"; REMAINING=$((REMAINING + N)); }
+if [ "$HAS_LAYOUT" = "1" ]; then
+    read_layout
+    LPLAN=$(layout_plan) || die "could not re-read the screens and schemes"
+    N=$(printf '%s' "$LPLAN" | jq '.changes')
+    [ "$N" = "0" ] || { warn "read-back: screens and schemes still need $N change(s)"; REMAINING=$((REMAINING + N)); }
+fi
 
 if [ "$REMAINING" -ne 0 ]; then
     warn "the writes returned, but the read-back still finds $REMAINING change(s) outstanding"

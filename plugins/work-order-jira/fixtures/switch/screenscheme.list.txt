@@ -1,0 +1,536 @@
+# GET /screenscheme?startAt=0&maxResults=50&expand=issueTypeScreenSchemes — every screen scheme with the issue type screen schemes using it
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "self": "https://example.atlassian.net/rest/api/3/screenscheme?expand=issueTypeScreenSchemes&startAt=0&maxResults=50",
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 25,
+  "isLast": true,
+  "values": [
+    {
+      "id": 1,
+      "name": "Default Screen Scheme",
+      "description": "Default Screen Scheme",
+      "screens": {
+        "default": 1
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "1",
+            "name": "Default Issue Type Screen Scheme",
+            "description": "The default issue type screen scheme"
+          }
+        ]
+      }
+    },
+    {
+      "id": 10014,
+      "name": "LAB: Scrum Default Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10014
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10004",
+            "name": "LAB: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10015,
+      "name": "LAB: Scrum Bug Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10015
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10004",
+            "name": "LAB: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10016,
+      "name": "LAB: Scrum Epic Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10016
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10004",
+            "name": "LAB: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10025,
+      "name": "NWM: Scrum Default Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10025
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10009",
+            "name": "NWM: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10026,
+      "name": "NWM: Scrum Bug Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10026
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10009",
+            "name": "NWM: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10027,
+      "name": "NWM: Scrum Epic Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10027
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10009",
+            "name": "NWM: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10028,
+      "name": "CHR: Scrum Default Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10028
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10010",
+            "name": "CHR: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10029,
+      "name": "CHR: Scrum Bug Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10029
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10010",
+            "name": "CHR: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10030,
+      "name": "CHR: Scrum Epic Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10030
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10010",
+            "name": "CHR: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10034,
+      "name": "CMB: Scrum Default Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10034
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10012",
+            "name": "CMB: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10035,
+      "name": "CMB: Scrum Bug Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10035
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10012",
+            "name": "CMB: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10036,
+      "name": "CMB: Scrum Epic Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10036
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10012",
+            "name": "CMB: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10037,
+      "name": "EBS: Scrum Default Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10037
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10013",
+            "name": "EBS: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10038,
+      "name": "EBS: Scrum Bug Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10038
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10013",
+            "name": "EBS: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10039,
+      "name": "EBS: Scrum Epic Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10039
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10013",
+            "name": "EBS: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10040,
+      "name": "TDO: Scrum Default Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10040
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10014",
+            "name": "TDO: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10041,
+      "name": "TDO: Scrum Bug Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10041
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10014",
+            "name": "TDO: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10042,
+      "name": "TDO: Scrum Epic Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10042
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10014",
+            "name": "TDO: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10043,
+      "name": "TDA: Scrum Default Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10043
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10015",
+            "name": "TDA: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10044,
+      "name": "TDA: Scrum Bug Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10044
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10015",
+            "name": "TDA: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10045,
+      "name": "TDA: Scrum Epic Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10045
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10015",
+            "name": "TDA: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10088,
+      "name": "WO: Scrum Default Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10088
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10052",
+            "name": "WO: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10089,
+      "name": "WO: Scrum Bug Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10089
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10052",
+            "name": "WO: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": 10090,
+      "name": "WO: Scrum Epic Screen Scheme",
+      "description": "",
+      "screens": {
+        "default": 10090
+      },
+      "issueTypeScreenSchemes": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10052",
+            "name": "WO: Scrum Issue Type Screen Scheme",
+            "description": ""
+          }
+        ]
+      }
+    }
+  ]
+}

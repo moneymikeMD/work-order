@@ -1,0 +1,21 @@
+# GET /issuetypescheme/project?projectId=10004 — LAB on its own Scrum issue type scheme
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "isLast": true,
+  "values": [
+    {
+      "issueTypeScheme": {
+        "id": "10149",
+        "name": "LAB: Scrum Issue Type Scheme",
+        "description": "",
+        "defaultIssueTypeId": "10005"
+      },
+      "projectIds": [
+        "10004"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+# GET /workflowscheme/project?projectId=10013 — EBS already on the Universal Simplified Workflow Scheme
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "values": [
+    {
+      "projectIds": [
+        "10013"
+      ],
+      "workflowScheme": {
+        "id": 10092,
+        "name": "Universal Simplified Workflow Scheme",
+        "description": "Shared scheme for non-contract projects: every issue type runs Universal Simpllfied Workflow (Open, In Progress, Done).",
+        "defaultWorkflow": "Universal Simpllfied Workflow",
+        "issueTypeMappings": {},
+        "self": "https://example.atlassian.net/rest/api/3/workflowscheme/10092"
+      }
+    }
+  ]
+}

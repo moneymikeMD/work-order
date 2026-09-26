@@ -1,0 +1,56 @@
+# GET /issuetypescreenscheme?startAt=0&maxResults=50 — every issue type screen scheme; no Universal one yet
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "self": "https://example.atlassian.net/rest/api/3/issuetypescreenscheme?maxResults=50&orderBy=id&startAt=0",
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 9,
+  "isLast": true,
+  "values": [
+    {
+      "id": "1",
+      "name": "Default Issue Type Screen Scheme",
+      "description": "The default issue type screen scheme"
+    },
+    {
+      "id": "10004",
+      "name": "LAB: Scrum Issue Type Screen Scheme",
+      "description": ""
+    },
+    {
+      "id": "10009",
+      "name": "NWM: Scrum Issue Type Screen Scheme",
+      "description": ""
+    },
+    {
+      "id": "10010",
+      "name": "CHR: Scrum Issue Type Screen Scheme",
+      "description": ""
+    },
+    {
+      "id": "10012",
+      "name": "CMB: Scrum Issue Type Screen Scheme",
+      "description": ""
+    },
+    {
+      "id": "10013",
+      "name": "EBS: Scrum Issue Type Screen Scheme",
+      "description": ""
+    },
+    {
+      "id": "10014",
+      "name": "TDO: Scrum Issue Type Screen Scheme",
+      "description": ""
+    },
+    {
+      "id": "10015",
+      "name": "TDA: Scrum Issue Type Screen Scheme",
+      "description": ""
+    },
+    {
+      "id": "10052",
+      "name": "WO: Scrum Issue Type Screen Scheme",
+      "description": ""
+    }
+  ]
+}

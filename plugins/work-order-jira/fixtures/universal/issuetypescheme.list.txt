@@ -1,0 +1,65 @@
+# GET /issuetypescheme?startAt=0&maxResults=50 — every issue type scheme; no Universal one yet
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "self": "https://example.atlassian.net/rest/api/3/issuetypescheme?maxResults=50&orderBy=id&startAt=0",
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 9,
+  "isLast": true,
+  "values": [
+    {
+      "id": "10000",
+      "name": "Default Issue Type Scheme",
+      "description": "Default issue type scheme is the list of global issue types. All newly created issue types will automatically be added to this scheme.",
+      "isDefault": true
+    },
+    {
+      "id": "10149",
+      "name": "LAB: Scrum Issue Type Scheme",
+      "description": "",
+      "defaultIssueTypeId": "10005"
+    },
+    {
+      "id": "10160",
+      "name": "NWM: Scrum Issue Type Scheme",
+      "description": "",
+      "defaultIssueTypeId": "10005"
+    },
+    {
+      "id": "10161",
+      "name": "CHR: Scrum Issue Type Scheme",
+      "description": "",
+      "defaultIssueTypeId": "10005"
+    },
+    {
+      "id": "10163",
+      "name": "CMB: Scrum Issue Type Scheme",
+      "description": "",
+      "defaultIssueTypeId": "10005"
+    },
+    {
+      "id": "10164",
+      "name": "EBS: Scrum Issue Type Scheme",
+      "description": "",
+      "defaultIssueTypeId": "10005"
+    },
+    {
+      "id": "10165",
+      "name": "TDO: Scrum Issue Type Scheme",
+      "description": "",
+      "defaultIssueTypeId": "10005"
+    },
+    {
+      "id": "10166",
+      "name": "TDA: Scrum Issue Type Scheme",
+      "description": "",
+      "defaultIssueTypeId": "10005"
+    },
+    {
+      "id": "10206",
+      "name": "WO: Scrum Issue Type Scheme",
+      "description": "",
+      "defaultIssueTypeId": "10005"
+    }
+  ]
+}

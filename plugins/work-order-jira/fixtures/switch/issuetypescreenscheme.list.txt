@@ -1,0 +1,183 @@
+# GET /issuetypescreenscheme?startAt=0&maxResults=50&expand=projects — every issue type screen scheme with the projects using it
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "self": "https://example.atlassian.net/rest/api/3/issuetypescreenscheme?expand=projects&maxResults=50&orderBy=id&startAt=0",
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 9,
+  "isLast": true,
+  "values": [
+    {
+      "id": "1",
+      "name": "Default Issue Type Screen Scheme",
+      "description": "The default issue type screen scheme",
+      "projects": {
+        "maxResults": 0,
+        "startAt": 0,
+        "total": 0,
+        "isLast": true,
+        "values": []
+      }
+    },
+    {
+      "id": "10004",
+      "name": "LAB: Scrum Issue Type Screen Scheme",
+      "description": "",
+      "projects": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10004",
+            "key": "LAB",
+            "name": "Homelab",
+            "projectTypeKey": "software",
+            "simplified": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "10009",
+      "name": "NWM: Scrum Issue Type Screen Scheme",
+      "description": "",
+      "projects": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10009",
+            "key": "NWM",
+            "name": "Night Watchman",
+            "projectTypeKey": "software",
+            "simplified": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "10010",
+      "name": "CHR: Scrum Issue Type Screen Scheme",
+      "description": "",
+      "projects": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10010",
+            "key": "CHR",
+            "name": "Chronicle",
+            "projectTypeKey": "software",
+            "simplified": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "10012",
+      "name": "CMB: Scrum Issue Type Screen Scheme",
+      "description": "",
+      "projects": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10012",
+            "key": "CMB",
+            "name": "Switchtender",
+            "projectTypeKey": "software",
+            "simplified": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "10013",
+      "name": "EBS: Scrum Issue Type Screen Scheme",
+      "description": "",
+      "projects": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10013",
+            "key": "EBS",
+            "name": "Earnings Beat Scanner",
+            "projectTypeKey": "software",
+            "simplified": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "10014",
+      "name": "TDO: Scrum Issue Type Screen Scheme",
+      "description": "",
+      "projects": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10014",
+            "key": "TDO",
+            "name": "Todo",
+            "projectTypeKey": "software",
+            "simplified": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "10015",
+      "name": "TDA: Scrum Issue Type Screen Scheme",
+      "description": "",
+      "projects": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10015",
+            "key": "TDA",
+            "name": "Todo AI",
+            "projectTypeKey": "software",
+            "simplified": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "10052",
+      "name": "WO: Scrum Issue Type Screen Scheme",
+      "description": "",
+      "projects": {
+        "maxResults": 1,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [
+          {
+            "id": "10052",
+            "key": "WO",
+            "name": "work-order",
+            "projectTypeKey": "software",
+            "simplified": false
+          }
+        ]
+      }
+    }
+  ]
+}
