@@ -15,7 +15,6 @@ re-release because an endpoint moved.
   satisfy.
 - **`provision.sh`** — create or converge a conforming Space.
 - **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`.
-- **`workflow-apply.sh`** — provisioning step 3 on its own.
 - **`universal-apply.sh`** — converge the two site-wide Universal workflows
   and their shared workflow scheme towards `universal-workflows.json`,
   additively. `--dry-run` first; it validates against Jira and writes nothing.
@@ -61,12 +60,16 @@ Then, against a scratch project first:
 
 It is idempotent — a second run reports what is already in place and changes
 nothing. Rehearse on a throwaway key before pointing it at a Space that matters:
-it creates a project, seven site-wide custom fields, and statuses and
-validators on a shared workflow.
+it creates a project and the site-wide custom fields, converges two global
+workflows every project shares, and switches the project onto their scheme.
 
-It also retargets the workflow's create transition at `Triage`, the entry
-state. The Jira template points it at `To Do`, so a Space provisioned without
-that step creates every issue already ready to work — see `[JIRA-12]`.
+No project gets a workflow of its own. The last step runs `universal-apply.sh`,
+which converges `Universal Managed Workflow` (Task, Story, Bug) and
+`Universal Managed Grouping Workflow` (Epic, Sub-task) under
+`Universal Managed Workflow Scheme`, then `universal-switch.sh KEY`, which moves
+the project onto that scheme, maps its `To Do` and `Done` issues onto the
+lifecycle, and deletes the workflow and scheme the Jira template gave it. Both
+workflows create issues at `Triage`, the entry state — see `[JIRA-12]`.
 
 ## Running tickets
 

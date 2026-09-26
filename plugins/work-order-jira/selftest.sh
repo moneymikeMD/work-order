@@ -27,16 +27,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 FX="$HERE/fixtures"
 PROVIDER="$HERE/provider.sh"
 PROVISION="$HERE/provision.sh"
-WFAPPLY="$HERE/workflow-apply.sh"
 HTTPLIB="$HERE/lib/jira-http.sh"
 COMMON="$HERE/lib/common.sh"
-RULES="$HERE/workflow-rules.json"
 
-for f in "$PROVIDER" "$PROVISION" "$WFAPPLY" "$HTTPLIB"; do
+for f in "$PROVIDER" "$PROVISION" "$HTTPLIB"; do
     [ -x "$f" ] || { echo "$f is missing or not executable" >&2; exit 2; }
 done
 [ -f "$COMMON" ] || { echo "$COMMON is missing" >&2; exit 2; }
-[ -f "$RULES" ]  || { echo "$RULES is missing" >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "jq is required to run this selftest" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 \
     || { echo "python3 is required: the round trip reads back through conformance/" >&2; exit 2; }
@@ -81,8 +78,8 @@ STUB="$WORK/jira-http-stub.sh"
 cat > "$STUB" <<'STUBEOF'
 #!/bin/bash
 # A jira-http.sh-shaped stub. Responses come from fixtures/ except where
-# marked SYNTHETIC. Knobs: WO_TEST_PROJECT, WO_TEST_FIELDS, WO_TEST_WF,
-# WO_TEST_SEARCH, WO_TEST_STATUS.
+# marked SYNTHETIC. Knobs: WO_TEST_PROJECT, WO_TEST_FIELDS, WO_TEST_SEARCH,
+# WO_TEST_STATUS.
 set -uo pipefail
 FX="$WO_TEST_FX"
 printf '%s\n' "$*" >> "$WO_TEST_LOG"
@@ -106,38 +103,6 @@ ADDED_FIELDS='[{"id":"customfield_10050","name":"human_steps","custom":true,"sch
 {"id":"customfield_10052","name":"defer_until","custom":true,"schema":{"type":"date","custom":"com.atlassian.jira.plugin.system.customfieldtypes:datepicker"}},
 {"id":"customfield_10053","name":"outcome","custom":true,"schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}},
 {"id":"customfield_10054","name":"blocked_by_external","custom":true,"schema":{"type":"string","custom":"com.atlassian.jira.plugin.system.customfieldtypes:textarea"}}]'
-
-wf_search() {
-    case "${WO_TEST_WF:-live}" in
-        missing-ad)
-            fx workflow.search.txt | jq -c '
-                .values[0].statuses |= map(select(.name != "Awaiting Deployment"))
-                | .values[0].transitions |= map(select(.name != "Awaiting Deployment"))' ;;
-        collision)
-            fx workflow.search.txt | jq -c '
-                .values[0].statuses |= map(select(.name != "Awaiting Deployment"))
-                | .values[0].transitions |= map(if .name == "Awaiting Deployment" then .name = "Legacy AD" else . end)' ;;
-        # The recorded workflow's Create transition targets To Do (10009), the
-        # template's default. entry-ok is the same workflow after [JIRA-12] has
-        # been applied, which is the only "already complete" case there is.
-        entry-ok)
-            fx workflow.search.txt | jq -c '
-                .values[0].transitions |= map(if .type == "initial" then .to = "10011" else . end)' ;;
-        *) fx workflow.search.txt ;;
-    esac
-}
-
-wf_bulkget() {
-    case "${WO_TEST_WF:-live}" in
-        missing-ad)
-            fx workflows.bulkget.rules-after.txt | jq -c '
-                ([.statuses[] | select(.name == "Awaiting Deployment") | .id][0]) as $ad
-                | .statuses |= map(select(.name != "Awaiting Deployment"))
-                | .workflows[0].statuses |= map(select(.statusReference != $ad))
-                | .workflows[0].transitions |= map(select(.name != "Awaiting Deployment"))' ;;
-        *) fx workflows.bulkget.rules-after.txt ;;
-    esac
-}
 
 case "$M:$P" in
     # SYNTHETIC: no live capture of /myself is filed, only its shape is needed.
@@ -207,13 +172,6 @@ case "$M:$P" in
     GET:/screens/*/tabs)
         REST="${P#/screens/}"; SID="${REST%%/*}"
         fx "screens.$SID.tabs.txt" ;;
-
-    GET:/statuses/search*) fx statuses.search.txt ;;
-    GET:/workflow/search*) wf_search ;;
-    POST:/workflows/update/validation) fx workflows.update.validation.txt ;;
-    # SYNTHETIC
-    POST:/workflows/update) echo '{}' ;;
-    POST:/workflows) wf_bulkget ;;
 
     POST:/issue)
         # SYNTHETIC: the created body is kept so the GET below can serve it back.
@@ -509,115 +467,92 @@ PY
 )
 eq "a ticket survives create then fetch unchanged" "ROUNDTRIP OK" "$ROUNDTRIP"
 
-# ---- 4. workflow-apply.sh ----------------------------------------------
+# ---- 4. provision.sh# ---- 5. provision.sh ---------------------------------------------------
 
-reset_log wf-complete
-OUT=$(WO_TEST_LOG="$LOG" WO_TEST_WF=entry-ok \
-      "$WFAPPLY" SPK4 --http "$STUB" --rules none --dry-run 2>&1); RC=$?
-eq "workflow-apply with every status present and the entry state already targeted exits 0" "0" "$RC"
-contains "  and says already complete" "already complete" "$OUT"
-not_contains "  without ever bulk-getting the workflow" "POST /workflows" "$(cat "$LOG")"
-
-# [JIRA-12]. The recorded workflow is the template's: all seven statuses are on
-# it, so the ONLY thing left to converge is where the Create transition points.
-reset_log wf-entry-detect
-OUT=$(WO_TEST_LOG="$LOG" "$WFAPPLY" SPK4 --http "$STUB" --rules none --dry-run 2>&1); RC=$?
-eq "workflow-apply does not call a workflow complete while Create targets the wrong status" "0" "$RC"
-not_contains "  so it is not already complete" "already complete" "$OUT"
-contains "  and it names the create transition in the plan" "create transition" "$OUT"
-contains "  saying which status it targets today" "targets status 10009" "$OUT"
-RETARGET=$(printf '%s' "$OUT" | sed -n '/^{/,$p' \
-    | jq -r '[.workflows[0].transitions[] | select(.type == "INITIAL") | .toStatusReference] | join(",")' 2>/dev/null)
-eq "the create transition targets the entry state" "10011" "$RETARGET"
-KEPT=$(printf '%s' "$OUT" | sed -n '/^{/,$p' \
-    | jq -r '[.workflows[0].transitions[] | select(.type == "INITIAL") | .id] | join(",")' 2>/dev/null)
-eq "  keeping the transition's own id, which is per-site and never rewritten" "1" "$KEPT"
-
-reset_log wf-unresolved
-OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=live \
-      "$WFAPPLY" SPK4 --http "$STUB" --rules "$RULES" --dry-run 2>&1); RC=$?
-eq "workflow-apply fails when a rule names a field this site lacks" "1" "$RC"
-contains "  naming the unresolved field" "UNRESOLVED:field:outcome" "$OUT"
-
-reset_log wf-dry
-OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all \
-      "$WFAPPLY" SPK4 --http "$STUB" --rules "$RULES" --dry-run 2>&1); RC=$?
-eq "workflow-apply --dry-run with resolvable rules exits 0" "0" "$RC"
-contains "  and validates the body it built" "validation passed" "$OUT"
-contains "  adding the outcome validator to Cancelled" "customfield_10053" "$OUT"
-contains "  and the previous-status validator to Completed" "system:previous-status-validator" "$OUT"
-contains "  validation was called" "POST /workflows/update/validation" "$(cat "$LOG")"
-not_contains "  but the update itself never was" "POST /workflows/update {" "$(cat "$LOG")"
-
-reset_log wf-noyes
-OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all \
-      "$WFAPPLY" SPK4 --http "$STUB" --rules "$RULES" 2>&1); RC=$?
-eq "workflow-apply without --yes refuses with exit 3" "3" "$RC"
-not_contains "  and sent no update" "POST /workflows/update {" "$(cat "$LOG")"
-
-reset_log wf-missing-status
-OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_WF=missing-ad \
-      "$WFAPPLY" SPK4 --http "$STUB" --rules "$RULES" --dry-run 2>&1); RC=$?
-eq "workflow-apply adds a missing lifecycle status" "0" "$RC"
-contains "  reporting it as missing" "Awaiting Deployment" "$OUT"
-ADDED=$(printf '%s' "$OUT" | sed -n '/^{/,$p' | jq -c '[.statuses[] | select(.name == "Awaiting Deployment") | {id, statusReference}]' 2>/dev/null)
-eq "  with id and statusReference both set to the global status id" \
-    '[{"id":"10012","statusReference":"10012"}]' "$ADDED"
-
-reset_log wf-collision
-OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_WF=collision \
-      "$WFAPPLY" SPK4 --http "$STUB" --rules "$RULES" --dry-run 2>&1); RC=$?
-eq "workflow-apply refuses to reuse a transition id held by another name" "1" "$RC"
-contains "  naming the holder" "Legacy AD" "$OUT"
-
-# ---- 5. provision.sh ---------------------------------------------------
+# The universal scripts are spies: each records its argv, in call order, and
+# exits with the code its knob names, so provision.sh's handling of them is
+# tested without either script's own behaviour.
+USPY="$WORK/uspy.log"
+UAPPLY="$WORK/universal-apply-spy.sh"
+USWITCH="$WORK/universal-switch-spy.sh"
+cat > "$UAPPLY" <<'SPY'
+#!/bin/sh
+echo "universal-apply $*" >> "$WO_TEST_USPY"
+exit "${WO_TEST_UA_RC:-0}"
+SPY
+cat > "$USWITCH" <<'SPY'
+#!/bin/sh
+echo "universal-switch $*" >> "$WO_TEST_USPY"
+exit "${WO_TEST_US_RC:-0}"
+SPY
+chmod +x "$UAPPLY" "$USWITCH"
+export WO_TEST_USPY="$USPY"
+USE_SPIES=(--universal-apply "$UAPPLY" --universal-switch "$USWITCH")
 
 reset_log prov-dry
-WFSPY="$WORK/wfapply-spy.sh"
-printf '#!/bin/sh\necho "workflow-apply invoked: $*" >> "%s"\nexit 0\n' "$WORK/wfspy.log" > "$WFSPY"
-chmod +x "$WFSPY"
-: > "$WORK/wfspy.log"
+: > "$USPY"
 OUT=$(WO_TEST_LOG="$LOG" PATH="$FAKEBIN:$PATH" \
-      "$PROVISION" --dry-run --project ZZPROBE --http "$STUB" --workflow-apply "$WFSPY" 2>&1); RC=$?
+      "$PROVISION" --dry-run --project ZZPROBE --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
 eq "provision --dry-run exits 0" "0" "$RC"
 contains "  and says it would create the project" "would read-or-create the project" "$OUT"
 nonempty "  having reached the stub" "$(cat "$LOG")"
 BAREcalls=$(grep -cv -- '--dry-run' "$LOG" || true)
 eq "  every call the stub saw carried --dry-run" "0" "$BAREcalls"
-eq "  and workflow-apply was announced, not invoked" "" "$(cat "$WORK/wfspy.log")"
+eq "  and neither universal script was invoked, only announced" "" "$(cat "$USPY")"
 not_contains "  no curl was reached" "curl was called" "$OUT"
 for f in touches executor verify human_steps appends defer_until outcome blocked_by_external; do
     contains "  the plan names the $f field" "\"name\":\"$f\"" "$OUT"
 done
-contains "  the plan names the create transition it would retarget" "create transition" "$OUT"
-contains "  and the entry state it would retarget it at" "Triage" "$OUT"
+contains "  the plan announces universal-apply with no project argument" "$UAPPLY --http $STUB --yes" "$OUT"
+contains "  then universal-switch for this project" "$USWITCH ZZPROBE --http $STUB --yes" "$OUT"
+contains "  naming the shared scheme" "Universal Managed Workflow Scheme" "$OUT"
+contains "  and the entry state the create transition targets" "Triage" "$OUT"
 contains "  the plan names the screen walk" "/screens/<id>/tabs/<tab>/fields" "$OUT"
 contains "  the plan names the searcherKey repair" "searcherKey" "$OUT"
 
 reset_log prov-noyes
-OUT=$(WO_TEST_LOG="$LOG" "$PROVISION" --project ZZPROBE --http "$STUB" --workflow-apply "$WFSPY" </dev/null 2>&1); RC=$?
+: > "$USPY"
+OUT=$(WO_TEST_LOG="$LOG" "$PROVISION" --project ZZPROBE --http "$STUB" "${USE_SPIES[@]}" </dev/null 2>&1); RC=$?
 eq "provision without --yes and with no terminal refuses with exit 3" "3" "$RC"
 eq "  and sent nothing at all" "" "$(cat "$LOG")"
+eq "  and invoked neither universal script" "" "$(cat "$USPY")"
+
+OUT=$("$PROVISION" --dry-run --project ZZPROBE --http "$STUB" --workflow-apply "$UAPPLY" 2>&1); RC=$?
+eq "provision rejects the retired --workflow-apply flag" "1" "$RC"
+contains "  as an unknown flag" "unknown flag '--workflow-apply'" "$OUT"
+
+OUT=$("$PROVISION" --dry-run --project ZZPROBE --http "$STUB" --rules x 2>&1); RC=$?
+eq "provision rejects the retired --rules flag" "1" "$RC"
+
+OUT=$("$PROVISION" --dry-run --project ZZPROBE --http "$STUB" --universal-switch "$USWITCH" 2>&1); RC=$?
+if [ -x "$HERE/universal-apply.sh" ]; then
+    eq "provision finds universal-apply.sh beside itself by default" "0" "$RC"
+else
+    eq "provision looks for universal-apply.sh beside itself by default" "1" "$RC"
+    contains "  naming the path it looked at" "$HERE/universal-apply.sh" "$OUT"
+fi
 
 reset_log prov-business
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_PROJECT=business \
-      "$PROVISION" --yes --project SPK4 --http "$STUB" --workflow-apply "$WFSPY" 2>&1); RC=$?
+      "$PROVISION" --yes --project SPK4 --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
 eq "provision refuses a project that is not classic software" "1" "$RC"
 contains "  naming the style it found" "next-gen" "$OUT"
 
 reset_log prov-wrongtype
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=wrongtype \
-      "$PROVISION" --yes --project SPK4 --http "$STUB" --workflow-apply "$WFSPY" 2>&1); RC=$?
+      "$PROVISION" --yes --project SPK4 --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
 eq "provision refuses to reuse a field of the wrong type" "1" "$RC"
 contains "  naming the field" "'verify'" "$OUT"
 
 reset_log prov-happy
-: > "$WORK/wfspy.log"
+: > "$USPY"
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=live \
-      "$PROVISION" --yes --project SPK4 --http "$STUB" --workflow-apply "$WFSPY" 2>&1); RC=$?
+      "$PROVISION" --yes --project SPK4 --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
 eq "provision converges an existing conforming project" "0" "$RC"
 not_contains "  without creating the project again" "creating it" "$OUT"
-contains "  invoking workflow-apply for the lifecycle" "workflow-apply invoked" "$(cat "$WORK/wfspy.log")"
+eq "  running universal-apply then universal-switch, each once, passing --yes through" \
+    "universal-apply --http $STUB --yes
+universal-switch SPK4 --http $STUB --yes" "$(cat "$USPY")"
 CREATED=$(printf '%s' "$OUT" | grep -c "absent — creating" || true)
 eq "  creating exactly the five fields the site lacks" "5" "$CREATED"
 contains "  reusing the field that is already present" "field 'verify' already present" "$OUT"
@@ -629,7 +564,7 @@ contains "  and printing the resolved field ids" "customfield_" "$OUT"
 
 reset_log prov-unsearchable
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=live WO_TEST_SEARCH=400-once \
-      "$PROVISION" --yes --project SPK4 --http "$STUB" --workflow-apply "$WFSPY" 2>&1); RC=$?
+      "$PROVISION" --yes --project SPK4 --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
 eq "provision repairs a field JQL cannot search" "0" "$RC"
 contains "  treating the HTTP 400 as the signal" "confirmed via HTTP 400" "$OUT"
 contains "  and re-probing after the repair" "JQL-searchable after repair" "$OUT"
@@ -638,11 +573,26 @@ eq "  with one searcherKey PUT per field" "8" "$PUTS"
 
 reset_log prov-create
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_PROJECT=missing WO_TEST_FIELDS=live \
-      "$PROVISION" --yes --project SPK4 --name "Spike 4" --http "$STUB" --workflow-apply "$WFSPY" 2>&1); RC=$?
+      "$PROVISION" --yes --project SPK4 --name "Spike 4" --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
 eq "provision creates a project that does not exist" "0" "$RC"
 contains "  saying so" "does not exist — creating it" "$OUT"
 contains "  with the classic scrum template" "gh-simplified-scrum-classic" "$(cat "$LOG")"
 contains "  and a lead resolved from /myself" "GET /myself" "$(cat "$LOG")"
+
+reset_log prov-apply-fails
+: > "$USPY"
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_UA_RC=2 \
+      "$PROVISION" --yes --project SPK4 --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
+eq "provision fails when universal-apply reports the stored rules differ" "1" "$RC"
+contains "  naming the script that failed" "universal-apply-spy.sh failed" "$OUT"
+eq "  and never switches the project onto an unconverged scheme" "universal-apply --http $STUB --yes" "$(cat "$USPY")"
+
+reset_log prov-switch-fails
+: > "$USPY"
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_US_RC=1 \
+      "$PROVISION" --yes --project SPK4 --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
+eq "provision fails when universal-switch fails" "1" "$RC"
+contains "  naming the script and the project" "universal-switch-spy.sh failed for 'SPK4'" "$OUT"
 
 # ---- summary ------------------------------------------------------------
 

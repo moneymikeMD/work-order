@@ -2,9 +2,8 @@
 
 Every file here is a response **recorded from a live Jira Cloud site**, not
 authored to match what the API was expected to return. That distinction is the
-point: the parameter shapes in `workflow-rules.json`, the `searcherKey` values
-in `provision.sh`, and the screen walk in step 5 were all derived from these
-recordings after earlier guesses turned out wrong.
+point: the `searcherKey` values in `provision.sh` and its screen walk were
+derived from these recordings after earlier guesses turned out wrong.
 
 Each file keeps the header it was captured with, naming the request, the date,
 and the scratch project it came from. Hosts, emails, account ids and avatar
@@ -18,16 +17,11 @@ line, then the body. `.json` files are bodies alone.
 
 | Fixture | Request |
 | --- | --- |
-| `statuses.search.txt` | `GET /statuses/search?maxResults=100` — the site-wide status list step 3 resolves names against |
 | `field.list.txt` | `GET /field` — the site-wide field list step 4 resolves names against |
 | `field.create.txt` | `POST /field` for a textarea field created with no `searcherKey` |
 | `search.jql.not-searchable.txt` | `GET /search/jql` probing that field — the HTTP 400 that carries **no** "not searchable" text anywhere in its body |
 | `field.searcherkey-put.txt` | `PUT /field/<id>` repairing it with a `searcherKey` |
 | `search.jql.searchable.txt` | the same probe after the repair — the only evidence the repair worked |
-| `workflow.search.txt` | `GET /workflow/search?workflowName=...&expand=transitions,statuses` |
-| `workflows.bulkget.rules-before.txt` | `POST /workflows` bulk-get, baseline: version 1, no validators |
-| `workflows.bulkget.rules-after.txt` | the same bulk-get after `/workflows/update`, version 2 — the recorded shape of `system:validate-field-value` and `system:previous-status-validator` as Jira stores them |
-| `workflows.update.validation.txt` | `POST /workflows/update/validation` and its `errors` array |
 | `issuetypescreenscheme.project.txt` | `GET /issuetypescreenscheme/project?projectId=...` |
 | `issuetypescreenscheme.mapping.txt` | `GET /issuetypescreenscheme/mapping?...` — three distinct screen schemes, because the template gives Bug and Epic their own |
 | `screenscheme.txt` | `GET /screenscheme?id=&id=&id=` — the repeated-`id` bulk form, because there is no per-id GET |

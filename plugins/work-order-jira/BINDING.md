@@ -141,37 +141,61 @@ lifecycle apart from a broken read, and matching an error message is not a
 contract. `provider.sh position` exits **4** and prints
 `unmapped-status<TAB><status name>` for the first, and exits 1 for the second.
 
-[JIRA-4] The transition into each of the seven statuses MUST be `GLOBAL`, so
-every position is reachable from every other without a transition matrix. The
-lifecycle's ordering is enforced by validators, named below, not by which
-transitions exist.
+[JIRA-4] Retired (WO-79). It required every lifecycle transition to be
+`GLOBAL` and left the ordering to validators. The shared workflow of section 3.1
+uses directed transitions instead, so the ordering is carried by which
+transitions exist, per `[JIRA-17]`.
 
-[JIRA-12] The workflow's **initial transition** — the one Jira runs when an
+### 3.1 The shared workflows and scheme
+
+The lifecycle lives in two **global** workflows under one shared workflow
+scheme. No project carries a copy of its own.
+
+| Workflow | Issue types | Statuses | Validators |
+| --- | --- | --- | --- |
+| `Universal Managed Workflow` | `Task`, `Story`, `Bug` | all seven above | section 4 |
+| `Universal Managed Grouping Workflow` | `Epic`, `Sub-task` | `Triage`, `Open`, `In Progress`, `Completed`, `Cancelled` | none |
+
+[JIRA-16] Every project in a conforming Space MUST use the workflow scheme
+`Universal Managed Workflow Scheme`, mapping `Task`, `Story` and `Bug` to
+`Universal Managed Workflow` and `Epic` and `Sub-task` to
+`Universal Managed Grouping Workflow`. A project MUST NOT carry a workflow or a
+workflow scheme of its own for these issue types. A per-project copy is a second
+place the validators can drift, and a Space whose projects each carry one has as
+many lifecycles as projects.
+
+A ticket is an issue on `Universal Managed Workflow`. An issue on the grouping
+workflow holds five of the seven positions and none of section 4's validators;
+it groups tickets and is not itself one under this binding.
+
+The grouping workflow runs `Triage` → `Open` → `In Progress` → `Completed`, with
+`Cancelled` reachable from `Triage` and `Open`, and carries no validator on any
+transition.
+
+[JIRA-12] Each workflow's **initial transition** — the one Jira runs when an
 issue is created, `"type": "initial"` — MUST target the status bound to the
 entry state, `Triage`. An implementation MUST select that transition by its
 type and MUST resolve the target status id by name, per `[JIRA-8]`; both the
 transition id and the status id are per-site.
 
-The Jira project template targets it at `To Do`, so a Space provisioned without
-this step creates every issue at the ready-to-work position and skips triage
-entirely. The prototype project was corrected by hand and the replication path
-was not: same workflow shape, same transition id `1` named `Create`, different
-target. `workflow-apply.sh` already rewrites this workflow through
-`POST /workflows/update`, so this is a step the provisioner never asked for
-rather than something Jira will not do.
+The Jira project template targets it at `To Do`, so a project left on the
+template's workflow creates every issue at the ready-to-work position and skips
+triage entirely. On the shared workflows the target is set once, globally;
+switching a project onto the shared scheme is what brings it under that target.
 
-### 3.1 The deferral automation
+### 3.2 The deferral automation
 
 A **global Jira automation**, configured on the site and owned by the site's
 administrator, scans `defer_until` daily and transitions an issue out of
-`Deferred` into `To Do` once the date has passed. It is recorded here because
-two things in this binding depend on it and would otherwise look arbitrary:
+`Deferred` once the date has passed. It is recorded here because two things in
+this binding depend on it and would otherwise look arbitrary:
 
-- `To Do` MUST stay readable (it is, as the one-way alias above). An automation
-  that parks issues in a status the binding cannot read is worse than no
-  automation.
-- The `Deferred` transition requires `verify` as well as `defer_until` (section
-  4), so that an issue the automation later moves into `To Do` can always
+- An automation that parks issues in a status the binding cannot read is worse
+  than no automation, so the status it moves an issue into MUST be one section 3
+  binds. `To Do` stays readable, as the one-way alias above, for a project not
+  yet on the shared scheme.
+- The `defer` transition requires `verify` as well as `defer_until` (section
+  4), so that an issue the automation later moves out through `open` can always
   satisfy that transition's own validator. The gate is placed on the way in,
   where a person is present, rather than on the way out, where one is not.
 
@@ -181,52 +205,66 @@ script here does either. It states that it exists and what it depends on.
 ## 4. Enforcement
 
 These validators are what makes the contract gate rather than describe. They
-are applied by `workflow-apply.sh` from `workflow-rules.json`, additively: a
-rule already present is left alone, a missing one is appended, nothing is
-removed.
+live on `Universal Managed Workflow` and are converged by `universal-apply.sh`
+from `universal-workflows.json`, additively: a rule already present is left
+alone, a missing one is added, nothing is removed, and a stored rule that
+differs from the file is reported rather than overwritten.
 
-| Transition | Validator | Serves |
-| --- | --- | --- |
-| `Triage` | none — deliberately | `[MUST-46]`, per `[JIRA-13]` |
-| `Open` | `verify` is required | `[MUST-7]`, per `[JIRA-13]` |
-| `To Do` | `verify` is required, where the transition exists | `[MUST-7]`, per `[JIRA-13]` |
-| `In Progress` | `verify` is required | `[MUST-7]`, `[MUST-8]` |
-| `In Progress` | `touches` is required | `[MUST-13]`, tightened by `[JIRA-6]` |
-| `Deferred` | `defer_until` is required | `[MUST-47]`, per `[JIRA-14]` |
-| `Deferred` | `verify` is required | `[MUST-7]`, per `[JIRA-14]` |
-| `Completed` | `verify` is required | `[MUST-7]` |
-| `Completed` | previous status includes `Awaiting Deployment` | `[MUST-27]`, per `[JIRA-5]` |
-| `Cancelled` | `outcome` is required | `[MUST-28]`, per `[JIRA-7]` |
+Every validator below is a field-required validator. A transition not in this
+table does not exist on the workflow.
 
-[JIRA-13] The `Triage` transition MUST carry no validator, and the transition
-into the ready-to-work position MUST require `verify`. Together those two are
-the entry state made executable: anything may enter `Triage`, and leaving it is
-the assertion `[MUST-46]` describes. A validator on `Triage` would reject the
-ticket at the one moment nobody has written the contract yet; no validator on
-the way out would leave the entry state a formality.
+| Transition | From → To | Required | Serves |
+| --- | --- | --- | --- |
+| `Create` (initial) | → `Triage` | nothing — deliberately | `[MUST-46]`, per `[JIRA-12]`, `[JIRA-13]` |
+| `refine to work` | `Triage` → `Open` | `verify` | `[MUST-7]`, `[MUST-46]`, per `[JIRA-13]` |
+| `defer` | `Triage`, `Open` → `Deferred` | `defer_until`, `verify` | `[MUST-47]`, `[MUST-7]`, per `[JIRA-14]` |
+| `open` | `Deferred` → `Open` | `verify` | `[MUST-7]`, per `[JIRA-14]` |
+| `start work` | `Open` → `In Progress` | `verify`, `touches` | `[MUST-7]`, `[MUST-8]`, `[MUST-13]` tightened by `[JIRA-6]` |
+| `ready for verification` | `In Progress` → `Awaiting Deployment` | nothing | |
+| `re-work` | `Awaiting Deployment` → `In Progress` | nothing | |
+| `complete` | `Awaiting Deployment` → `Completed` | `verify` | `[MUST-7]`, `[MUST-27]`, per `[JIRA-17]` |
+| `complete (no verify)` | `In Progress` → `Completed` | `verify`, `outcome` | `[MUST-7]`, per `[JIRA-17]` |
+| `cancel` | `Triage`, `Open`, `Deferred`, `In Progress`, `Awaiting Deployment` → `Cancelled` | `outcome` | `[MUST-28]`, per `[JIRA-7]` |
+| `re-open` | `In Progress`, `Completed`, `Cancelled` → `Open` | nothing | |
 
-The requirement covers **both** `Open` and the `To Do` alias, and an
-implementation MUST apply it to the `To Do` transition wherever that transition
-exists on the workflow. `To Do` is never provisioned, so on a Space this binding
-built there is nothing to apply it to; on a Space provisioned from the Jira
-project template the transition is already there, and the deferral automation of
-section 3.1 uses it. Leaving that one ungated would make the alias a way in
-around the gate.
+[JIRA-13] The initial transition into `Triage` MUST carry no validator, and
+every transition out of `Triage` other than `cancel` MUST require `verify`.
+Together those two are the entry state made executable: anything may enter
+`Triage`, and leaving it for the lifecycle is the assertion `[MUST-46]`
+describes. A validator on the way in would reject the ticket at the one moment
+nobody has written the contract yet; no validator on the way out would leave
+the entry state a formality.
 
-[JIRA-14] The `Deferred` transition MUST require `defer_until`, per
-`[MUST-47]`, and MUST also require `verify`. The first is what makes `Deferred`
-bounded. The second is what keeps the automation of section 3.1 able to move
-the issue back out: it transitions into `To Do`, whose own validator requires
-`verify` per `[JIRA-13]`, and an automation running unattended cannot fill a
-field in.
+The requirement also covers the `To Do` alias: an implementation MUST require
+`verify` on any transition into `To Do` wherever one exists. Neither shared
+workflow has one, so on a project on the shared scheme there is nothing to apply
+it to.
 
-[JIRA-5] The `Completed` transition MUST carry a previous-status validator
-naming `Awaiting Deployment`. `[MUST-27]` says a ticket must occupy that
-position before reaching `completed`; a tracker that merely offers the status
-does not satisfy it, because the position that is skippable is the position that
-gets skipped.
+`re-open` carries no validator, so a ticket cancelled from `Triage` before it
+had a `verify` reaches `Open` without one. The conformance check of section 8
+reports that ticket against `[MUST-7]`; the workflow does not prevent it.
 
-[JIRA-6] The `In Progress` transition MUST require `touches` for every ticket,
+[JIRA-14] The `defer` transition MUST require `defer_until`, per `[MUST-47]`,
+and MUST also require `verify`. The first is what makes `Deferred` bounded. The
+second is what keeps the automation of section 3.2 able to move the issue back
+out: the only way out of `Deferred` other than `cancel` is `open`, which
+requires `verify`, and an automation running unattended cannot fill a field in.
+
+[JIRA-5] Retired (WO-79). It required a previous-status validator naming
+`Awaiting Deployment` on the transition into `Completed`. Jira's previous-status
+validator reads the *from* side of the changelog, so a ticket that hopped out of
+`Awaiting Deployment` and back passed it on the wrong evidence. `[JIRA-17]`
+replaces it with structure.
+
+[JIRA-17] `Completed` MUST be reachable only through `complete`, from
+`Awaiting Deployment`, and `complete (no verify)`, from `In Progress`, and the
+transitions into it MUST NOT carry a previous-status validator. Passage through
+`Awaiting Deployment` is then a property of the workflow's shape, which
+`[MUST-27]` asks for, rather than a check on history. `complete (no verify)` is
+the one path around it; it requires `outcome` as well as `verify`, so a ticket
+completed that way says why in the field a reader already looks at for that.
+
+[JIRA-6] The `start work` transition MUST require `touches` for every ticket,
 not only for the `agent` and `mixed` executors `[MUST-13]` names. Jira's
 field-required validator cannot be made conditional on another field's value, so
 the choice is between requiring it of everyone and requiring it of nobody. This
@@ -234,9 +272,9 @@ is stricter than the core, which `[MUST-44]` permits, and it is stated here
 rather than left as a surprise: a `human` ticket in a conforming Space must
 declare `touches`, or an empty `touches` per `[SHOULD-7]`.
 
-[JIRA-7] The `Cancelled` transition MUST require `outcome`, per `[MUST-28]`.
-`outcome` is not a Jira field; this binding defines it as a custom field, and a
-Space without it cannot represent a cancelled ticket at all.
+[JIRA-7] Every transition into `Cancelled` MUST require `outcome`, per
+`[MUST-28]`. `outcome` is not a Jira field; this binding defines it as a custom
+field, and a Space without it cannot represent a cancelled ticket at all.
 
 [JIRA-1] Every custom field this binding defines MUST be present on every tab
 of every screen reachable from the project's issue-type screen scheme.
@@ -271,9 +309,15 @@ requirements are satisfied by review and by running the check at the base state,
 outside Jira.
 
 **`[MUST-12]` — no `completed` unless `verify` has been executed and passed.**
-The `Completed` transition requires the field, and `[JIRA-5]` requires the
-ticket to have passed through `awaiting-deployment`. Neither is evidence the
-command ran. Jira cannot supply that evidence.
+Both transitions into `Completed` require the field, and `[JIRA-17]` routes
+`complete` through `awaiting-deployment`. Neither is evidence the command ran.
+Jira cannot supply that evidence.
+
+**`[MUST-27]` — a ticket occupies `awaiting-deployment` before `completed`.**
+Satisfied by the workflow's shape for every path but one: `complete (no verify)`
+goes from `In Progress` straight to `Completed`, per `[JIRA-17]`. A ticket
+completed that way carries an `outcome` saying why, and has not occupied the
+position.
 
 **`[MUST-15]` — simultaneously startable tickets MUST NOT share a `touches`
 path, and an overlap MUST be reported as an error.** Jira has no validator that
@@ -411,8 +455,9 @@ checked here too.
 
 | Script | Does |
 | --- | --- |
-| `provision.sh` | creates or converges a conforming Space, `--dry-run` first |
-| `workflow-apply.sh` | provisioning step 3 on its own: statuses, transitions, validators |
+| `provision.sh` | creates or converges a conforming Space, `--dry-run` first; its last step runs the two scripts below |
+| `universal-apply.sh` | converges the two shared workflows of section 3.1 and their scheme from `universal-workflows.json`; takes no project |
+| `universal-switch.sh` | moves one project onto the shared scheme, mapping its issues' template statuses onto the lifecycle, then deletes the workflow and scheme it had |
 | `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create` |
 | `lib/jira-http.sh` | the one credentialed HTTP client, and the seam a test stubs |
 | `selftest.sh` | offline; stubs the client and asserts on the decisions the scripts reach |
@@ -420,7 +465,16 @@ checked here too.
 `provider.sh transition KEY <position>` takes a lifecycle position, not a
 transition id, and resolves it against the live issue. That is the lifecycle
 table in section 3 made executable: if the table and the Space disagree, the
-call fails instead of moving the ticket somewhere else.
+call fails instead of moving the ticket somewhere else. Since transitions are
+directed (`[JIRA-17]`), a position the issue's current status has no transition
+into fails the same way.
+
+`universal-switch.sh` first moves every `To Do` issue that already carries
+`verify` to `Open`, then maps what remains: `To Do` to `Triage` for tickets and
+to `Open` for `Epic` and `Sub-task`, and `Done` to `Completed`. Both universal
+scripts share `provision.sh`'s exit statuses — 0 done, already complete or
+`--dry-run`; 1 failure; 3 not confirmed — and `universal-apply.sh` adds 2, for
+a stored rule that differs from `universal-workflows.json`.
 
 ## 10. Writing a ticket — `provider.sh create`
 
