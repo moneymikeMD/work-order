@@ -1,0 +1,80 @@
+[
+  {
+    "id": "status",
+    "name": "Status",
+    "custom": false
+  },
+  {
+    "id": "summary",
+    "name": "Summary",
+    "custom": false
+  },
+  {
+    "id": "description",
+    "name": "Description",
+    "custom": false
+  },
+  {
+    "id": "customfield_11001",
+    "name": "touches",
+    "custom": true,
+    "schema": {
+      "type": "string",
+      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea"
+    }
+  },
+  {
+    "id": "customfield_11002",
+    "name": "verify",
+    "custom": true,
+    "schema": {
+      "type": "string",
+      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea"
+    }
+  },
+  {
+    "id": "customfield_11003",
+    "name": "human_steps",
+    "custom": true,
+    "schema": {
+      "type": "string",
+      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea"
+    }
+  },
+  {
+    "id": "customfield_11004",
+    "name": "appends",
+    "custom": true,
+    "schema": {
+      "type": "string",
+      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea"
+    }
+  },
+  {
+    "id": "customfield_11005",
+    "name": "executor",
+    "custom": true,
+    "schema": {
+      "type": "option",
+      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:select"
+    }
+  },
+  {
+    "id": "customfield_11006",
+    "name": "defer_until",
+    "custom": true,
+    "schema": {
+      "type": "date",
+      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:datepicker"
+    }
+  },
+  {
+    "id": "customfield_11007",
+    "name": "outcome",
+    "custom": true,
+    "schema": {
+      "type": "string",
+      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea"
+    }
+  }
+]
