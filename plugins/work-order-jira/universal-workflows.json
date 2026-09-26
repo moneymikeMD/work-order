@@ -4,7 +4,7 @@
     "Additive only: a missing status, transition or validator is added, a missing scheme mapping is added, and nothing already in Jira is ever changed or removed. Whatever Jira holds that this file does not name is reported as 'not in spec (left alone)'.",
     "Status and issue-type names are resolved to site ids at run time. {field:<name>} in a validator parameter resolves to that custom field's id via GET /field.",
     "A transition is identified by (from, to), never by its name. from is null only for the initial transition, the one Jira runs on create.",
-    "No transition carries system:previous-status-validator: the task workflow's transitions are DIRECTED, so reaching Completed through Awaiting Deployment is structural (owner decision 2026-09-26, reversing NWM-110). 'complete (no verify)' is the one exit that skips it, and it demands an outcome saying why.",
+    "No transition carries system:previous-status-validator: the task workflow's transitions are DIRECTED, so reaching Completed through Awaiting Deployment is structural (owner decision 2026-09-26, reversing NWM-110). There is no In Progress -> Completed transition: every ticket occupies Awaiting Deployment before Completed (work-order MUST-27). Every transition into Open requires verify.",
     "The grouping workflow carries no validator by design: Epics and Sub-tasks are not tickets."
   ],
   "workflows": [
@@ -36,10 +36,6 @@
         {"name": "complete", "from": "Awaiting Deployment", "to": "Completed", "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required before completing (work-order MUST-7)"}}
         ]},
-        {"name": "complete (no verify)", "from": "In Progress", "to": "Completed", "validators": [
-          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required before completing (work-order MUST-7)"}},
-          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to complete without passing Awaiting Deployment: say why this ticket needed no deployment check (work-order MUST-27)"}}
-        ]},
         {"name": "cancel", "from": "Triage", "to": "Cancelled", "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
         ]},
@@ -55,9 +51,15 @@
         {"name": "cancel", "from": "Awaiting Deployment", "to": "Cancelled", "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
         ]},
-        {"name": "re-open", "from": "In Progress", "to": "Open", "validators": []},
-        {"name": "re-open", "from": "Completed", "to": "Open", "validators": []},
-        {"name": "re-open", "from": "Cancelled", "to": "Open", "validators": []}
+        {"name": "re-open", "from": "In Progress", "to": "Open", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to reach the ready-to-work position (work-order MUST-7, per JIRA-13)"}}
+        ]},
+        {"name": "re-open", "from": "Completed", "to": "Open", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to reach the ready-to-work position (work-order MUST-7, per JIRA-13)"}}
+        ]},
+        {"name": "re-open", "from": "Cancelled", "to": "Open", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to reach the ready-to-work position (work-order MUST-7, per JIRA-13)"}}
+        ]}
       ]
     },
     {

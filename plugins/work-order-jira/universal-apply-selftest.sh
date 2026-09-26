@@ -175,10 +175,10 @@ EPIC_ID=$(fxbody workflows.bulkget.epic.txt | jq -r '.workflows[0].id')
 fresh dry
 OUT=$(run --dry-run); RC=$?
 eq "dry-run against the recorded workflows exits 0" "0" "$RC"
-contains "  plans 16 changes on the task workflow" "16 changes" "$OUT"
+contains "  plans 17 changes on the task workflow" "17 changes" "$OUT"
 contains "  names the rename" "\"Universal Managed Epic Workflow\" -> \"Universal Managed Grouping Workflow\"" "$OUT"
 contains "  plans the scheme create" "create: default \"Universal Managed Workflow\"" "$OUT"
-contains "  totals 20 changes" "20 changes planned." "$OUT"
+contains "  totals 21 changes" "21 changes planned." "$OUT"
 eq "  called validation once per changed workflow" "2" "$(grep -c '^POST /workflows/update/validation' "$LOG")"
 eq "  and wrote nothing" "0" "$(writes)"
 not_contains "  and never adds a previous-status validator" "previous-status" "$OUT"
@@ -193,10 +193,16 @@ eq "new transitions: Triage, Open and Deferred -> Cancelled, DIRECTED, fresh ids
         | {id, type, from: .links[0].fromStatusReference, to: .toStatusReference, f: [.validators[].parameters.fieldsRequired]}]')"
 eq "  start work gains verify then touches" '["customfield_10044","customfield_10043"]' \
     "$(printf '%s' "$TB" | jq -c '[.workflows[0].transitions[] | select(.id == "3") | .validators[].parameters.fieldsRequired]')"
-eq "  complete (no verify) gains verify and outcome" '["customfield_10044","customfield_10079"]' \
-    "$(printf '%s' "$TB" | jq -c '[.workflows[0].transitions[] | select(.id == "10") | .validators[].parameters.fieldsRequired]')"
-eq "  every re-open, re-work, ready for verification and Create stays ungated" "0" \
-    "$(printf '%s' "$TB" | jq '[.workflows[0].transitions[] | select(.id == "1" or .id == "4" or .id == "9" or .id == "12" or .id == "13" or .id == "15") | .validators[]] | length')"
+eq "  every transition into Open requires verify, re-open included" '["customfield_10044"]' \
+    "$(printf '%s' "$TB" | jq -c '[.workflows[0].transitions[] | select(.toStatusReference == "1") | .validators[].parameters.fieldsRequired] | unique')"
+eq "  all five of them" "5" \
+    "$(printf '%s' "$TB" | jq '[.workflows[0].transitions[] | select(.toStatusReference == "1" and (.validators | length) == 1)] | length')"
+contains "complete (no verify) is not in the spec, so it is reported" "not in spec (left alone): transition 10 \"complete (no verify)\"  In Progress -> Completed" "$OUT"
+eq "  and left exactly as stored, never gated or removed" \
+    "$(fxbody workflows.bulkget.task.txt | jq -c '.workflows[0].transitions[] | select(.id == "10")')" \
+    "$(printf '%s' "$TB" | jq -c '.workflows[0].transitions[] | select(.id == "10")')"
+eq "  re-work, ready for verification and Create stay ungated" "0" \
+    "$(printf '%s' "$TB" | jq '[.workflows[0].transitions[] | select(.id == "1" or .id == "4" or .id == "15") | .validators[]] | length')"
 eq "  untouched transitions are carried byte for byte" \
     "$(fxbody workflows.bulkget.task.txt | jq -c '[.workflows[0].transitions[] | select(.id == "15" or .id == "4")]')" \
     "$(printf '%s' "$TB" | jq -c '[.workflows[0].transitions[] | select(.id == "15" or .id == "4")]')"
@@ -270,7 +276,7 @@ OUT=$(run --dry-run); RC=$?
 eq "with some validators already stored, dry-run exits 0" "0" "$RC"
 contains "  appending only the missing touches rule to start work" "start work (3)  Open -> In Progress: requires touches" "$OUT"
 contains "  reporting the site-local rule as left alone" "not in spec (left alone): validator system:validate-field-value" "$OUT"
-contains "  planning one change fewer" "15 changes" "$OUT"
+contains "  planning one change fewer" "16 changes" "$OUT"
 TB=$(body_of "Universal Managed Workflow" "$OUT")
 eq "  existing rules kept verbatim, in order, with their ids, touches appended" \
     '["6bceb88f-467a-460e-b1aa-3d5d5a21b916","e56f4066-2557-4336-8db3-9f5de87b415e",null]|["customfield_10044","customfield_10046","customfield_10043"]' \
