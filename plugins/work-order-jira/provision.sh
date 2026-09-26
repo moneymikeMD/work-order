@@ -1,22 +1,21 @@
 #!/bin/bash
 #
 # provision.sh — create or converge a Jira Space that conforms to the
-# work-order specification at the `full` profile: the project, the seven
-# lifecycle statuses and their validators, the seven custom fields, and
-# those fields on every screen the project's issue types use. Each step is
+# work-order specification at the `full` profile: the project, the custom
+# fields, those fields on every screen the project's issue types use, and the
+# project on the shared Universal Managed Workflow Scheme. Each step is
 # idempotent; a re-run converges.
 #
-# Step 5 also retargets the workflow's INITIAL transition — the Create
-# transition Jira runs when an issue is made — at the entry state, Triage.
-# The project template points it at To Do, so a Space provisioned without that
-# step creates every issue at the ready-to-work position and skips triage.
-# That is what left all 58 issues of one import with no readable position.
+# The lifecycle is not copied per project. The last step runs
+# universal-apply.sh, which converges the two global workflows and their
+# shared scheme, then universal-switch.sh KEY, which moves this project onto
+# that scheme and removes the workflow and scheme the template gave it.
 #
 # Usage:
 #   provision.sh --dry-run --project KEY [--name "Name"]
 #   provision.sh --yes     --project KEY [--name "Name"] [--lead ACCOUNT_ID]
-#                          [--http PATH] [--workflow-apply PATH]
-#                          [--rules PATH]
+#                          [--http PATH] [--universal-apply PATH]
+#                          [--universal-switch PATH]
 #
 #   --project KEY   2-10 uppercase letters and digits, starting with a letter.
 #                   A deleted project's key stays reserved site-wide.
@@ -27,8 +26,10 @@
 #                   once up front, before any write.
 #   --lead ID       the project lead's Jira accountId. Default: GET /myself.
 #   --http PATH     a jira-http.sh-shaped client. Default: lib/jira-http.sh.
-#   --workflow-apply PATH   step 3's script. Default: beside this file.
-#   --rules PATH    validators for step 3. Default: workflow-rules.json.
+#   --universal-apply PATH    converges the shared workflows and scheme.
+#                             Default: beside this file.
+#   --universal-switch PATH   moves the project onto the shared scheme.
+#                             Default: beside this file.
 #
 # Step 2 ASSERTS on the readback that the project is a classic software
 # project with an Epic issue type: `style` is computed from the template and
@@ -43,8 +44,9 @@
 #
 # Exit status:
 #   0  every step converged, or --dry-run completed.
-#   1  a read failed, the step-2 assert failed, a later step failed, or a
-#      field name already exists under the wrong type.
+#   1  a read failed, the step-2 assert failed, a later step failed (either
+#      universal script included), or a field name already exists under the
+#      wrong type.
 #   3  no --yes and no terminal to ask on, or the answer was not yes.
 #      Nothing was sent: a refusal, not a failure.
 #
@@ -70,13 +72,13 @@ DRY_RUN=0
 ASSUME_YES=0
 LEAD_ACCOUNT_ID=""
 HTTP=""
-WORKFLOW_APPLY=""
-RULES_PATH=""
+UNIVERSAL_APPLY=""
+UNIVERSAL_SWITCH=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
-            sed -n '3,50p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,51p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --project)
             [ $# -ge 2 ] || die "--project needs a KEY"
@@ -92,12 +94,12 @@ while [ $# -gt 0 ]; do
         --http)
             [ $# -ge 2 ] || die "--http needs a path"
             HTTP="$2"; shift 2 ;;
-        --workflow-apply)
-            [ $# -ge 2 ] || die "--workflow-apply needs a path"
-            WORKFLOW_APPLY="$2"; shift 2 ;;
-        --rules)
-            [ $# -ge 2 ] || die "--rules needs a path, or 'none'"
-            RULES_PATH="$2"; shift 2 ;;
+        --universal-apply)
+            [ $# -ge 2 ] || die "--universal-apply needs a path"
+            UNIVERSAL_APPLY="$2"; shift 2 ;;
+        --universal-switch)
+            [ $# -ge 2 ] || die "--universal-switch needs a path"
+            UNIVERSAL_SWITCH="$2"; shift 2 ;;
         --) shift; break ;;
         -*) die "unknown flag '$1' — run with --help" ;;
         *) die "unexpected positional argument '$1' — the project is named with --project KEY" ;;
@@ -110,9 +112,10 @@ require_project_key "$PROJECT_KEY" || die "$WO_JIRA_KEY_ERR"
 
 [ -n "$HTTP" ] || HTTP="$DIR/lib/jira-http.sh"
 [ -x "$HTTP" ] || die "--http path is not an executable file: '$HTTP'"
-[ -n "$WORKFLOW_APPLY" ] || WORKFLOW_APPLY="$DIR/workflow-apply.sh"
-[ -x "$WORKFLOW_APPLY" ] || die "--workflow-apply path is not an executable file: '$WORKFLOW_APPLY'"
-[ -n "$RULES_PATH" ] || RULES_PATH="$DIR/workflow-rules.json"
+[ -n "$UNIVERSAL_APPLY" ] || UNIVERSAL_APPLY="$DIR/universal-apply.sh"
+[ -x "$UNIVERSAL_APPLY" ] || die "--universal-apply path is not an executable file: '$UNIVERSAL_APPLY'"
+[ -n "$UNIVERSAL_SWITCH" ] || UNIVERSAL_SWITCH="$DIR/universal-switch.sh"
+[ -x "$UNIVERSAL_SWITCH" ] || die "--universal-switch path is not an executable file: '$UNIVERSAL_SWITCH'"
 
 need jq
 trap tmpclean EXIT
@@ -175,14 +178,14 @@ $(paste <(printf '%s\n' "$FIELD_NAMES") <(printf '%s\n' "$FIELD_SEARCHER_KEYS"))
 EOF
     echo
     echo
-    # Announced, never invoked: workflow-apply.sh's reads are not gated by its
-    # own --dry-run, so calling it here would issue real credentialed GETs.
-    echo "5. would run (announced, not invoked here):"
-    echo "   $WORKFLOW_APPLY $PROJECT_KEY --http $HTTP --rules $RULES_PATH --yes"
-    echo "   statuses: Triage, Open, In Progress, Awaiting Deployment, Deferred, Completed, Cancelled"
-    echo "   the ready-to-work position binds to Open ([JIRA-15]); the template's own To Do and Done are read-only aliases and are never provisioned"
-    echo "   create transition: the initial transition (the one Jira runs on create) would be retargeted at the entry state, Triage, which the project template points at To Do ([JIRA-12])"
-    echo "   validators: from $RULES_PATH"
+    # Announced, never invoked: either script's --dry-run may still read the
+    # site, and this plan promises no network at all.
+    echo "5. would run, in order (announced, not invoked here — each takes --dry-run on its own):"
+    echo "   $UNIVERSAL_APPLY --http $HTTP --yes"
+    echo "   $UNIVERSAL_SWITCH $PROJECT_KEY --http $HTTP --yes"
+    echo "   the first converges the global 'Universal Managed Workflow' (Task, Story, Bug) and 'Universal Managed Grouping Workflow' (Epic, Sub-task) under the shared 'Universal Managed Workflow Scheme'"
+    echo "   the second moves $PROJECT_KEY onto that scheme, mapping To Do and Done onto the lifecycle, then deletes the workflow and scheme the template gave it"
+    echo "   statuses: Triage, Open, In Progress, Awaiting Deployment, Deferred, Completed, Cancelled; the create transition targets the entry state, Triage ([JIRA-12])"
     echo
     echo "4. would add each field to every screen of the project's issue-type screen scheme (screen and tab ids are only knowable from a live read):"
     echo "   GET /issuetypescreenscheme/project?projectId=<project id>"
@@ -202,7 +205,7 @@ if [ "$ASSUME_YES" != "1" ]; then
         warn "no --yes and no terminal to confirm on — refusing to provision a Jira Space unattended. Re-run with --yes."
         exit 3
     fi
-    warn "About to provision Jira Space '$PROJECT_KEY' (\"$PROJECT_NAME\"): create-or-verify the project, apply seven statuses and their validators, retarget the create transition at the entry state, create seven custom fields, and add them to every project screen. Proceed? [y/N]"
+    warn "About to provision Jira Space '$PROJECT_KEY' (\"$PROJECT_NAME\"): create-or-verify the project, create the custom fields and add them to every project screen, converge the shared Universal workflows and scheme, and switch the project onto that scheme (deleting the workflow and scheme the template gave it). Proceed? [y/N]"
     ANSWER=""
     IFS= read -r ANSWER < /dev/tty || die "could not read the confirmation"
     case "$ANSWER" in
@@ -286,9 +289,12 @@ ensure_project() {
 }
 
 apply_workflow() {
-    echo "applying the lifecycle statuses and validators via ${WORKFLOW_APPLY##*/} ..."
-    "$WORKFLOW_APPLY" "$PROJECT_KEY" --http "$HTTP" --rules "$RULES_PATH" --yes \
-        || die "${WORKFLOW_APPLY##*/} failed for '$PROJECT_KEY' — see its own output above"
+    echo "converging the shared Universal workflows and scheme via ${UNIVERSAL_APPLY##*/} ..."
+    "$UNIVERSAL_APPLY" --http "$HTTP" --yes \
+        || die "${UNIVERSAL_APPLY##*/} failed — see its own output above; '$PROJECT_KEY' was not switched"
+    echo "switching '$PROJECT_KEY' onto the shared scheme via ${UNIVERSAL_SWITCH##*/} ..."
+    "$UNIVERSAL_SWITCH" "$PROJECT_KEY" --http "$HTTP" --yes \
+        || die "${UNIVERSAL_SWITCH##*/} failed for '$PROJECT_KEY' — see its own output above"
 }
 
 # probe_field_searchable NAME — one JQL search: returns 0 searchable, 1 not,
@@ -512,13 +518,12 @@ EOF
     printf '%s' "$rows" | table "$(printf 'ID\tNAME\tTYPE')"
 }
 
-# Fields before the workflow: workflow-rules.json resolves {field:NAME}
-# placeholders against the site, so a validator naming a field that does not
-# exist yet fails the whole step.
+# Fields before the workflow: the shared workflows' validators require these
+# fields, so they must exist before universal-apply.sh runs.
 ensure_project
 ensure_fields
 add_fields_to_screens
 apply_workflow
 echo
-echo "Jira Space '$PROJECT_KEY' now conforms to work-order at the 'full' profile: seven lifecycle statuses, the create transition targeting Triage, and these custom fields:"
+echo "Jira Space '$PROJECT_KEY' now conforms to work-order at the 'full' profile: on the Universal Managed Workflow Scheme, with these custom fields:"
 print_field_table
