@@ -1,0 +1,8 @@
+# GET /screens/10088/tabs — WO: Scrum Default Issue Screen, the source of the standard field list
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+[
+  {
+    "id": 10091,
+    "name": "Field Tab"
+  }
+]

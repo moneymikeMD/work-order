@@ -13,14 +13,16 @@ re-release because an endpoint moved.
   representation, the single representation of the lifecycle, the validators
   that make the contract gate rather than describe, and what Jira cannot
   satisfy.
-- **`provision.sh`** — create or converge a conforming Space.
+- **`provision.sh`** — create or converge a Space on a tier; the default,
+  `--tier managed`, is a conforming Space.
 - **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`.
-- **`universal-apply.sh`** — converge the two site-wide Universal workflows
-  and their shared workflow scheme towards `universal-workflows.json`,
+- **`universal-apply.sh`** — converge the site-wide Universal workflows, their
+  shared workflow scheme, and both tiers' screens, screen schemes, issue type
+  screen schemes and issue type schemes towards `universal-workflows.json`,
   additively. `--dry-run` first; it validates against Jira and writes nothing.
-- **`universal-switch.sh`** — move a project onto the shared Universal
-  workflow scheme and delete its old per-project workflows and scheme.
-  Offline tests: `universal-switch-selftest.sh`.
+- **`universal-switch.sh`** — move a project onto its tier's shared workflow
+  scheme, issue type scheme, issue type screen scheme and category, and delete
+  its old per-project workflows, schemes and screens.
 - **`fixtures/`** — responses recorded from a live Jira site.
 - **`selftest.sh`**, **`universal-apply-selftest.sh`**,
   **`universal-switch-selftest.sh`** — offline; stub the HTTP client and reach
@@ -60,16 +62,20 @@ Then, against a scratch project first:
 
 It is idempotent — a second run reports what is already in place and changes
 nothing. Rehearse on a throwaway key before pointing it at a Space that matters:
-it creates a project and the site-wide custom fields, converges two global
-workflows every project shares, and switches the project onto their scheme.
+it creates a project and the site-wide custom fields, converges the global
+workflows, schemes and screens every project shares, and switches the project
+onto them.
 
-No project gets a workflow of its own. The last step runs `universal-apply.sh`,
-which converges `Universal Managed Workflow` (Task, Story, Bug) and
-`Universal Managed Grouping Workflow` (Epic, Sub-task) under
-`Universal Managed Workflow Scheme`, then `universal-switch.sh KEY`, which moves
-the project onto that scheme, maps its `To Do` and `Done` issues onto the
-lifecycle, and deletes the workflow and scheme the Jira template gave it. Both
-workflows create issues at `Triage`, the entry state — see `[JIRA-12]`.
+No project gets a workflow, scheme or screen of its own. The last step runs
+`universal-apply.sh`, which converges `Universal Managed Workflow` (Task,
+Story, Bug) and `Universal Managed Grouping Workflow` (Epic, Sub-task) under
+`Universal Managed Workflow Scheme`, and the shared screens and issue type
+schemes of `BINDING.md` section 3.3. Then `universal-switch.sh KEY --tier
+managed` moves the project onto them, maps its `To Do` and `Done` issues onto
+the lifecycle, and deletes the workflows, schemes and screens the Jira template
+gave it. Both workflows create issues at `Triage`, the entry state — see
+`[JIRA-12]`. `--tier simplified` puts a project that is not a ticket set on
+`Open`, `In Progress`, `Done` and a screen with no contract field.
 
 ## Running tickets
 

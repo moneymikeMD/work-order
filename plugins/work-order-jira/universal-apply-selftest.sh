@@ -88,6 +88,26 @@ by_id() {
         || fx workflows.bulkget.epic.txt | jq -e --arg id "$id" 'select(.workflows[0].id == $id)'
 }
 
+# Screens and schemes this test created live in $ST as JSON arrays.
+st() { if [ -f "$ST/$1" ]; then cat "$ST/$1"; else echo '[]'; fi; }
+add() { st "$1" | jq -c --argjson o "$2" '. + [$o]' > "$ST/$1.new" && mv "$ST/$1.new" "$ST/$1"; }
+paged() { fx "$1" | jq -c --argjson s "$(st "$2")" '.values += $s | .total += ($s | length)'; }
+nextid() {
+    local n
+    n=$(cat "$ST/seq" 2>/dev/null || echo 20000)
+    n=$((n + 1))
+    echo "$n" > "$ST/seq"
+    echo "$n"
+}
+map_itss() {
+    printf '%s' "$B" | jq -c --arg id "$1" '.issueTypeMappings[] | {issueTypeScreenSchemeId: $id, issueTypeId, screenSchemeId}' \
+        | while IFS= read -r m; do add itssm.json "$m"; done
+}
+map_its() {
+    printf '%s' "$B" | jq -c --arg id "$1" '.issueTypeIds[] | {issueTypeSchemeId: $id, issueTypeId: .}' \
+        | while IFS= read -r m; do add itsm.json "$m"; done
+}
+
 case "$M:$P" in
     GET:/statuses/search*) fx statuses.search.txt ;;
     GET:/field) fx field.list.txt ;;
@@ -140,6 +160,71 @@ case "$M:$P" in
         jq -c --argjson b "$B" '.issueTypeMappings[$b.issueType] = $b.workflow' "$ST/scheme.json" > "$ST/scheme.new"
         mv "$ST/scheme.new" "$ST/scheme.json"
         cat "$ST/scheme.json" ;;
+    GET:/screens/*/tabs/*/fields)
+        s=${P#/screens/}; sid=${s%%/*}; t=${s#*/tabs/}; tid=${t%%/*}
+        if [ -f "$ST/fields.$sid.$tid.json" ]; then cat "$ST/fields.$sid.$tid.json"
+        elif [ -f "$FX/screens.$sid.tab.$tid.fields.txt" ]; then fx "screens.$sid.tab.$tid.fields.txt"
+        else echo '[]'; fi ;;
+    GET:/screens/*/tabs)
+        s=${P#/screens/}; sid=${s%%/*}
+        if [ -f "$ST/tabs.$sid.json" ]; then cat "$ST/tabs.$sid.json"
+        elif [ -f "$FX/screens.$sid.tabs.txt" ]; then fx "screens.$sid.tabs.txt"
+        else echo '[]'; fi ;;
+    GET:/screens\?*) paged screens.list.txt screens.json ;;
+    POST:/screens)
+        # SYNTHETIC: Jira gives a new screen one "Field Tab" unless WO_TEST_NOTAB=1.
+        id=$(nextid)
+        o=$(printf '%s' "$B" | jq -c --argjson id "$id" '{id: $id, name, description}')
+        add screens.json "$o"
+        [ "${WO_TEST_NOTAB:-}" = "1" ] || printf '[{"id":%s,"name":"Field Tab"}]' "$(nextid)" > "$ST/tabs.$id.json"
+        echo "$o" ;;
+    POST:/screens/*/tabs)
+        # SYNTHETIC
+        s=${P#/screens/}; sid=${s%%/*}
+        o=$(printf '%s' "$B" | jq -c --argjson id "$(nextid)" '{id: $id, name}')
+        add "tabs.$sid.json" "$o"
+        echo "$o" ;;
+    POST:/screens/*/tabs/*/fields)
+        # SYNTHETIC: the added field, named from the recorded field list.
+        s=${P#/screens/}; sid=${s%%/*}; t=${s#*/tabs/}; tid=${t%%/*}
+        o=$(fx field.list.txt | jq -c --arg f "$(printf '%s' "$B" | jq -r '.fieldId')" '[.[] | select(.id == $f) | {id, name}][0]')
+        [ "$o" != "null" ] || { printf 'HTTP 400\n{"errorMessages":["no such field"]}\n' >&2; exit 1; }
+        add "fields.$sid.$tid.json" "$o"
+        echo "$o" ;;
+    GET:/screenscheme\?*) paged screenscheme.list.txt ss.json ;;
+    POST:/screenscheme)
+        # SYNTHETIC
+        id=$(nextid)
+        add ss.json "$(printf '%s' "$B" | jq -c --argjson id "$id" '. + {id: $id}')"
+        printf '{"id":%s}\n' "$id" ;;
+    GET:/issuetypescreenscheme/mapping\?*) paged issuetypescreenscheme.mapping.txt itssm.json ;;
+    GET:/issuetypescreenscheme\?*) paged issuetypescreenscheme.list.txt itss.json ;;
+    POST:/issuetypescreenscheme)
+        # SYNTHETIC
+        id=$(nextid)
+        add itss.json "$(printf '%s' "$B" | jq -c --arg id "$id" '{id: $id, name, description}')"
+        map_itss "$id"
+        printf '{"issueTypeScreenSchemeId":"%s"}\n' "$id" ;;
+    PUT:/issuetypescreenscheme/*/mapping)
+        # SYNTHETIC: 204, no body.
+        s=${P#/issuetypescreenscheme/}; map_itss "${s%%/*}" ;;
+    GET:/issuetypescheme/mapping\?*) paged issuetypescheme.mapping.txt itsm.json ;;
+    GET:/issuetypescheme\?*) paged issuetypescheme.list.txt its.json ;;
+    POST:/issuetypescheme)
+        # SYNTHETIC
+        id=$(nextid)
+        add its.json "$(printf '%s' "$B" | jq -c --arg id "$id" '{id: $id, name, description, defaultIssueTypeId}')"
+        map_its "$id"
+        printf '{"issueTypeSchemeId":"%s"}\n' "$id" ;;
+    PUT:/issuetypescheme/*/issuetype)
+        # SYNTHETIC: 204, no body.
+        s=${P#/issuetypescheme/}; map_its "${s%%/*}" ;;
+    GET:/projectCategory) fx projectcategory.list.txt | jq -c --argjson s "$(st cats.json)" '. + $s' ;;
+    POST:/projectCategory)
+        # SYNTHETIC
+        o=$(printf '%s' "$B" | jq -c --arg id "$(nextid)" '. + {id: $id}')
+        add cats.json "$o"
+        echo "$o" ;;
     *) printf 'HTTP 501\n{"stub":"no case for %s %s"}\n' "$M" "$P" >&2; exit 1 ;;
 esac
 STUBEOF
@@ -164,7 +249,7 @@ body_of() {
         p && /^(validation passed|Exact request body)/ {p=0}
         p && NF' | jq -c .
 }
-writes() { grep -cE '^(POST /workflows/update |POST /workflowscheme|PUT )' "$LOG"; }
+writes() { grep -cE '^(POST /workflows/update |POST /workflowscheme|PUT |POST /(screens|screenscheme|issuetypescreenscheme|issuetypescheme|projectCategory))' "$LOG"; }
 fxbody() { sed -e '/^#/d' "$FX/$1"; }
 
 TASK_ID=$(fxbody workflows.bulkget.task.txt | jq -r '.workflows[0].id')
@@ -178,7 +263,17 @@ eq "dry-run against the recorded workflows exits 0" "0" "$RC"
 contains "  plans 17 changes on the task workflow" "17 changes" "$OUT"
 contains "  names the rename" "\"Universal Managed Epic Workflow\" -> \"Universal Managed Grouping Workflow\"" "$OUT"
 contains "  plans the scheme create" "create: default \"Universal Managed Workflow\"" "$OUT"
-contains "  totals 21 changes" "21 changes planned." "$OUT"
+contains "  totals 31 changes, 10 of them screens and schemes" "31 changes planned." "$OUT"
+contains "  the ticket screen gets the standard and all eight contract fields" "create: 25 fields: Summary (summary)" "$OUT"
+contains "  the grouping screen gets the standard fields only" "create: 17 fields: Summary (summary)" "$OUT"
+contains "  Epic and Sub-task map to the grouping screen scheme" \
+    'create: default -> "Universal Managed Ticket Screen Scheme", Epic (10000) -> "Universal Managed Grouping Screen Scheme", Sub-task (10011) -> "Universal Managed Grouping Screen Scheme"' "$OUT"
+contains "  both issue type schemes offer five types, default Task" \
+    "create: Task (10010), Story (10005), Bug (10012), Epic (10000), Sub-task (10011); default Task (10010)" "$OUT"
+contains "  the existing categories need nothing" "$(printf 'project category "Universal Managed":\n  0 changes')" "$OUT"
+contains "  the declared simplified workflow scheme is only reported" "absent: this script declares it and never creates it" "$OUT"
+contains "  a screen scheme names its screen by the id Jira will assign" \
+    'POST /rest/api/3/screenscheme {"name":"Universal Managed Ticket Screen Scheme","description":"Owned by moneymikeMD/work-order.","screens":{"default":"<id of screen \"Universal Managed Ticket Screen\">"}}' "$OUT"
 eq "  called validation once per changed workflow" "2" "$(grep -c '^POST /workflows/update/validation' "$LOG")"
 eq "  and wrote nothing" "0" "$(writes)"
 not_contains "  and never adds a previous-status validator" "previous-status" "$OUT"
@@ -255,6 +350,26 @@ kept() {
 }
 eq "  losing no stored transition, adding 3 to tasks and 2 to grouping" "lost=0 total=18 lost=0 total=10" \
     "$(kept workflows.bulkget.task.txt "$STATE/wf.$TASK_ID.json") $(kept workflows.bulkget.epic.txt "$STATE/wf.$EPIC_ID.json")"
+eq "  creating three screens, three screen schemes and four issue type (screen) schemes" "3 3 2 2" \
+    "$(grep -c '^POST /screens ' "$LOG") $(grep -c '^POST /screenscheme ' "$LOG") $(grep -c '^POST /issuetypescreenscheme ' "$LOG") $(grep -c '^POST /issuetypescheme ' "$LOG")"
+eq "  and no category" "0" "$(grep -c '^POST /projectCategory' "$LOG")"
+sid_of() { jq -r --arg n "$1" '.[] | select(.name == $n) | .id' "$STATE/$2"; }
+TICKET_SID=$(sid_of "Universal Managed Ticket Screen" screens.json)
+GROUP_SID=$(sid_of "Universal Managed Grouping Screen" screens.json)
+screen_fields() { jq -c '[.[].id]' "$STATE"/fields."$1".*.json; }
+eq "  the ticket screen holds outcome and blocked_by_external" "true true 25" \
+    "$(screen_fields "$TICKET_SID" | jq -r '"\(index(["customfield_10079"]) != null) \(index(["customfield_10080"]) != null) \(length)"')"
+eq "  the grouping screen holds no contract field" "false 17" \
+    "$(screen_fields "$GROUP_SID" | jq -r '"\(index(["customfield_10079"]) != null) \(length)"')"
+eq "  the screen scheme points at the screen created before it" "$TICKET_SID" \
+    "$(jq -r '.[] | select(.name == "Universal Managed Ticket Screen Scheme") | .screens.default' "$STATE/ss.json")"
+MITSS=$(sid_of "Universal Managed Issue Type Screen Scheme" itss.json)
+eq "  the issue type screen scheme maps default, Epic and Sub-task to the new screen schemes" \
+    "default=$(sid_of "Universal Managed Ticket Screen Scheme" ss.json) 10000=$(sid_of "Universal Managed Grouping Screen Scheme" ss.json) 10011=$(sid_of "Universal Managed Grouping Screen Scheme" ss.json)" \
+    "$(jq -r --arg id "$MITSS" '[.[] | select(.issueTypeScreenSchemeId == $id) | "\(.issueTypeId)=\(.screenSchemeId)"] | join(" ")' "$STATE/itssm.json")"
+MITS=$(sid_of "Universal Managed Issue Type Scheme" its.json)
+eq "  the issue type scheme holds five types with Task the default" "10010 10000,10005,10010,10011,10012" \
+    "$(jq -r --arg id "$MITS" '.[] | select(.id == $id) | .defaultIssueTypeId' "$STATE/its.json") $(jq -r --arg id "$MITS" '[.[] | select(.issueTypeSchemeId == $id) | .issueTypeId] | sort | join(",")' "$STATE/itsm.json")"
 
 : > "$LOG"
 OUT=$(run --yes); RC=$?
@@ -325,6 +440,48 @@ contains "  leaving the extra mapping alone" "not in spec (left alone): mapping 
 eq "  through one PUT and no create" "1 0" \
     "$(grep -c '^PUT /workflowscheme/10100/issuetype/10011 ' "$LOG") $(grep -c '^POST /workflowscheme ' "$LOG")"
 eq "  the Bug mapping survives" "jira" "$(jq -r '.issueTypeMappings["10012"]' "$STATE/scheme.json")"
+
+# ---- 7. screens and schemes: converge, tabs, duplicates --------------------------
+
+fresh layout
+run --yes >/dev/null
+TICKET_SID=$(sid_of "Universal Managed Ticket Screen" screens.json)
+TICKET_FF=$(ls "$STATE"/fields."$TICKET_SID".*.json)
+TICKET_TAB=${TICKET_FF##*/fields."$TICKET_SID".}; TICKET_TAB=${TICKET_TAB%.json}
+MITSS=$(sid_of "Universal Managed Issue Type Screen Scheme" itss.json)
+MITS=$(sid_of "Universal Managed Issue Type Scheme" its.json)
+# SYNTHETIC drift: outcome gone from the ticket screen, which also carries an
+# unnamed field; Sub-task unmapped; Bug dropped from the issue type scheme.
+jq -c 'map(select(.id != "customfield_10079")) + [{id: "environment", name: "Environment"}]' "$TICKET_FF" > "$TICKET_FF.new" && mv "$TICKET_FF.new" "$TICKET_FF"
+jq -c --arg id "$MITSS" 'map(select(.issueTypeScreenSchemeId != $id or .issueTypeId != "10011"))' "$STATE/itssm.json" > "$STATE/x" && mv "$STATE/x" "$STATE/itssm.json"
+jq -c --arg id "$MITS" 'map(select(.issueTypeSchemeId != $id or .issueTypeId != "10012"))' "$STATE/itsm.json" > "$STATE/x" && mv "$STATE/x" "$STATE/itsm.json"
+: > "$LOG"
+OUT=$(run --dry-run); RC=$?
+eq "a drifted layout plans only what is missing" "0" "$RC"
+contains "  the missing contract field" "add field:        outcome (customfield_10079)" "$OUT"
+contains "  leaving the extra field alone" "not in spec (left alone): field Environment (environment)" "$OUT"
+contains "  the missing mapping" "add mapping:      Sub-task (10011) -> \"Universal Managed Grouping Screen Scheme\"" "$OUT"
+contains "  the missing issue type" "add issue type:   Bug (10012)" "$OUT"
+contains "  3 changes in all" "3 changes planned." "$OUT"
+: > "$LOG"
+OUT=$(run --yes); RC=$?
+eq "  --yes sends them and reads back clean" "0" "$RC"
+eq "  through one field POST on the existing tab and two PUTs" "1 1 1" \
+    "$(grep -c "^POST /screens/$TICKET_SID/tabs/$TICKET_TAB/fields {\"fieldId\":\"customfield_10079\"}" "$LOG") $(grep -c "^PUT /issuetypescreenscheme/$MITSS/mapping " "$LOG") $(grep -c "^PUT /issuetypescheme/$MITS/issuetype {\"issueTypeIds\":\[\"10012\"\]}" "$LOG")"
+eq "  creating nothing" "0" "$(grep -cE '^POST /(screens|screenscheme|issuetypescreenscheme|issuetypescheme) ' "$LOG")"
+
+fresh notab
+OUT=$(WO_TEST_NOTAB=1 run --yes); RC=$?
+eq "a new screen Jira gives no tab gets one" "0" "$RC"
+eq "  one tab per created screen" "3" "$(grep -cE '^POST /screens/[0-9]+/tabs \{"name":"Field Tab"\}' "$LOG")"
+
+fresh dupscreen
+# SYNTHETIC: two screens carry a spec name.
+printf '%s' '[{"id":30001,"name":"Universal Simplified Screen","description":""},{"id":30002,"name":"Universal Simplified Screen","description":""}]' > "$STATE/screens.json"
+OUT=$(run --dry-run); RC=$?
+eq "two screens with one spec name fail" "1" "$RC"
+contains "  naming the clash" "2 screens are named \"Universal Simplified Screen\"" "$OUT"
+eq "  before any write" "0" "$(writes)"
 
 echo
 if [ "$FAIL" -eq 0 ]; then

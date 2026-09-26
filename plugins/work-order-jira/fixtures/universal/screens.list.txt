@@ -1,0 +1,146 @@
+# GET /screens?startAt=0&maxResults=100 — every screen; no Universal screen exists yet
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "self": "https://example.atlassian.net/rest/api/3/screens?startAt=0&maxResults=100",
+  "maxResults": 100,
+  "startAt": 0,
+  "total": 27,
+  "isLast": true,
+  "values": [
+    {
+      "id": 1,
+      "name": "Default Screen",
+      "description": "Allows to update all system fields."
+    },
+    {
+      "id": 2,
+      "name": "Workflow Screen",
+      "description": "This screen is used in the workflow and enables you to assign issues"
+    },
+    {
+      "id": 3,
+      "name": "Resolve Issue Screen",
+      "description": "Allows to set resolution, change fix versions and assign an issue."
+    },
+    {
+      "id": 10014,
+      "name": "LAB: Scrum Default Issue Screen",
+      "description": ""
+    },
+    {
+      "id": 10015,
+      "name": "LAB: Scrum Bug Screen",
+      "description": ""
+    },
+    {
+      "id": 10016,
+      "name": "LAB: Scrum Epic Screen",
+      "description": ""
+    },
+    {
+      "id": 10025,
+      "name": "NWM: Scrum Default Issue Screen",
+      "description": ""
+    },
+    {
+      "id": 10026,
+      "name": "NWM: Scrum Bug Screen",
+      "description": ""
+    },
+    {
+      "id": 10027,
+      "name": "NWM: Scrum Epic Screen",
+      "description": ""
+    },
+    {
+      "id": 10028,
+      "name": "CHR: Scrum Default Issue Screen",
+      "description": ""
+    },
+    {
+      "id": 10029,
+      "name": "CHR: Scrum Bug Screen",
+      "description": ""
+    },
+    {
+      "id": 10030,
+      "name": "CHR: Scrum Epic Screen",
+      "description": ""
+    },
+    {
+      "id": 10034,
+      "name": "CMB: Scrum Default Issue Screen",
+      "description": ""
+    },
+    {
+      "id": 10035,
+      "name": "CMB: Scrum Bug Screen",
+      "description": ""
+    },
+    {
+      "id": 10036,
+      "name": "CMB: Scrum Epic Screen",
+      "description": ""
+    },
+    {
+      "id": 10037,
+      "name": "EBS: Scrum Default Issue Screen",
+      "description": ""
+    },
+    {
+      "id": 10038,
+      "name": "EBS: Scrum Bug Screen",
+      "description": ""
+    },
+    {
+      "id": 10039,
+      "name": "EBS: Scrum Epic Screen",
+      "description": ""
+    },
+    {
+      "id": 10040,
+      "name": "TDO: Scrum Default Issue Screen",
+      "description": ""
+    },
+    {
+      "id": 10041,
+      "name": "TDO: Scrum Bug Screen",
+      "description": ""
+    },
+    {
+      "id": 10042,
+      "name": "TDO: Scrum Epic Screen",
+      "description": ""
+    },
+    {
+      "id": 10043,
+      "name": "TDA: Scrum Default Issue Screen",
+      "description": ""
+    },
+    {
+      "id": 10044,
+      "name": "TDA: Scrum Bug Screen",
+      "description": ""
+    },
+    {
+      "id": 10045,
+      "name": "TDA: Scrum Epic Screen",
+      "description": ""
+    },
+    {
+      "id": 10088,
+      "name": "WO: Scrum Default Issue Screen",
+      "description": ""
+    },
+    {
+      "id": 10089,
+      "name": "WO: Scrum Bug Screen",
+      "description": ""
+    },
+    {
+      "id": 10090,
+      "name": "WO: Scrum Epic Screen",
+      "description": ""
+    }
+  ]
+}

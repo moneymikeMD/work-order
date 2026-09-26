@@ -1,0 +1,42 @@
+# GET /workflow/search?workflowName=Universal%20Managed%20Grouping%20Workflow&expand=statuses — the Managed tier grouping workflow
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "self": "https://example.atlassian.net/rest/api/3/workflow/search?expand=statuses&maxResults=50&startAt=0",
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "isLast": true,
+  "values": [
+    {
+      "id": {
+        "name": "Universal Managed Grouping Workflow",
+        "entityId": "568928dd-087f-4931-b81a-792e4b65abb2"
+      },
+      "description": "Workflow for transitioning Epics",
+      "statuses": [
+        {
+          "id": "1",
+          "name": "Open"
+        },
+        {
+          "id": "10011",
+          "name": "Triage"
+        },
+        {
+          "id": "10014",
+          "name": "Completed"
+        },
+        {
+          "id": "10015",
+          "name": "Cancelled"
+        },
+        {
+          "id": "3",
+          "name": "In Progress"
+        }
+      ],
+      "created": "2026-09-26T15:16:39.215-0400",
+      "updated": "2026-09-26T16:44:59.129-0400"
+    }
+  ]
+}

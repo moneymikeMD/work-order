@@ -1,0 +1,135 @@
+# GET /issuetypescreenscheme/mapping?startAt=0&maxResults=100 — every mapping of every issue type screen scheme
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "maxResults": 100,
+  "startAt": 0,
+  "total": 25,
+  "isLast": true,
+  "values": [
+    {
+      "issueTypeScreenSchemeId": "1",
+      "issueTypeId": "default",
+      "screenSchemeId": "1"
+    },
+    {
+      "issueTypeScreenSchemeId": "10004",
+      "issueTypeId": "default",
+      "screenSchemeId": "10014"
+    },
+    {
+      "issueTypeScreenSchemeId": "10004",
+      "issueTypeId": "10012",
+      "screenSchemeId": "10015"
+    },
+    {
+      "issueTypeScreenSchemeId": "10004",
+      "issueTypeId": "10000",
+      "screenSchemeId": "10016"
+    },
+    {
+      "issueTypeScreenSchemeId": "10009",
+      "issueTypeId": "default",
+      "screenSchemeId": "10025"
+    },
+    {
+      "issueTypeScreenSchemeId": "10009",
+      "issueTypeId": "10012",
+      "screenSchemeId": "10026"
+    },
+    {
+      "issueTypeScreenSchemeId": "10009",
+      "issueTypeId": "10000",
+      "screenSchemeId": "10027"
+    },
+    {
+      "issueTypeScreenSchemeId": "10010",
+      "issueTypeId": "default",
+      "screenSchemeId": "10028"
+    },
+    {
+      "issueTypeScreenSchemeId": "10010",
+      "issueTypeId": "10012",
+      "screenSchemeId": "10029"
+    },
+    {
+      "issueTypeScreenSchemeId": "10010",
+      "issueTypeId": "10000",
+      "screenSchemeId": "10030"
+    },
+    {
+      "issueTypeScreenSchemeId": "10012",
+      "issueTypeId": "default",
+      "screenSchemeId": "10034"
+    },
+    {
+      "issueTypeScreenSchemeId": "10012",
+      "issueTypeId": "10012",
+      "screenSchemeId": "10035"
+    },
+    {
+      "issueTypeScreenSchemeId": "10012",
+      "issueTypeId": "10000",
+      "screenSchemeId": "10036"
+    },
+    {
+      "issueTypeScreenSchemeId": "10013",
+      "issueTypeId": "default",
+      "screenSchemeId": "10037"
+    },
+    {
+      "issueTypeScreenSchemeId": "10013",
+      "issueTypeId": "10012",
+      "screenSchemeId": "10038"
+    },
+    {
+      "issueTypeScreenSchemeId": "10013",
+      "issueTypeId": "10000",
+      "screenSchemeId": "10039"
+    },
+    {
+      "issueTypeScreenSchemeId": "10014",
+      "issueTypeId": "default",
+      "screenSchemeId": "10040"
+    },
+    {
+      "issueTypeScreenSchemeId": "10014",
+      "issueTypeId": "10012",
+      "screenSchemeId": "10041"
+    },
+    {
+      "issueTypeScreenSchemeId": "10014",
+      "issueTypeId": "10000",
+      "screenSchemeId": "10042"
+    },
+    {
+      "issueTypeScreenSchemeId": "10015",
+      "issueTypeId": "default",
+      "screenSchemeId": "10043"
+    },
+    {
+      "issueTypeScreenSchemeId": "10015",
+      "issueTypeId": "10012",
+      "screenSchemeId": "10044"
+    },
+    {
+      "issueTypeScreenSchemeId": "10015",
+      "issueTypeId": "10000",
+      "screenSchemeId": "10045"
+    },
+    {
+      "issueTypeScreenSchemeId": "10052",
+      "issueTypeId": "default",
+      "screenSchemeId": "10088"
+    },
+    {
+      "issueTypeScreenSchemeId": "10052",
+      "issueTypeId": "10012",
+      "screenSchemeId": "10089"
+    },
+    {
+      "issueTypeScreenSchemeId": "10052",
+      "issueTypeId": "10000",
+      "screenSchemeId": "10090"
+    }
+  ]
+}

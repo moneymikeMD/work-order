@@ -1,0 +1,27 @@
+# GET /issuetypescreenscheme/project?projectId=10004 — LAB on its own Scrum issue type screen scheme
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "isLast": true,
+  "values": [
+    {
+      "issueTypeScreenScheme": {
+        "id": "10004",
+        "name": "LAB: Scrum Issue Type Screen Scheme",
+        "description": "",
+        "projects": {
+          "maxResults": 0,
+          "startAt": 0,
+          "total": 0,
+          "isLast": true,
+          "values": []
+        }
+      },
+      "projectIds": [
+        "10004"
+      ]
+    }
+  ]
+}

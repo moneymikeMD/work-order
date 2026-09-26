@@ -1,0 +1,198 @@
+# GET /issuetypescheme/mapping?startAt=0&maxResults=100 — every issue type of every issue type scheme
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "maxResults": 100,
+  "startAt": 0,
+  "total": 47,
+  "isLast": true,
+  "values": [
+    {
+      "issueTypeSchemeId": "10000",
+      "issueTypeId": "10000"
+    },
+    {
+      "issueTypeSchemeId": "10000",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10000",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10000",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10000",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10000",
+      "issueTypeId": "10013"
+    },
+    {
+      "issueTypeSchemeId": "10000",
+      "issueTypeId": "10014"
+    },
+    {
+      "issueTypeSchemeId": "10149",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10149",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10149",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10149",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10149",
+      "issueTypeId": "10000"
+    },
+    {
+      "issueTypeSchemeId": "10160",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10160",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10160",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10160",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10160",
+      "issueTypeId": "10000"
+    },
+    {
+      "issueTypeSchemeId": "10161",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10161",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10161",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10161",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10161",
+      "issueTypeId": "10000"
+    },
+    {
+      "issueTypeSchemeId": "10163",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10163",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10163",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10163",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10163",
+      "issueTypeId": "10000"
+    },
+    {
+      "issueTypeSchemeId": "10164",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10164",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10164",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10164",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10164",
+      "issueTypeId": "10000"
+    },
+    {
+      "issueTypeSchemeId": "10165",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10165",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10165",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10165",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10165",
+      "issueTypeId": "10000"
+    },
+    {
+      "issueTypeSchemeId": "10166",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10166",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10166",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10166",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10166",
+      "issueTypeId": "10000"
+    },
+    {
+      "issueTypeSchemeId": "10206",
+      "issueTypeId": "10010"
+    },
+    {
+      "issueTypeSchemeId": "10206",
+      "issueTypeId": "10011"
+    },
+    {
+      "issueTypeSchemeId": "10206",
+      "issueTypeId": "10005"
+    },
+    {
+      "issueTypeSchemeId": "10206",
+      "issueTypeId": "10012"
+    },
+    {
+      "issueTypeSchemeId": "10206",
+      "issueTypeId": "10000"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+# GET /projectCategory — both tier categories, created and assigned by hand
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+[
+  {
+    "self": "https://example.atlassian.net/rest/api/3/projectCategory/10000",
+    "id": "10000",
+    "description": "Contract projects on the Universal Managed workflow, issue type and screen schemes (work-order).",
+    "name": "Universal Managed"
+  },
+  {
+    "self": "https://example.atlassian.net/rest/api/3/projectCategory/10001",
+    "id": "10001",
+    "description": "Non-contract projects on the Universal Simplified schemes.",
+    "name": "Universal Simplified"
+  }
+]

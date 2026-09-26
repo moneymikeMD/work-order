@@ -1,0 +1,4 @@
+# GET /project/EBS — a Universal Simplified project
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+# Trimmed to the keys universal-switch.sh reads (lead and avatars removed).
+{"id":"10013","key":"EBS","style":"classic","projectTypeKey":"software","projectCategory":{"self":"https://example.atlassian.net/rest/api/3/projectCategory/10001","id":"10001","name":"Universal Simplified","description":"Non-contract projects on the Universal Simplified schemes."},"issueTypes":[{"id":"10010","name":"Task","subtask":false,"hierarchyLevel":0},{"id":"10011","name":"Sub-task","subtask":true,"hierarchyLevel":-1},{"id":"10005","name":"Story","subtask":false,"hierarchyLevel":0},{"id":"10012","name":"Bug","subtask":false,"hierarchyLevel":0},{"id":"10000","name":"Epic","subtask":false,"hierarchyLevel":1}]}

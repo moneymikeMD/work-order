@@ -1,0 +1,29 @@
+# GET /workflowscheme?startAt=0&maxResults=50 — after WO-75: both Universal workflow schemes exist
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 2,
+  "isLast": true,
+  "values": [
+    {
+      "id": 10086,
+      "name": "Universal Managed Workflow Scheme",
+      "description": "The one workflow scheme every work-order contract project uses: tickets on the Universal Managed Workflow, Epics and Sub-tasks on the Universal Managed Grouping Workflow. Owned by moneymikeMD/work-order (plugins/work-order-jira/universal-workflows.json).",
+      "defaultWorkflow": "Universal Managed Workflow",
+      "issueTypeMappings": {
+        "10000": "Universal Managed Grouping Workflow",
+        "10011": "Universal Managed Grouping Workflow"
+      },
+      "self": "https://example.atlassian.net/rest/api/3/workflowscheme/10086"
+    },
+    {
+      "id": 10092,
+      "name": "Universal Simplified Workflow Scheme",
+      "description": "Shared scheme for non-contract projects: every issue type runs Universal Simpllfied Workflow (Open, In Progress, Done).",
+      "defaultWorkflow": "Universal Simpllfied Workflow",
+      "issueTypeMappings": {},
+      "self": "https://example.atlassian.net/rest/api/3/workflowscheme/10092"
+    }
+  ]
+}

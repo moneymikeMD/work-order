@@ -187,6 +187,40 @@ this binding depend on it and would otherwise look arbitrary:
 This binding does not create, edit, inspect or manage that automation, and no
 script here does either. It states that it exists and what it depends on.
 
+### 3.3 The shared issue type and screen schemes
+
+Issue types and screens are shared the same way the workflows are. No project
+carries an issue type scheme, a screen scheme or a screen of its own.
+
+| Object | Name | Holds |
+| --- | --- | --- |
+| issue type scheme | `Universal Managed Issue Type Scheme` | `Task`, `Story`, `Bug`, `Epic`, `Sub-task`; default `Task` |
+| issue type screen scheme | `Universal Managed Issue Type Screen Scheme` | default → `Universal Managed Ticket Screen Scheme`; `Epic`, `Sub-task` → `Universal Managed Grouping Screen Scheme` |
+| screen | `Universal Managed Ticket Screen` | the standard fields and every custom field of section 2 |
+| screen | `Universal Managed Grouping Screen` | the standard fields only |
+
+Each screen scheme maps its one screen as the default for create, edit and
+view. The standard fields are the ones the Jira Scrum template puts on its
+default issue screen; `universal-workflows.json` lists them.
+
+[JIRA-19] Every project in a conforming Space MUST use the issue type scheme
+`Universal Managed Issue Type Scheme` and the issue type screen scheme
+`Universal Managed Issue Type Screen Scheme`, and MUST NOT carry an issue type
+scheme, issue type screen scheme, screen scheme or screen of its own. The
+reason is the one `[JIRA-17]` gives for workflows, and it has been measured
+here: before the shared screens, the per-project copies had drifted until four
+of five contract projects had no `outcome` on their screens while every
+`cancel` required it.
+
+A second tier, **Universal Simplified**, serves projects that are not ticket
+sets: one `Universal Simplified Workflow` (`Open`, `In Progress`, `Done`), its
+own issue type scheme with the same five types, and one
+`Universal Simplified Screen` with no custom field of section 2. A project on
+it is not a conforming Space and this binding makes no claim about it. It is
+named here only because the same scripts converge it. Each project's Jira
+project category, `Universal Managed` or `Universal Simplified`, records which
+tier it is on.
+
 ## 4. Enforcement
 
 These validators are what makes the contract gate rather than describe. They
@@ -249,18 +283,19 @@ declare `touches`, or an empty `touches` per `[SHOULD-7]`.
 `[MUST-28]`. `outcome` is not a Jira field; this binding defines it as a custom
 field, and a Space without it cannot represent a cancelled ticket at all.
 
-[JIRA-1] Every custom field this binding defines MUST be present on every tab
-of every screen reachable from the project's issue-type screen scheme.
+[JIRA-1] Every custom field this binding defines MUST be on the screen every
+ticket issue type (`Task`, `Story`, `Bug`) uses for create, edit and view: the
+`Universal Managed Ticket Screen` of section 3.3. The screen `Epic` and
+`Sub-task` use carries none of them, because neither is a ticket, per
+`[JIRA-16]`.
 
 This is the single most expensive thing to get wrong here, and it has already
 happened twice in production. A custom field that exists globally but is not on
 a screen accepts no value: the API write returns a success the UI never shows,
 so the Space looks conforming from every angle a spot check reaches and holds no
-`verify` at all. `provision.sh` walks
-`issuetypescreenscheme/project` → `issuetypescreenscheme/mapping` →
-`screenscheme` → `screens/<id>/tabs` → `screens/<id>/tabs/<tab>/fields` and adds
-what is missing. A provisioner that skips step 5 produces a Space that is not
-conforming.
+`verify` at all. `universal-apply.sh` adds any missing field to the shared
+ticket screen, and `[JIRA-19]` puts every project on that one screen, so the
+fields are placed once for the site rather than once per project.
 
 [JIRA-2] Every custom field this binding defines MUST be JQL-searchable, and
 searchability MUST be proven with a JQL query rather than read from the field's
@@ -379,9 +414,9 @@ description, naming the specification MAJOR.MINOR, the profile, and the version
 of this binding the Space was provisioned with. Three artefacts version
 separately here, and a claim naming only one of them cannot be checked.
 
-A Space provisioned by `provision.sh` carries every field and every lifecycle
-position the specification names, so it can support a claim at `minimal`, `full`
-or `unattended`. Which profile a set actually claims depends on the content of
+A Space provisioned by `provision.sh` on the managed tier carries every field
+and every lifecycle position the specification names, so it can support a
+claim at `minimal`, `full` or `unattended`. Which profile a set actually claims depends on the content of
 its tickets, not on the Space: the `unattended` requirements
 (`[MUST-34]`–`[MUST-38]`) are properties of a ticket's text, which this
 substrate stores and cannot check.
@@ -422,9 +457,9 @@ checked here too.
 
 | Script | Does |
 | --- | --- |
-| `provision.sh` | creates or converges a conforming Space, `--dry-run` first; its last step runs the two scripts below |
-| `universal-apply.sh` | converges the two shared workflows of section 3.1 and their scheme from `universal-workflows.json`; takes no project |
-| `universal-switch.sh` | moves one project onto the shared scheme, mapping its issues' template statuses onto the lifecycle, then deletes the workflow and scheme it had |
+| `provision.sh` | creates or converges a Space on a tier (`--tier managed`, the default, is a conforming Space), `--dry-run` first; its last step runs the two scripts below |
+| `universal-apply.sh` | converges, from `universal-workflows.json`, the shared workflows of section 3.1, their scheme, and both tiers' screens, screen schemes, issue type screen schemes and issue type schemes of section 3.3; takes no project |
+| `universal-switch.sh` | moves one project onto its tier's workflow scheme, issue type scheme, issue type screen scheme and category, mapping its issues' old statuses onto the tier's, then deletes the workflows, schemes and screens it had |
 | `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create` |
 | `lib/jira-http.sh` | the one credentialed HTTP client, and the seam a test stubs |
 | `selftest.sh` | offline; stubs the client and asserts on the decisions the scripts reach |
@@ -436,9 +471,11 @@ call fails instead of moving the ticket somewhere else. Since transitions are
 directed (`[JIRA-18]`), a position the issue's current status has no transition
 into fails the same way.
 
-`universal-switch.sh` first moves every `To Do` issue that already carries
-`verify` to `Open`, then maps what remains: `To Do` to `Triage` for tickets and
-to `Open` for `Epic` and `Sub-task`, and `Done` to `Completed`. Both universal
+On the managed tier, `universal-switch.sh` first moves every `To Do` issue that
+already carries `verify` to `Open`, then maps what remains: `To Do` to `Triage`
+for tickets and to `Open` for `Epic` and `Sub-task`, and `Done` to `Completed`.
+It deletes an old object only once nothing uses it, and a screen a workflow
+transition still names is refused by Jira and stops the run. Both universal
 scripts share `provision.sh`'s exit statuses — 0 done, already complete or
 `--dry-run`; 1 failure; 3 not confirmed — and `universal-apply.sh` adds 2, for
 a stored rule that differs from `universal-workflows.json`.

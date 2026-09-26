@@ -1,7 +1,8 @@
 {
   "_comment": [
-    "The two GLOBAL Jira workflows and the one workflow scheme this repository owns. universal-apply.sh converges a Jira site towards this file.",
-    "Additive only: a missing status, transition or validator is added, a missing scheme mapping is added, and nothing already in Jira is ever changed or removed. Whatever Jira holds that this file does not name is reported as 'not in spec (left alone)'.",
+    "The two GLOBAL Jira workflows, the one workflow scheme, and both tiers' screens, screen schemes, issue type screen schemes, issue type schemes and project categories this repository owns. universal-apply.sh converges a Jira site towards this file; universal-switch.sh reads 'tiers' to move a project onto one.",
+    "Additive only: a missing status, transition, validator, scheme mapping, screen field or issue type is added, a missing object is created, and nothing already in Jira is ever changed or removed. Whatever Jira holds that this file does not name is reported as 'not in spec (left alone)'.",
+    "field_sets lists screen fields by id, or {field:<name>} for a custom field. 'standard' is the Jira Scrum template's default issue screen without the contract fields; 'contract' is every custom field of BINDING.md section 2.",
     "Status and issue-type names are resolved to site ids at run time. {field:<name>} in a validator parameter resolves to that custom field's id via GET /field.",
     "A transition is identified by (from, to), never by its name. from is null only for the initial transition, the one Jira runs on create.",
     "No transition carries system:previous-status-validator: the task workflow's transitions are DIRECTED, so reaching Completed through Awaiting Deployment is structural (owner decision 2026-09-26, reversing NWM-110). There is no In Progress -> Completed transition: every ticket occupies Awaiting Deployment before Completed (work-order MUST-27). Every transition into Open requires verify.",
@@ -91,6 +92,67 @@
     "issueTypeHierarchyLevels": {
       "Epic": 1,
       "Sub-task": -1
+    }
+  },
+  "declared_workflow_schemes": [
+    {
+      "name": "Universal Simplified Workflow Scheme",
+      "defaultWorkflow": "Universal Simpllfied Workflow",
+      "_comment": "Declared for the simplified tier, never edited by universal-apply.sh: it only reports whether the scheme exists with this default. The workflow name's typo is the live name."
+    }
+  ],
+  "field_sets": {
+    "standard": ["summary", "description", "issuetype", "assignee", "parent", "{field:Sprint}", "priority", "components", "labels", "issuelinks", "duedate", "fixVersions", "attachment", "{field:Team}", "{field:Start date}", "security", "reporter"],
+    "contract": ["{field:touches}", "{field:executor}", "{field:verify}", "{field:human_steps}", "{field:appends}", "{field:defer_until}", "{field:outcome}", "{field:blocked_by_external}"]
+  },
+  "screens": [
+    {"name": "Universal Managed Ticket Screen", "description": "Tickets in work-order contract projects: the standard fields and every contract field. Owned by moneymikeMD/work-order.", "field_sets": ["standard", "contract"]},
+    {"name": "Universal Managed Grouping Screen", "description": "Epics and Sub-tasks in work-order contract projects: the standard fields only. Owned by moneymikeMD/work-order.", "field_sets": ["standard"]},
+    {"name": "Universal Simplified Screen", "description": "Every issue type in simplified projects: the standard fields only. Owned by moneymikeMD/work-order.", "field_sets": ["standard"]}
+  ],
+  "screen_schemes": [
+    {"name": "Universal Managed Ticket Screen Scheme", "description": "Owned by moneymikeMD/work-order.", "screens": {"default": "Universal Managed Ticket Screen"}},
+    {"name": "Universal Managed Grouping Screen Scheme", "description": "Owned by moneymikeMD/work-order.", "screens": {"default": "Universal Managed Grouping Screen"}},
+    {"name": "Universal Simplified Screen Scheme", "description": "Owned by moneymikeMD/work-order.", "screens": {"default": "Universal Simplified Screen"}}
+  ],
+  "issue_type_screen_schemes": [
+    {"name": "Universal Managed Issue Type Screen Scheme", "description": "Owned by moneymikeMD/work-order.", "mappings": {"default": "Universal Managed Ticket Screen Scheme", "Epic": "Universal Managed Grouping Screen Scheme", "Sub-task": "Universal Managed Grouping Screen Scheme"}},
+    {"name": "Universal Simplified Issue Type Screen Scheme", "description": "Owned by moneymikeMD/work-order.", "mappings": {"default": "Universal Simplified Screen Scheme"}}
+  ],
+  "issue_type_schemes": [
+    {"name": "Universal Managed Issue Type Scheme", "description": "Owned by moneymikeMD/work-order.", "issueTypes": ["Task", "Story", "Bug", "Epic", "Sub-task"], "defaultIssueType": "Task"},
+    {"name": "Universal Simplified Issue Type Scheme", "description": "Owned by moneymikeMD/work-order.", "issueTypes": ["Task", "Story", "Bug", "Epic", "Sub-task"], "defaultIssueType": "Task"}
+  ],
+  "project_categories": [
+    {"name": "Universal Managed", "description": "Contract projects on the Universal Managed workflow, issue type and screen schemes (work-order)."},
+    {"name": "Universal Simplified", "description": "Non-contract projects on the Universal Simplified schemes."}
+  ],
+  "tiers": {
+    "managed": {
+      "project_category": "Universal Managed",
+      "workflow_scheme": "Universal Managed Workflow Scheme",
+      "issue_type_scheme": "Universal Managed Issue Type Scheme",
+      "issue_type_screen_scheme": "Universal Managed Issue Type Screen Scheme",
+      "status_rules": {
+        "ticket": {"To Do": "Triage", "Done": "Completed"},
+        "grouping": {"To Do": "Open", "Done": "Completed", "Awaiting Deployment": "In Progress", "Deferred": "Open"}
+      },
+      "fallback_status": "Triage",
+      "pre_drain": true,
+      "retired_statuses": ["To Do", "Done"]
+    },
+    "simplified": {
+      "project_category": "Universal Simplified",
+      "workflow_scheme": "Universal Simplified Workflow Scheme",
+      "issue_type_scheme": "Universal Simplified Issue Type Scheme",
+      "issue_type_screen_scheme": "Universal Simplified Issue Type Screen Scheme",
+      "status_rules": {
+        "ticket": {"To Do": "Open", "Triage": "Open", "Deferred": "Open", "Awaiting Deployment": "In Progress", "Completed": "Done", "Cancelled": "Done"},
+        "grouping": {"To Do": "Open", "Triage": "Open", "Deferred": "Open", "Awaiting Deployment": "In Progress", "Completed": "Done", "Cancelled": "Done"}
+      },
+      "fallback_status": "Open",
+      "pre_drain": false,
+      "retired_statuses": ["To Do", "Triage", "Deferred", "Awaiting Deployment", "Completed", "Cancelled"]
     }
   }
 }

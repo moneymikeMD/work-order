@@ -1,34 +1,38 @@
 #!/bin/bash
 #
-# provision.sh — create or converge a Jira Space that conforms to the
-# work-order specification at the `full` profile: the project, the custom
-# fields, those fields on every screen the project's issue types use, and the
-# project on the shared Universal Managed Workflow Scheme. Each step is
-# idempotent; a re-run converges.
+# provision.sh — create or converge a Jira Space on one of the two Universal
+# tiers: the project, the work-order custom fields, and the project on its
+# tier's shared workflow scheme, issue type scheme and issue type screen
+# scheme. On the managed tier the Space conforms to the work-order
+# specification at the `full` profile. Each step is idempotent; a re-run
+# converges.
 #
-# The lifecycle is not copied per project. The last step runs
-# universal-apply.sh, which converges the two global workflows and their
-# shared scheme, then universal-switch.sh KEY, which moves this project onto
-# that scheme and removes the workflow and scheme the template gave it.
+# Nothing is copied per project. The last step runs universal-apply.sh, which
+# converges the global workflows, schemes and screens of both tiers, then
+# universal-switch.sh KEY --tier T, which moves this project onto its tier's
+# schemes and removes the workflows, schemes and screens the template gave it.
 #
 # Usage:
-#   provision.sh --dry-run --project KEY [--name "Name"]
-#   provision.sh --yes     --project KEY [--name "Name"] [--lead ACCOUNT_ID]
-#                          [--http PATH] [--universal-apply PATH]
-#                          [--universal-switch PATH]
+#   provision.sh --dry-run --project KEY [--name "Name"] [--tier T]
+#   provision.sh --yes     --project KEY [--name "Name"] [--tier T]
+#                          [--lead ACCOUNT_ID] [--http PATH]
+#                          [--universal-apply PATH] [--universal-switch PATH]
 #
 #   --project KEY   2-10 uppercase letters and digits, starting with a letter.
 #                   A deleted project's key stays reserved site-wide.
 #   --name "Name"   the project's display name. Default: the key.
+#   --tier T        managed (default): a work-order contract project.
+#                   simplified: Open, In Progress, Done, and no contract
+#                   field on its screen.
 #   --dry-run       print every planned request and exit 0, reaching no
 #                   network and resolving no credential.
 #   --yes           actually run it. Without --yes, on a terminal, this asks
 #                   once up front, before any write.
 #   --lead ID       the project lead's Jira accountId. Default: GET /myself.
 #   --http PATH     a jira-http.sh-shaped client. Default: lib/jira-http.sh.
-#   --universal-apply PATH    converges the shared workflows and scheme.
-#                             Default: beside this file.
-#   --universal-switch PATH   moves the project onto the shared scheme.
+#   --universal-apply PATH    converges the shared workflows, schemes and
+#                             screens. Default: beside this file.
+#   --universal-switch PATH   moves the project onto its tier's schemes.
 #                             Default: beside this file.
 #
 # Step 2 ASSERTS on the readback that the project is a classic software
@@ -36,9 +40,9 @@
 # has no request-time equivalent, so a stale template key silently yields a
 # Business project instead.
 #
-# Step 5 exists because of a live incident: a field created but never placed
-# on a screen accepts no value at all, so API writes succeed while the UI
-# shows nothing. A Space provisioned without it looks conforming and is not.
+# A field on no screen accepts no value at all: API writes succeed while the
+# UI shows nothing. The contract fields reach a managed project through the
+# shared 'Universal Managed Ticket Screen', never through a per-project screen.
 #
 # Boards and sprints are out of scope.
 #
@@ -74,11 +78,12 @@ LEAD_ACCOUNT_ID=""
 HTTP=""
 UNIVERSAL_APPLY=""
 UNIVERSAL_SWITCH=""
+TIER="managed"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
-            sed -n '3,51p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,55p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --project)
             [ $# -ge 2 ] || die "--project needs a KEY"
@@ -86,6 +91,10 @@ while [ $# -gt 0 ]; do
         --name)
             [ $# -ge 2 ] || die "--name needs a value"
             PROJECT_NAME="$2"; shift 2 ;;
+        --tier)
+            [ $# -ge 2 ] || die "--tier needs managed or simplified"
+            case "$2" in managed|simplified) TIER="$2" ;; *) die "--tier must be managed or simplified, got '$2'" ;; esac
+            shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
         --yes|-y)  ASSUME_YES=1; shift ;;
         --lead)
@@ -127,7 +136,7 @@ field_triples() {
 # ---- the plan ------------------------------------------------------------
 
 if [ "$DRY_RUN" = "1" ]; then
-    echo "PLANNED — provision.sh --project $PROJECT_KEY --name \"$PROJECT_NAME\""
+    echo "PLANNED — provision.sh --project $PROJECT_KEY --name \"$PROJECT_NAME\" --tier $TIER"
     echo "nothing below was sent, no credential was resolved."
     echo
     echo "1. would read-or-create the project:"
@@ -177,24 +186,23 @@ EOF
 $(paste <(printf '%s\n' "$FIELD_NAMES") <(printf '%s\n' "$FIELD_SEARCHER_KEYS"))
 EOF
     echo
-    echo
     # Announced, never invoked: either script's --dry-run may still read the
     # site, and this plan promises no network at all.
-    echo "5. would run, in order (announced, not invoked here — each takes --dry-run on its own):"
+    echo "4. would run, in order (announced, not invoked here — each takes --dry-run on its own):"
     echo "   $UNIVERSAL_APPLY --http $HTTP --yes"
-    echo "   $UNIVERSAL_SWITCH $PROJECT_KEY --http $HTTP --yes"
-    echo "   the first converges the global 'Universal Managed Workflow' (Task, Story, Bug) and 'Universal Managed Grouping Workflow' (Epic, Sub-task) under the shared 'Universal Managed Workflow Scheme'"
-    echo "   the second moves $PROJECT_KEY onto that scheme, mapping To Do and Done onto the lifecycle, then deletes the workflow and scheme the template gave it"
-    echo "   statuses: Triage, Open, In Progress, Awaiting Deployment, Deferred, Completed, Cancelled; the create transition targets the entry state, Triage ([JIRA-12])"
+    echo "   $UNIVERSAL_SWITCH $PROJECT_KEY --tier $TIER --http $HTTP --yes"
+    echo "   the first converges both tiers' global workflows, workflow schemes, screens, screen schemes, issue type screen schemes and issue type schemes"
+    if [ "$TIER" = "managed" ]; then
+        echo "   the second moves $PROJECT_KEY onto the 'Universal Managed Workflow Scheme', 'Universal Managed Issue Type Scheme' and 'Universal Managed Issue Type Screen Scheme', mapping To Do and Done onto the lifecycle"
+        echo "   Task, Story and Bug get the 'Universal Managed Ticket Screen', which carries every field above; Epic and Sub-task get the 'Universal Managed Grouping Screen'"
+        echo "   statuses: Triage, Open, In Progress, Awaiting Deployment, Deferred, Completed, Cancelled; the create transition targets the entry state, Triage ([JIRA-12])"
+    else
+        echo "   the second moves $PROJECT_KEY onto the 'Universal Simplified Workflow Scheme', 'Universal Simplified Issue Type Scheme' and 'Universal Simplified Issue Type Screen Scheme'"
+        echo "   every issue type gets the 'Universal Simplified Screen', which carries no contract field; statuses: Open, In Progress, Done"
+    fi
+    echo "   then it deletes the workflows, schemes and screens the template gave $PROJECT_KEY, each once nothing uses it"
     echo
-    echo "4. would add each field to every screen of the project's issue-type screen scheme (screen and tab ids are only knowable from a live read):"
-    echo "   GET /issuetypescreenscheme/project?projectId=<project id>"
-    echo "   GET /issuetypescreenscheme/mapping?issueTypeScreenSchemeId=<id>"
-    echo "   GET /screenscheme?id=<a>&id=<b>  (one call, repeated id= params — there is no per-id GET)"
-    echo "   GET /screens/<id>/tabs"
-    echo "   POST /screens/<id>/tabs/<tab>/fields  {fieldId: <customfield id>}  (skipped when already present)"
-    echo
-    echo "6. would print the resolved customfield ids."
+    echo "5. would print the resolved customfield ids."
     exit 0
 fi
 
@@ -205,7 +213,7 @@ if [ "$ASSUME_YES" != "1" ]; then
         warn "no --yes and no terminal to confirm on — refusing to provision a Jira Space unattended. Re-run with --yes."
         exit 3
     fi
-    warn "About to provision Jira Space '$PROJECT_KEY' (\"$PROJECT_NAME\"): create-or-verify the project, create the custom fields and add them to every project screen, converge the shared Universal workflows and scheme, and switch the project onto that scheme (deleting the workflow and scheme the template gave it). Proceed? [y/N]"
+    warn "About to provision Jira Space '$PROJECT_KEY' (\"$PROJECT_NAME\"): create-or-verify the project, create the custom fields, converge the shared Universal workflows, schemes and screens, and switch the project onto the $TIER tier (deleting the workflows, schemes and screens the template gave it). Proceed? [y/N]"
     ANSWER=""
     IFS= read -r ANSWER < /dev/tty || die "could not read the confirmation"
     case "$ANSWER" in
@@ -289,11 +297,11 @@ ensure_project() {
 }
 
 apply_workflow() {
-    echo "converging the shared Universal workflows and scheme via ${UNIVERSAL_APPLY##*/} ..."
+    echo "converging the shared Universal workflows, schemes and screens via ${UNIVERSAL_APPLY##*/} ..."
     "$UNIVERSAL_APPLY" --http "$HTTP" --yes \
         || die "${UNIVERSAL_APPLY##*/} failed — see its own output above; '$PROJECT_KEY' was not switched"
-    echo "switching '$PROJECT_KEY' onto the shared scheme via ${UNIVERSAL_SWITCH##*/} ..."
-    "$UNIVERSAL_SWITCH" "$PROJECT_KEY" --http "$HTTP" --yes \
+    echo "switching '$PROJECT_KEY' onto the $TIER tier via ${UNIVERSAL_SWITCH##*/} ..."
+    "$UNIVERSAL_SWITCH" "$PROJECT_KEY" --tier "$TIER" --http "$HTTP" --yes \
         || die "${UNIVERSAL_SWITCH##*/} failed for '$PROJECT_KEY' — see its own output above"
 }
 
@@ -432,80 +440,6 @@ $EXECUTOR_OPTIONS
 EOF
 }
 
-SCREEN_IDS=""
-collect_screen_ids() {
-    local itss_project itss_id mapping scheme_ids scheme_id qs scheme_json ids_here sid
-    itss_project=$(jira_get "/issuetypescreenscheme/project?projectId=$PROJECT_ID") \
-        || die "could not read /issuetypescreenscheme/project?projectId=$PROJECT_ID"
-    itss_id=$(printf '%s' "$itss_project" | jq -r '.values[0].issueTypeScreenScheme.id // empty') \
-        || die "could not parse the project's issueTypeScreenScheme id"
-    [ -n "$itss_id" ] || die "project '$PROJECT_KEY' (id $PROJECT_ID) has no issueTypeScreenScheme — cannot place fields on any screen"
-
-    mapping=$(jira_get "/issuetypescreenscheme/mapping?issueTypeScreenSchemeId=$itss_id") \
-        || die "could not read the issue-type-screen-scheme mapping"
-    scheme_ids=$(printf '%s' "$mapping" | jq -r '[.values[].screenSchemeId] | unique[]') \
-        || die "could not parse the screenSchemeId list from the mapping"
-    [ -n "$scheme_ids" ] || die "issueTypeScreenScheme '$itss_id' has no screen scheme mappings at all"
-
-    # One call with repeated `id=` params. A per-id GET /screenscheme/<id> is
-    # HTTP 405 and a comma-joined id=a,b,c is HTTP 400 — both confirmed.
-    qs=""
-    while IFS= read -r scheme_id; do
-        [ -n "$scheme_id" ] || continue
-        qs="$qs&id=$(jq -rn --arg v "$scheme_id" '$v|@uri')" || die "could not url-encode screen scheme id '$scheme_id'"
-    done <<EOF
-$scheme_ids
-EOF
-    qs="${qs#&}"
-    scheme_json=$(jira_get "/screenscheme?$qs") || die "could not read /screenscheme?$qs"
-
-    SCREEN_IDS=""
-    ids_here=$(printf '%s' "$scheme_json" | jq -r '[.values[] | (.screens // {}) | to_entries[] | .value] | unique[]') \
-        || die "could not parse screen ids out of the screen scheme response"
-    while IFS= read -r sid; do
-        [ -n "$sid" ] || continue
-        in_list "$sid" "$SCREEN_IDS" || SCREEN_IDS="$SCREEN_IDS$sid
-"
-    done <<EOF
-$ids_here
-EOF
-    [ -n "$SCREEN_IDS" ] || die "no screen ids resolved for '$PROJECT_KEY' — nothing to add fields to"
-}
-
-add_fields_to_screens() {
-    collect_screen_ids
-    local screen_id tabs tab_ids tab_id tab_name have_fields name field_id
-    while IFS= read -r screen_id; do
-        [ -n "$screen_id" ] || continue
-        tabs=$(jira_get "/screens/$screen_id/tabs") || die "could not read /screens/$screen_id/tabs"
-        # Assign and guard, never inline into the heredoc word: a command
-        # substitution there discards its exit status and loops zero times.
-        tab_ids=$(printf '%s' "$tabs" | jq -r '.[].id') || die "could not parse tab ids for screen $screen_id"
-        while IFS= read -r tab_id; do
-            [ -n "$tab_id" ] || continue
-            tab_name=$(printf '%s' "$tabs" | jq -r --arg id "$tab_id" '[.[] | select((.id|tostring) == $id)][0].name // "?"')
-            have_fields=$(jira_get "/screens/$screen_id/tabs/$tab_id/fields") \
-                || die "could not read /screens/$screen_id/tabs/$tab_id/fields"
-            while IFS="$(printf '\t')" read -r name field_id; do
-                [ -n "$name" ] || continue
-                if printf '%s' "$have_fields" | jq -e --arg id "$field_id" '[.[] | select((.id|tostring) == $id)] | length > 0' >/dev/null 2>&1; then
-                    echo "field '$name' already on screen $screen_id / tab '$tab_name'."
-                else
-                    echo "field '$name' absent from screen $screen_id / tab '$tab_name' — adding."
-                    jira_write POST "/screens/$screen_id/tabs/$tab_id/fields" "$(jq -cn --arg id "$field_id" '{fieldId: $id}')" >/dev/null \
-                        || die "POST /screens/$screen_id/tabs/$tab_id/fields failed for '$name'"
-                fi
-            done <<EOF
-$(paste <(printf '%s\n' "$FIELD_NAMES") <(printf '%s\n' "$RESOLVED_FIELD_IDS"))
-EOF
-        done <<EOF
-$tab_ids
-EOF
-    done <<EOF
-$SCREEN_IDS
-EOF
-}
-
 print_field_table() {
     local name field_id ftype rows=""
     while IFS="$(printf '\t')" read -r name field_id ftype; do
@@ -518,12 +452,15 @@ EOF
     printf '%s' "$rows" | table "$(printf 'ID\tNAME\tTYPE')"
 }
 
-# Fields before the workflow: the shared workflows' validators require these
-# fields, so they must exist before universal-apply.sh runs.
+# Fields before universal-apply.sh: its validators and its managed ticket
+# screen name these fields.
 ensure_project
 ensure_fields
-add_fields_to_screens
 apply_workflow
 echo
-echo "Jira Space '$PROJECT_KEY' now conforms to work-order at the 'full' profile: on the Universal Managed Workflow Scheme, with these custom fields:"
+if [ "$TIER" = "managed" ]; then
+    echo "Jira Space '$PROJECT_KEY' now conforms to work-order at the 'full' profile: on the Universal Managed tier, with these custom fields:"
+else
+    echo "Jira Space '$PROJECT_KEY' is on the Universal Simplified tier; its screen carries none of these site-wide custom fields:"
+fi
 print_field_table
