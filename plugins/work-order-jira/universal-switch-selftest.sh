@@ -52,7 +52,7 @@ STUB="$WORK/jira-http-stub.sh"
 cat > "$STUB" <<'STUBEOF'
 #!/bin/bash
 # A jira-http.sh-shaped stub over fixtures/switch/. State lives in
-# $WO_TEST_STATE. Knobs: SW_SCHEME=missing, SW_INUSE=<status id>,
+# $WO_TEST_STATE. Knobs: SW_SCHEME=missing, SW_INUSE=<status id>, SW_GROUP_DROP=<status>,
 # SW_TASK=failed, SW_EXTRA_SCHEME=<scheme id still using the old workflow>.
 set -uo pipefail
 FX="$WO_TEST_FX"
@@ -104,7 +104,7 @@ case "$M:$P" in
     GET:/workflow/search\?workflowName=Universal%20Managed%20Workflow\&*|GET:/workflow/search\?workflowName=Universal%20Managed%20Workflow)
         universal_wf "Universal Managed Workflow" '["To Do","Done"]' ;;
     GET:/workflow/search\?workflowName=Universal%20Managed%20Grouping%20Workflow*)
-        universal_wf "Universal Managed Grouping Workflow" '["To Do","Done","Awaiting Deployment","Deferred"]' ;;
+        universal_wf "Universal Managed Grouping Workflow" "$(jq -cn --arg x "${SW_GROUP_DROP:-}" '["To Do","Done","Awaiting Deployment","Deferred"] + (if $x == "" then [] else [$x] end)')" ;;
     GET:/workflow/search*) fx workflow.search.missing.txt ;;
     GET:/workflow/$LABWF/workflowSchemes)
         fx workflow.workflowSchemes.txt | jq -c --arg gone "$([ -f "$ST/scheme-deleted" ] && echo 1)" --arg extra "${SW_EXTRA_SCHEME:-}" '
@@ -190,8 +190,8 @@ m() { printf '%s' "$BODY" | jq -c --arg t "$1" '[.mappingsByIssueTypeOverride[] 
 eq "  Task maps To Do -> Triage and Done -> Completed" \
     '[{"oldStatusId":"10009","newStatusId":"10011"},{"oldStatusId":"10010","newStatusId":"10014"}]' "$(m 10010)"
 eq "  Bug maps the same as Task" "$(m 10010)" "$(m 10012)"
-eq "  Epic maps To Do -> Open and Done -> Completed" \
-    '[{"oldStatusId":"10009","newStatusId":"1"},{"oldStatusId":"10010","newStatusId":"10014"}]' "$(m 10000)"
+eq "  Epic maps To Do -> Open, Done -> Completed, Awaiting Deployment -> In Progress, Deferred -> Open" \
+    '[{"oldStatusId":"10009","newStatusId":"1"},{"oldStatusId":"10010","newStatusId":"10014"},{"oldStatusId":"10012","newStatusId":"3"},{"oldStatusId":"10013","newStatusId":"1"}]' "$(m 10000)"
 eq "  Sub-task maps the same as Epic" "$(m 10000)" "$(m 10011)"
 contains "  the pre-drain transition is printed, not sent" "WOULD POST /rest/api/3/issue/LAB-14/transitions" "$OUT"
 contains "  the old scheme delete is planned" "WOULD DELETE /rest/api/3/workflowscheme/10005" "$OUT"
@@ -233,10 +233,15 @@ not_contains "  without planning a switch" "project/switch" "$OUT"
 # ---- refusals and failures ------------------------------------------------
 
 fresh inuse
-SW_INUSE=10013 run --yes
+SW_GROUP_DROP=Cancelled SW_INUSE=10015 run --yes
 eq "an in-use status the target lacks and no rule covers fails" "1" "$RC"
-contains "  naming the status and issue type" "'Deferred' (Epic)" "$OUT"
+contains "  naming the status and issue type" "'Cancelled' (Epic)" "$OUT"
 eq "  before any write" "" "$(writes)"
+
+fresh unused
+SW_GROUP_DROP=Cancelled run --dry-run
+BODY=$(printf '%s\n' "$OUT" | awk 'f{print; exit} /^WOULD POST \/rest\/api\/3\/workflowscheme\/project\/switch$/{f=1}')
+contains "an unused status the target lacks, with no rule, maps to Triage" '{"oldStatusId":"10015","newStatusId":"10011"}' "$(m 10000)"
 
 fresh nescheme
 SW_SCHEME=missing run --yes

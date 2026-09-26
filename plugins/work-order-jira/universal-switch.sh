@@ -242,13 +242,17 @@ build_plan() {
         entry=$(jq -cn --arg tid "$tid" --argjson level "$level" --arg ow "$old_wf" --arg nw "$new_wf" \
             --argjson old "$old_st" --argjson new "$new_st" '
             (if $level == 0 then {"To Do": "Triage", "Done": "Completed"}
-             else {"To Do": "Open", "Done": "Completed"} end) as $rules
+             else {"To Do": "Open", "Done": "Completed",
+                   "Awaiting Deployment": "In Progress", "Deferred": "Open"} end) as $rules
             | ($new | map(.name)) as $newNames
             | [$old[] | select(.name as $n | $newNames | index($n) | not)] as $gone
+            | ([$new[] | select(.name == "Triage")][0].id // null) as $fallback
             | {issueTypeId: $tid, level: $level, oldWorkflow: $ow, newWorkflow: $nw,
-               mappings: [$gone[] | select($rules[.name] != null) | . as $o
+               mappings: ([$gone[] | select($rules[.name] != null) | . as $o
                    | {oldStatusId: $o.id, old: $o.name, new: $rules[$o.name],
-                      newStatusId: ([$new[] | select(.name == $rules[$o.name])][0].id // null)}],
+                      newStatusId: ([$new[] | select(.name == $rules[$o.name])][0].id // null)}]
+                 + [$gone[] | select($rules[.name] == null)
+                   | {oldStatusId: .id, old: .name, new: "Triage", newStatusId: $fallback, unused: true}]),
                unmapped: [$gone[] | select($rules[.name] == null)]}') \
             || die "could not compute the status mappings for issue type $tid"
         plan=$(jq -cn --argjson p "$plan" --argjson e "$entry" '$p + [$e]')
