@@ -1,0 +1,5 @@
+# jira-http.sh POST /workflowscheme/project/switch {"projectId":"10052","targetSchemeId":"99999999","mappingsByIssueTypeOverride":[{"issueTypeId":"10010","statusMappings":[{"oldStatusId":"10009"}]}]}
+# Captured live 2026-09-26 against example.atlassian.net: a deliberately invalid
+# probe (target scheme 99999999 does not exist), rejected before any switch.
+HTTP 400
+{"errorMessages":["Missing required field 'mappingsByIssueTypeOverride.[0].statusMappings.[0].newStatusId'"],"errors":{}}

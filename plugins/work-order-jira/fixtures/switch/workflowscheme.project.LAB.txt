@@ -1,0 +1,3 @@
+# jira-http.sh GET /workflowscheme/project?projectId=10004
+# Captured live 2026-09-26 against example.atlassian.net (read-only).
+{"values":[{"projectIds":["10004"],"workflowScheme":{"id":10005,"name":"LAB: Software Simplified Workflow Scheme","defaultWorkflow":"Software Simplified Workflow for Project LAB","issueTypeMappings":{}}}]}

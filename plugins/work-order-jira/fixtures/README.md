@@ -77,3 +77,15 @@ endpoint-shaped names.
 no live capture exists for a request — a fresh project's readback, `GET /myself`,
 a `POST /field` response for a named field — the stub builds one inline and says
 so. Nothing synthetic is filed here.
+
+## `switch/`
+
+Read-only responses recorded 2026-09-26 from project LAB for
+`universal-switch-selftest.sh`: the workflow scheme list (trimmed to LAB, NWM
+and WO), a project's scheme and its usages, workflow searches with statuses,
+a workflow's scheme and project usages, three `POST /search/jql` pages of To Do
+issues (verify text replaced with a placeholder), and an issue's transitions.
+The `switch.400.*` files are deliberately invalid bodies sent to
+`POST /workflowscheme/project/switch` with a target scheme id that does not
+exist; Jira's validation messages confirm the body's field names. No valid
+switch, GET /task or delete was recorded, so the stub builds those inline.

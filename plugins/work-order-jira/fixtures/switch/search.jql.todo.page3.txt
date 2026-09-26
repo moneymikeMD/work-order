@@ -1,0 +1,4 @@
+# jira-http.sh POST /search/jql (page 2 body, nextPageToken from page 2)
+# Captured live 2026-09-26 against example.atlassian.net (read-only): a page
+# with isLast:false can still be followed by an empty last page.
+{"issues":[],"isLast":true}

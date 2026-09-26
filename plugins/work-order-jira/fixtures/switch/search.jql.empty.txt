@@ -1,0 +1,3 @@
+# jira-http.sh POST /search/jql {"jql":"project = WO AND status in (\"To Do\", Done)","fields":["key"],"maxResults":1}
+# Captured live 2026-09-26 against example.atlassian.net (read-only).
+{"issues":[],"isLast":true}
