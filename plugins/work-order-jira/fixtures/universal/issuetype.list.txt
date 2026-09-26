@@ -1,0 +1,80 @@
+# GET /issuetype
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+[
+  {
+    "self": "https://example.atlassian.net/rest/api/3/issuetype/10011",
+    "id": "10011",
+    "description": "A small piece of work that's part of a larger task.",
+    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10316?size=medium",
+    "name": "Sub-task",
+    "untranslatedName": "Sub-task",
+    "subtask": true,
+    "avatarId": 10316,
+    "hierarchyLevel": -1
+  },
+  {
+    "self": "https://example.atlassian.net/rest/api/3/issuetype/10012",
+    "id": "10012",
+    "description": "A problem or error.",
+    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+    "name": "Bug",
+    "untranslatedName": "Bug",
+    "subtask": false,
+    "avatarId": 10303,
+    "hierarchyLevel": 0
+  },
+  {
+    "self": "https://example.atlassian.net/rest/api/3/issuetype/10013",
+    "id": "10013",
+    "description": "An improvement or enhancement to an existing feature or task.",
+    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10310?size=medium",
+    "name": "Improvement",
+    "untranslatedName": "Improvement",
+    "subtask": false,
+    "avatarId": 10310,
+    "hierarchyLevel": 0
+  },
+  {
+    "self": "https://example.atlassian.net/rest/api/3/issuetype/10010",
+    "id": "10010",
+    "description": "A small, distinct piece of work.",
+    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+    "name": "Task",
+    "untranslatedName": "Task",
+    "subtask": false,
+    "avatarId": 10318,
+    "hierarchyLevel": 0
+  },
+  {
+    "self": "https://example.atlassian.net/rest/api/3/issuetype/10005",
+    "id": "10005",
+    "description": "Stories track functionality or features expressed as user goals.",
+    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10300?size=medium",
+    "name": "Story",
+    "untranslatedName": "Story",
+    "subtask": false,
+    "avatarId": 10300,
+    "hierarchyLevel": 0
+  },
+  {
+    "self": "https://example.atlassian.net/rest/api/3/issuetype/10014",
+    "id": "10014",
+    "description": "A new feature of the product, which has yet to be developed.",
+    "iconUrl": "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10311?size=medium",
+    "name": "New Feature",
+    "untranslatedName": "New Feature",
+    "subtask": false,
+    "avatarId": 10311,
+    "hierarchyLevel": 0
+  },
+  {
+    "self": "https://example.atlassian.net/rest/api/3/issuetype/10000",
+    "id": "10000",
+    "description": "A big user story that needs to be broken down. Created by Jira Software - do not edit or delete.",
+    "iconUrl": "https://example.atlassian.net/images/icons/issuetypes/epic.svg",
+    "name": "Epic",
+    "untranslatedName": "Epic",
+    "subtask": false,
+    "hierarchyLevel": 1
+  }
+]

@@ -1,0 +1,4 @@
+# POST /workflows '{"workflowNames":["Universal Managed Grouping Workflow"]}' — a name that does not exist. stderr of jira-http.sh: the whole request 404s, even when other listed names exist
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+HTTP 404
+{"errorMessages":["Not found"],"errors":{}}

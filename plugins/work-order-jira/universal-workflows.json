@@ -1,0 +1,96 @@
+{
+  "_comment": [
+    "The two GLOBAL Jira workflows and the one workflow scheme this repository owns. universal-apply.sh converges a Jira site towards this file.",
+    "Additive only: a missing status, transition or validator is added, a missing scheme mapping is added, and nothing already in Jira is ever changed or removed. Whatever Jira holds that this file does not name is reported as 'not in spec (left alone)'.",
+    "Status and issue-type names are resolved to site ids at run time. {field:<name>} in a validator parameter resolves to that custom field's id via GET /field.",
+    "A transition is identified by (from, to), never by its name. from is null only for the initial transition, the one Jira runs on create.",
+    "No transition carries system:previous-status-validator: the task workflow's transitions are DIRECTED, so reaching Completed through Awaiting Deployment is structural (owner decision 2026-09-26, reversing NWM-110). There is no In Progress -> Completed transition: every ticket occupies Awaiting Deployment before Completed (work-order MUST-27). Every transition into Open requires verify.",
+    "The grouping workflow carries no validator by design: Epics and Sub-tasks are not tickets."
+  ],
+  "workflows": [
+    {
+      "name": "Universal Managed Workflow",
+      "statuses": ["Triage", "Open", "In Progress", "Awaiting Deployment", "Deferred", "Completed", "Cancelled"],
+      "transitions": [
+        {"name": "Create", "from": null, "to": "Triage", "validators": []},
+        {"name": "refine to work", "from": "Triage", "to": "Open", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to leave triage for the ready-to-work position (work-order MUST-7, per JIRA-13)"}}
+        ]},
+        {"name": "defer", "from": "Triage", "to": "Deferred", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:defer_until}", "ignoreContext": "true", "errorMessage": "defer_until is required to defer: without it nothing says when the ticket comes back (work-order MUST-47, per JIRA-14)"}},
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to defer, so the automation that returns this issue to the ready-to-work position can satisfy that transition unattended (work-order MUST-7, per JIRA-14)"}}
+        ]},
+        {"name": "defer", "from": "Open", "to": "Deferred", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:defer_until}", "ignoreContext": "true", "errorMessage": "defer_until is required to defer: without it nothing says when the ticket comes back (work-order MUST-47, per JIRA-14)"}},
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to defer, so the automation that returns this issue to the ready-to-work position can satisfy that transition unattended (work-order MUST-7, per JIRA-14)"}}
+        ]},
+        {"name": "open", "from": "Deferred", "to": "Open", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to reach the ready-to-work position (work-order MUST-7, per JIRA-13)"}}
+        ]},
+        {"name": "start work", "from": "Open", "to": "In Progress", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required before work starts (work-order MUST-7)"}},
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:touches}", "ignoreContext": "true", "errorMessage": "touches is required before work starts (work-order MUST-13, tightened by JIRA-6)"}}
+        ]},
+        {"name": "ready for verification", "from": "In Progress", "to": "Awaiting Deployment", "validators": []},
+        {"name": "re-work", "from": "Awaiting Deployment", "to": "In Progress", "validators": []},
+        {"name": "complete", "from": "Awaiting Deployment", "to": "Completed", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required before completing (work-order MUST-7)"}}
+        ]},
+        {"name": "cancel", "from": "Triage", "to": "Cancelled", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
+        ]},
+        {"name": "cancel", "from": "Open", "to": "Cancelled", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
+        ]},
+        {"name": "cancel", "from": "Deferred", "to": "Cancelled", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
+        ]},
+        {"name": "cancel", "from": "In Progress", "to": "Cancelled", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
+        ]},
+        {"name": "cancel", "from": "Awaiting Deployment", "to": "Cancelled", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
+        ]},
+        {"name": "re-open", "from": "In Progress", "to": "Open", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to reach the ready-to-work position (work-order MUST-7, per JIRA-13)"}}
+        ]},
+        {"name": "re-open", "from": "Completed", "to": "Open", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to reach the ready-to-work position (work-order MUST-7, per JIRA-13)"}}
+        ]},
+        {"name": "re-open", "from": "Cancelled", "to": "Open", "validators": [
+          {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required to reach the ready-to-work position (work-order MUST-7, per JIRA-13)"}}
+        ]}
+      ]
+    },
+    {
+      "name": "Universal Managed Grouping Workflow",
+      "renamed_from": "Universal Managed Epic Workflow",
+      "statuses": ["Triage", "Open", "In Progress", "Completed", "Cancelled"],
+      "transitions": [
+        {"name": "Create", "from": null, "to": "Triage", "validators": []},
+        {"name": "Open", "from": "Triage", "to": "Open", "validators": []},
+        {"name": "Start Progress", "from": "Open", "to": "In Progress", "validators": []},
+        {"name": "Stop Progress", "from": "In Progress", "to": "Open", "validators": []},
+        {"name": "Complete", "from": "In Progress", "to": "Completed", "validators": []},
+        {"name": "Cancel", "from": "Triage", "to": "Cancelled", "validators": []},
+        {"name": "Cancel", "from": "Open", "to": "Cancelled", "validators": []},
+        {"name": "Cancel", "from": "In Progress", "to": "Cancelled", "validators": []},
+        {"name": "Continue Progress", "from": "Completed", "to": "In Progress", "validators": []},
+        {"name": "Continue Progress", "from": "Cancelled", "to": "In Progress", "validators": []}
+      ]
+    }
+  ],
+  "scheme": {
+    "name": "Universal Managed Workflow Scheme",
+    "description": "The one workflow scheme every work-order contract project uses: tickets on the Universal Managed Workflow, Epics and Sub-tasks on the Universal Managed Grouping Workflow. Owned by moneymikeMD/work-order (plugins/work-order-jira/universal-workflows.json).",
+    "defaultWorkflow": "Universal Managed Workflow",
+    "issueTypeMappings": {
+      "Epic": "Universal Managed Grouping Workflow",
+      "Sub-task": "Universal Managed Grouping Workflow"
+    },
+    "issueTypeHierarchyLevels": {
+      "Epic": 1,
+      "Sub-task": -1
+    }
+  }
+}

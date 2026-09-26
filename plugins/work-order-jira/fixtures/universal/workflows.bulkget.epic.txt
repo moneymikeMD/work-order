@@ -1,0 +1,267 @@
+# POST /workflows '{"workflowNames":["Universal Managed Epic Workflow"]}' — version 1, no validators, before the rename
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "statuses": [
+    {
+      "id": "1",
+      "statusReference": "1",
+      "name": "Open",
+      "statusCategory": "TODO",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10014",
+      "statusReference": "10014",
+      "name": "Completed",
+      "statusCategory": "DONE",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10011",
+      "statusReference": "10011",
+      "name": "Triage",
+      "statusCategory": "TODO",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "3",
+      "statusReference": "3",
+      "name": "In Progress",
+      "statusCategory": "IN_PROGRESS",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10015",
+      "statusReference": "10015",
+      "name": "Cancelled",
+      "statusCategory": "DONE",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    }
+  ],
+  "workflows": [
+    {
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "version": {
+        "versionNumber": 1,
+        "id": "218072b4-3310-4f37-8af6-cdb11fd07384"
+      },
+      "id": "568928dd-087f-4931-b81a-792e4b65abb2",
+      "name": "Universal Managed Epic Workflow",
+      "description": "Workflow for transitioning Epics",
+      "isEditable": true,
+      "startPointLayout": {
+        "x": 1333.5394341165477,
+        "y": -255.70274048418102
+      },
+      "statuses": [
+        {
+          "statusReference": "1",
+          "layout": {
+            "x": 1313.2034966165477,
+            "y": -87.20421712138867
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10011",
+          "layout": {
+            "x": 1307.2386528665477,
+            "y": -158.0878574246227
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "3",
+          "layout": {
+            "x": 1290.6722466165477,
+            "y": -16.047168005339024
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10014",
+          "layout": {
+            "x": 1209.1525360046048,
+            "y": 64.38711834260734
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10015",
+          "layout": {
+            "x": 1380.006076994037,
+            "y": 64.38711834260734
+          },
+          "properties": {},
+          "deprecated": false
+        }
+      ],
+      "transitions": [
+        {
+          "id": "1",
+          "type": "INITIAL",
+          "toStatusReference": "10011",
+          "links": [
+            {
+              "toPort": 1
+            }
+          ],
+          "name": "Create",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "3",
+          "type": "DIRECTED",
+          "toStatusReference": "3",
+          "links": [
+            {
+              "fromStatusReference": "1",
+              "fromPort": 5,
+              "toPort": 1
+            }
+          ],
+          "name": "Start Progress",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "2",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "10011",
+              "fromPort": 5,
+              "toPort": 1
+            }
+          ],
+          "name": "Open",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "4",
+          "type": "DIRECTED",
+          "toStatusReference": "10014",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 5,
+              "toPort": 1
+            }
+          ],
+          "name": "Complete",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "5",
+          "type": "DIRECTED",
+          "toStatusReference": "10015",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 4,
+              "toPort": 1
+            }
+          ],
+          "name": "Cancel",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "8",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 1,
+              "toPort": 5
+            }
+          ],
+          "name": "Stop Progress",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "6",
+          "type": "DIRECTED",
+          "toStatusReference": "3",
+          "links": [
+            {
+              "fromStatusReference": "10014",
+              "fromPort": 0,
+              "toPort": 7
+            }
+          ],
+          "name": "Continue Progress",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "7",
+          "type": "DIRECTED",
+          "toStatusReference": "3",
+          "links": [
+            {
+              "fromStatusReference": "10015",
+              "fromPort": 3,
+              "toPort": 3
+            }
+          ],
+          "name": "Continue Progress",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        }
+      ],
+      "loopedTransitionContainerLayout": {}
+    }
+  ]
+}
