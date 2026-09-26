@@ -53,7 +53,8 @@ cat > "$STUB" <<'STUBEOF'
 #!/bin/bash
 # A jira-http.sh-shaped stub over fixtures/switch/. State lives in
 # $WO_TEST_STATE. Knobs: SW_SCHEME=missing, SW_INUSE=<status id>, SW_GROUP_DROP=<status>,
-# SW_TASK=failed|empty, SW_BUSY=1 (one 409 first), SW_LOCKED=1 (one lock 500 on delete), SW_EXTRA_SCHEME=<scheme id still using the old workflow>.
+# SW_TASK=failed|empty, SW_BUSY=1 (one 409 first), SW_LOCKED=1 (one lock 500 on delete), SW_EXTRA_SCHEME=<scheme id still using the old workflow>,
+# SW_LAYOUT=missing (no tier issue type schemes yet), SW_WFS=current (the recorded post-WO-75 workflow scheme list).
 set -uo pipefail
 FX="$WO_TEST_FX"
 ST="$WO_TEST_STATE"
@@ -79,14 +80,110 @@ universal_wf() {
         | .values[0].statuses |= map(select(.name as $s | $drop | index($s) | not))'
 }
 
+key_of() { case "$1" in 10004) echo LAB ;; 10013) echo EBS ;; *) echo "?" ;; esac; }
+# dels KIND — the ids of KIND this test deleted, as a JSON array.
+dels() { find "$ST" -name "deleted.$1.*" | sed "s#.*/deleted\.$1\.##" | jq -Rsc 'split("\n") | map(select(length > 0))'; }
+on() { cat "$ST/on.$1" 2>/dev/null || echo null; }
+
+# SYNTHETIC: the tier schemes universal-apply.sh creates; SW_LAYOUT=missing
+# leaves them out.
+targets() {
+    [ "${SW_LAYOUT:-}" = "missing" ] && { echo '[]'; return; }
+    case "$1" in
+        its) echo '[{"id":"10200","name":"Universal Managed Issue Type Scheme","description":"","defaultIssueTypeId":"10010"},
+                    {"id":"10202","name":"Universal Simplified Issue Type Scheme","description":"","defaultIssueTypeId":"10010"}]' ;;
+        itss) echo '[{"id":"10201","name":"Universal Managed Issue Type Screen Scheme","description":""},
+                     {"id":"10203","name":"Universal Simplified Issue Type Screen Scheme","description":""}]' ;;
+    esac
+}
+
+# scheme_list FIXTURE KIND — the recorded list, less what this test deleted,
+# plus the tier schemes, with the switched project moved onto its target.
+scheme_list() {
+    fx "$1" | jq -c --argjson t "$(targets "$2")" --argjson d "$(dels "$2")" --argjson on "$(on "$2")" '
+        .values |= (map(select((.id | tostring) as $i | $d | index([$i]) | not)) + $t
+            | map(if $on == null then . else
+                    .projects.values = ([(.projects.values // [])[] | select((.id | tostring) != $on.pid)]
+                        + (if (.id | tostring) == $on.target then [{id: $on.pid, key: $on.key}] else [] end))
+                  end))
+        | .total = (.values | length)'
+}
+
+# project_scheme KIND FIXTURE_STEM OBJKEY PID — GET /<stem>/project for one project.
+project_scheme() {
+    local o
+    o=$(on "$1")
+    if [ "$o" != "null" ]; then
+        scheme_list "$2.list.txt" "$1" | jq -c --arg k "$3" --arg p "$4" --argjson on "$o" \
+            '{values: [.values[] | select((.id | tostring) == $on.target) | {($k): del(.projects), projectIds: [$p]}]}'
+    else
+        fx "$2.project.$(key_of "$4").txt"
+    fi
+}
+
+ss_list() {
+    fx screenscheme.list.txt | jq -c --argjson d "$(dels ss)" --argjson di "$(dels itss)" '
+        .values |= [.[] | select((.id | tostring) as $i | $d | index([$i]) | not)
+            | .issueTypeScreenSchemes.values |= map(select((.id | tostring) as $i | $di | index([$i]) | not))]
+        | .total = (.values | length)'
+}
+
 case "$M:$P" in
+    GET:/project/*)
+        K=${P#/project/}
+        fx "project.$K.txt" | jq -c --argjson c "$(cat "$ST/category.$K" 2>/dev/null || echo null)" \
+            'if $c == null then . else .projectCategory = {id: ($c | tostring)} end' ;;
+    PUT:/project/*)
+        # SYNTHETIC: 200 with the project.
+        K=${P#/project/}
+        printf '%s' "$B" | jq -r '.categoryId' > "$ST/category.$K"
+        echo '{}' ;;
+    GET:/projectCategory) fx projectcategory.list.txt ;;
+    GET:/issuetypescheme/project\?projectId=*)
+        project_scheme its issuetypescheme issueTypeScheme "${P#*projectId=}" ;;
+    GET:/issuetypescreenscheme/project\?projectId=*)
+        project_scheme itss issuetypescreenscheme issueTypeScreenScheme "${P#*projectId=}" ;;
+    GET:/issuetypescheme\?*) scheme_list issuetypescheme.list.txt its ;;
+    GET:/issuetypescreenscheme\?*) scheme_list issuetypescreenscheme.list.txt itss ;;
+    PUT:/issuetypescheme/project|PUT:/issuetypescreenscheme/project)
+        # SYNTHETIC: 204. The project moves onto the named scheme.
+        k=its; [ "$P" = "/issuetypescreenscheme/project" ] && k=itss
+        pid=$(printf '%s' "$B" | jq -r '.projectId')
+        printf '%s' "$B" | jq -c --arg k "$(key_of "$pid")" \
+            '{target: (.issueTypeSchemeId // .issueTypeScreenSchemeId), pid: .projectId, key: $k}' > "$ST/on.$k" ;;
+    DELETE:/issuetypescheme/*|DELETE:/issuetypescreenscheme/*)
+        # SYNTHETIC: 204, or 400 while a project still uses it.
+        k=its; case "$P" in /issuetypescreenscheme/*) k=itss ;; esac
+        id=${P##*/}
+        f=issuetypescheme.list.txt; [ "$k" = "itss" ] && f=issuetypescreenscheme.list.txt
+        n=$(scheme_list "$f" "$k" | jq --arg i "$id" '[.values[] | select((.id | tostring) == $i) | (.projects.values // [])[]] | length')
+        [ "$n" = "0" ] || { printf 'HTTP 400\n{"errorMessages":["scheme is in use"]}\n' >&2; exit 1; }
+        : > "$ST/deleted.$k.$id" ;;
+    GET:/screenscheme\?*) ss_list ;;
+    DELETE:/screenscheme/*)
+        # SYNTHETIC: 204, or 400 while an issue type screen scheme uses it.
+        id=${P##*/}
+        n=$(ss_list | jq --arg i "$id" '[.values[] | select((.id | tostring) == $i) | .issueTypeScreenSchemes.values[]] | length')
+        [ "$n" = "0" ] || { printf 'HTTP 400\n{"errorMessages":["screen scheme is in use"]}\n' >&2; exit 1; }
+        : > "$ST/deleted.ss.$id" ;;
+    GET:/screens\?*)
+        fx screens.list.txt | jq -c --argjson d "$(dels screen)" '
+            .values |= map(select((.id | tostring) as $i | $d | index([$i]) | not)) | .total = (.values | length)' ;;
+    DELETE:/screens/*)
+        # SYNTHETIC: 204, or 400 while a screen scheme uses it.
+        id=${P##*/}
+        n=$(fx screenscheme.list.txt | jq --argjson d "$(dels ss)" --arg i "$id" \
+            '[.values[] | select((.id | tostring) as $s | $d | index([$s]) | not) | select([.screens[] | tostring] | index([$i]))] | length')
+        [ "$n" = "0" ] || { printf 'HTTP 400\n{"errorMessages":["screen is in use"]}\n' >&2; exit 1; }
+        : > "$ST/deleted.screen.$id" ;;
     GET:/workflowscheme\?*)
+        [ "${SW_WFS:-}" = "current" ] && { fx workflowscheme.list.current.txt; exit 0; }
         fx workflowscheme.list.txt | jq -c --argjson t "$(target_scheme)" \
             --arg missing "${SW_SCHEME:-}" --arg gone "$([ -f "$ST/scheme-deleted" ] && echo 1)" '
             .values |= (map(select(.name | startswith("LAB:")) | select($gone != "1"))
                         + (if $missing == "missing" then [] else [$t] end))
             | .total = (.values | length)' ;;
-    GET:/project/LAB) fx project.LAB.txt ;;
+    GET:/workflowscheme/project\?projectId=10013) fx workflowscheme.project.EBS.txt ;;
     GET:/workflowscheme/project\?projectId=10004)
         if [ -f "$ST/switched" ]; then
             jq -cn --argjson t "$(target_scheme)" '{values: [{projectIds: ["10004"], workflowScheme: $t}]}'
@@ -124,7 +221,7 @@ case "$M:$P" in
                 elif [ "$T" = "$P1" ]; then fx search.jql.todo.page2.txt
                 elif [ "$T" = "$P2" ]; then fx search.jql.todo.page3.txt
                 else printf 'HTTP 400\n{"errorMessages":["stub: unknown nextPageToken"]}\n' >&2; exit 1; fi ;;
-            *'status in ("To Do", Done)'*) fx search.jql.empty.txt ;;
+            *'status in ("To Do", "Done")'*) fx search.jql.empty.txt ;;
             *"AND status = ${SW_INUSE:-none}") fx search.jql.todo.page1.txt | jq -c '.issues |= .[0:1] | .isLast = true' ;;
             *) fx search.jql.empty.txt ;;
         esac ;;
@@ -221,10 +318,16 @@ contains "  moving each through its transition into Open (51)" \
     'POST /issue/LAB-14/transitions {"transition":{"id":"51"}}' "$W"
 contains "  and reports each move" "pre-drain: moved LAB-14 To Do -> Open" "$OUT"
 ORDER=$(printf '%s\n' "$W" | awk '{print $1, $2}' | grep -v '^POST /issue/' | tr '\n' '|')
-eq "switch, then scheme delete, then workflow delete, in that order" \
-    "POST /workflowscheme/project/switch|DELETE /workflowscheme/10005|DELETE /workflow/c01c212e-e092-4d2b-92aa-ca757e11a56f|" "$ORDER"
+eq "switch, delete the old workflow objects, then category, issue type and screen schemes, then screens" \
+    "POST /workflowscheme/project/switch|DELETE /workflowscheme/10005|DELETE /workflow/c01c212e-e092-4d2b-92aa-ca757e11a56f|PUT /project/LAB|PUT /issuetypescheme/project|DELETE /issuetypescheme/10149|PUT /issuetypescreenscheme/project|DELETE /issuetypescreenscheme/10004|DELETE /screenscheme/10014|DELETE /screenscheme/10015|DELETE /screenscheme/10016|DELETE /screens/10014|DELETE /screens/10015|DELETE /screens/10016|" "$ORDER"
+contains "  the category PUT names the Managed category by number" 'PUT /project/LAB {"categoryId":10000}' "$W"
+contains "  the issue type scheme PUT names the tier scheme and project" \
+    'PUT /issuetypescheme/project {"issueTypeSchemeId":"10200","projectId":"10004"}' "$W"
+contains "  the issue type screen scheme PUT likewise" \
+    'PUT /issuetypescreenscheme/project {"issueTypeScreenSchemeId":"10201","projectId":"10004"}' "$W"
+not_contains "  no other project's screens are touched" "DELETE /screens/10037" "$W"
 contains "the async task is polled to COMPLETE" "switch task 10500: COMPLETE" "$OUT"
-contains "verify confirms the scheme and an empty To Do/Done" "no issue is in To Do or Done" "$OUT"
+contains "verify confirms the scheme and an empty To Do/Done" "no issue is in To Do, Done" "$OUT"
 eq "the sent switch body is the one the dry run printed" "$BODY" "$(jq -c . "$WO_TEST_STATE/switch-body.json")"
 
 : > "$LOG"
@@ -234,7 +337,13 @@ contains "  and reports 0 changes" "0 changes" "$OUT"
 eq "  sending nothing" "" "$(writes)"
 
 fresh ontarget
-touch "$WO_TEST_STATE/switched" "$WO_TEST_STATE/scheme-deleted" "$WO_TEST_STATE/wf-deleted"
+touch "$WO_TEST_STATE/switched" "$WO_TEST_STATE/scheme-deleted" "$WO_TEST_STATE/wf-deleted" \
+    "$WO_TEST_STATE/deleted.its.10149" "$WO_TEST_STATE/deleted.itss.10004" \
+    "$WO_TEST_STATE/deleted.ss.10014" "$WO_TEST_STATE/deleted.ss.10015" "$WO_TEST_STATE/deleted.ss.10016" \
+    "$WO_TEST_STATE/deleted.screen.10014" "$WO_TEST_STATE/deleted.screen.10015" "$WO_TEST_STATE/deleted.screen.10016"
+echo 10000 > "$WO_TEST_STATE/category.LAB"
+echo '{"target":"10200","pid":"10004","key":"LAB"}' > "$WO_TEST_STATE/on.its"
+echo '{"target":"10201","pid":"10004","key":"LAB"}' > "$WO_TEST_STATE/on.itss"
 run
 eq "a project already on the scheme exits 0 even without --yes" "0" "$RC"
 contains "  and prints 0 changes" "0 changes" "$OUT"
@@ -290,6 +399,45 @@ contains "  and the message names what still uses it" "schemes: 10099" "$OUT"
 
 OUT=$("$SWITCH" LAB --http "$STUB" --scheme "LAB: Software Simplified Workflow Scheme" --dry-run 2>&1); RC=$?
 eq "the project's own old scheme is refused as a target" "1" "$RC"
+
+# ---- issue type and screen layers -----------------------------------------------
+
+fresh dry-layout
+run --dry-run
+eq "--dry-run plans the layer moves while the old workflow scheme is still in place" "0" "$RC"
+contains "  the issue type scheme PUT" 'WOULD PUT /rest/api/3/issuetypescheme/project' "$OUT"
+contains "  the old issue type scheme delete, counting the planned move" "WOULD DELETE /rest/api/3/issuetypescheme/10149" "$OUT"
+contains "  the old issue type screen scheme delete" "WOULD DELETE /rest/api/3/issuetypescreenscheme/10004" "$OUT"
+contains "  the three screen scheme deletes" "WOULD DELETE /rest/api/3/screenscheme/10016" "$OUT"
+contains "  and the three screen deletes" "WOULD DELETE /rest/api/3/screens/10016" "$OUT"
+eq "  sending only reads" "" "$(writes)"
+
+fresh nolayout
+SW_LAYOUT=missing run --yes
+eq "a tier issue type scheme that does not exist fails the run" "1" "$RC"
+contains "  pointing at universal-apply.sh" "'Universal Managed Issue Type Scheme' does not exist — create it first (universal-apply.sh)" "$OUT"
+not_contains "  and the old issue type scheme is kept" "DELETE /issuetypescheme/" "$(writes)"
+
+fresh nolayout-dry
+SW_LAYOUT=missing run --dry-run
+eq "--dry-run before universal-apply.sh has run still plans the moves" "0" "$RC"
+contains "  naming the scheme still to be made" "onto 'Universal Managed Issue Type Scheme', not on this site yet" "$OUT"
+contains "  and the delete that follows it" "WOULD DELETE /rest/api/3/issuetypescheme/10149" "$OUT"
+
+fresh ebs
+OUT=$(SW_WFS=current "$SWITCH" EBS --tier simplified --http "$STUB" --dry-run 2>&1); RC=$?
+eq "--tier simplified on EBS, already on its workflow scheme, dry-runs clean" "0" "$RC"
+contains "  verifying the six simplified retired statuses" \
+    "no issue is in To Do, Triage, Deferred, Awaiting Deployment, Completed, Cancelled" "$OUT"
+contains "  leaving its category alone" "already in category 'Universal Simplified'" "$OUT"
+contains "  moving it onto the Simplified issue type scheme" '{"issueTypeSchemeId":"10202","projectId":"10013"}' "$OUT"
+contains "  and the Simplified issue type screen scheme" '{"issueTypeScreenSchemeId":"10203","projectId":"10013"}' "$OUT"
+eq "  planning its 2 PUTs and 8 DELETEs" "2 8" \
+    "$(printf '%s\n' "$OUT" | grep -c '^WOULD PUT') $(printf '%s\n' "$OUT" | grep -c '^WOULD DELETE')"
+not_contains "  and no LAB object" "/10149" "$OUT"
+
+OUT=$("$SWITCH" LAB --tier bogus --http "$STUB" --dry-run 2>&1); RC=$?
+eq "an unknown tier is refused" "1" "$RC"
 
 echo
 echo "$N tests, $FAIL failed"

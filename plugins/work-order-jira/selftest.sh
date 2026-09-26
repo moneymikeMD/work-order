@@ -161,18 +161,6 @@ case "$M:$P" in
         fi
         fx search.jql.searchable.txt ;;
 
-    GET:/issuetypescreenscheme/project*) fx issuetypescreenscheme.project.txt ;;
-    GET:/issuetypescreenscheme/mapping*) fx issuetypescreenscheme.mapping.txt ;;
-    GET:/screenscheme*) fx screenscheme.txt ;;
-    GET:/screens/*/tabs/*/fields)
-        REST="${P#/screens/}"; SID="${REST%%/*}"
-        REST="${REST#*/tabs/}"; TID="${REST%%/*}"
-        fx "screens.$SID.tab.$TID.fields.txt" ;;
-    POST:/screens/*/tabs/*/fields) echo '{}' ;;
-    GET:/screens/*/tabs)
-        REST="${P#/screens/}"; SID="${REST%%/*}"
-        fx "screens.$SID.tabs.txt" ;;
-
     POST:/issue)
         # SYNTHETIC: the created body is kept so the GET below can serve it back.
         printf '%s' "$B" > "$WO_TEST_WORK/created-issue.json"
@@ -467,7 +455,7 @@ PY
 )
 eq "a ticket survives create then fetch unchanged" "ROUNDTRIP OK" "$ROUNDTRIP"
 
-# ---- 4. provision.sh# ---- 5. provision.sh ---------------------------------------------------
+# ---- 5. provision.sh ---------------------------------------------------
 
 # The universal scripts are spies: each records its argv, in call order, and
 # exits with the code its knob names, so provision.sh's handling of them is
@@ -504,11 +492,24 @@ for f in touches executor verify human_steps appends defer_until outcome blocked
     contains "  the plan names the $f field" "\"name\":\"$f\"" "$OUT"
 done
 contains "  the plan announces universal-apply with no project argument" "$UAPPLY --http $STUB --yes" "$OUT"
-contains "  then universal-switch for this project" "$USWITCH ZZPROBE --http $STUB --yes" "$OUT"
+contains "  then universal-switch for this project on the managed tier by default" "$USWITCH ZZPROBE --tier managed --http $STUB --yes" "$OUT"
 contains "  naming the shared scheme" "Universal Managed Workflow Scheme" "$OUT"
 contains "  and the entry state the create transition targets" "Triage" "$OUT"
-contains "  the plan names the screen walk" "/screens/<id>/tabs/<tab>/fields" "$OUT"
+contains "  the contract fields arrive on the shared ticket screen" "'Universal Managed Ticket Screen', which carries every field above" "$OUT"
+not_contains "  and no per-project screen walk is planned" "/screens/<id>/tabs" "$OUT"
 contains "  the plan names the searcherKey repair" "searcherKey" "$OUT"
+
+reset_log prov-dry-simplified
+OUT=$(WO_TEST_LOG="$LOG" PATH="$FAKEBIN:$PATH" \
+      "$PROVISION" --dry-run --project ZZPROBE --tier simplified --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
+eq "provision --dry-run --tier simplified exits 0" "0" "$RC"
+contains "  announcing the switch onto the simplified tier" "$USWITCH ZZPROBE --tier simplified --http $STUB --yes" "$OUT"
+contains "  onto the simplified schemes" "'Universal Simplified Issue Type Screen Scheme'" "$OUT"
+not_contains "  with no managed lifecycle" "Awaiting Deployment" "$OUT"
+
+OUT=$("$PROVISION" --dry-run --project ZZPROBE --tier bogus --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
+eq "provision rejects an unknown tier" "1" "$RC"
+contains "  naming the two tiers" "--tier must be managed or simplified" "$OUT"
 
 reset_log prov-noyes
 : > "$USPY"
@@ -553,15 +554,22 @@ eq "provision converges an existing conforming project" "0" "$RC"
 not_contains "  without creating the project again" "creating it" "$OUT"
 eq "  running universal-apply then universal-switch, each once, passing --yes through" \
     "universal-apply --http $STUB --yes
-universal-switch SPK4 --http $STUB --yes" "$(cat "$USPY")"
+universal-switch SPK4 --tier managed --http $STUB --yes" "$(cat "$USPY")"
 CREATED=$(printf '%s' "$OUT" | grep -c "absent — creating" || true)
 eq "  creating exactly the five fields the site lacks" "5" "$CREATED"
 contains "  reusing the field that is already present" "field 'verify' already present" "$OUT"
 contains "  leaving the executor option that exists alone" "executor option 'agent' already present" "$OUT"
 contains "  adding the executor options that do not" "executor option 'mixed' absent" "$OUT"
-ADDS=$(grep -c 'POST /screens/' "$LOG" || true)
-eq "  adding 8 fields to each of the 3 screens" "24" "$ADDS"
+eq "  touching no per-project screen or screen scheme" "0" "$(grep -cE ' /(screens|screenscheme|issuetypescreenscheme)' "$LOG" || true)"
 contains "  and printing the resolved field ids" "customfield_" "$OUT"
+
+reset_log prov-simplified
+: > "$USPY"
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all \
+      "$PROVISION" --yes --project SPK4 --tier simplified --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
+eq "provision --tier simplified switches the project onto that tier" "universal-apply --http $STUB --yes
+universal-switch SPK4 --tier simplified --http $STUB --yes" "$(cat "$USPY")"
+contains "  and says the project is not a contract project" "on the Universal Simplified tier" "$OUT"
 
 reset_log prov-unsearchable
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=live WO_TEST_SEARCH=400-once \

@@ -1,7 +1,8 @@
 {
   "_comment": [
-    "The two GLOBAL Jira workflows and the one workflow scheme this repository owns. universal-apply.sh converges a Jira site towards this file.",
-    "Additive only: a missing status, transition or validator is added, a missing scheme mapping is added, and nothing already in Jira is ever changed or removed. Whatever Jira holds that this file does not name is reported as 'not in spec (left alone)'.",
+    "The two GLOBAL Jira workflows, the one workflow scheme, and both tiers' screens, screen schemes, issue type screen schemes, issue type schemes and project categories this repository owns. universal-apply.sh converges a Jira site towards this file; universal-switch.sh reads 'tiers' to move a project onto one.",
+    "Additive only: a missing status, transition, validator, scheme mapping, screen field or issue type is added, a missing object is created, and nothing already in Jira is ever changed or removed. Whatever Jira holds that this file does not name is reported as 'not in spec (left alone)'.",
+    "field_sets lists screen fields by id, or {field:<name>} for a custom field. 'standard' is the Jira Scrum template's default issue screen without the contract fields; 'contract' is every custom field of BINDING.md section 2.",
     "Status and issue-type names are resolved to site ids at run time. {field:<name>} in a validator parameter resolves to that custom field's id via GET /field.",
     "A transition is identified by (from, to), never by its name. from is null only for the initial transition, the one Jira runs on create.",
     "No transition carries system:previous-status-validator: the task workflow's transitions are DIRECTED, so reaching Completed through Awaiting Deployment is structural (owner decision 2026-09-26, reversing NWM-110). There is no In Progress -> Completed transition: every ticket occupies Awaiting Deployment before Completed (work-order MUST-27). Every transition into Open requires verify.",
