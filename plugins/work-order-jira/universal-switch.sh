@@ -102,6 +102,21 @@ http_get()  { "$HTTP" GET "$1"; }
 http_post() { "$HTTP" POST "$1" "$2"; }
 http_delete() { "$HTTP" DELETE "$1"; }
 
+# delete_retrying PATH — DELETE, retried while Jira reports a running workflow
+# task holds the workflow lock (HTTP 500 "Cannot acquire workflow lock").
+delete_retrying() {
+    local waited=0 errf
+    errf=$(tmpfile) || return 1
+    while :; do
+        http_delete "$1" >/dev/null 2>"$errf" && return 0
+        grep -q 'Cannot acquire workflow lock' "$errf" || { cat "$errf" >&2; return 1; }
+        [ "$waited" -lt "$TIMEOUT_SECONDS" ] || { cat "$errf" >&2; return 1; }
+        echo "a running Jira workflow task holds the lock; retrying DELETE $1 in ${POLL_SECONDS}s"
+        sleep "$POLL_SECONDS"
+        waited=$((waited + (POLL_SECONDS > 0 ? POLL_SECONDS : 1)))
+    done
+}
+
 uri() { jq -rn --arg v "$1" '$v|@uri'; }
 
 # show_write METHOD PATH [BODY] — print a write this run sends or, in plan
@@ -497,7 +512,7 @@ if OLD_SCHEME=$(scheme_by_name "$OLD_SCHEME_NAME"); then
         if [ "$PLAN" = "1" ]; then
             EXPECT_SCHEME="$OLD_SCHEME_ID"
         else
-            http_delete "/workflowscheme/$OLD_SCHEME_ID" >/dev/null || die "DELETE /workflowscheme/$OLD_SCHEME_ID failed"
+            delete_retrying "/workflowscheme/$OLD_SCHEME_ID" || die "DELETE /workflowscheme/$OLD_SCHEME_ID failed"
             echo "deleted scheme '$OLD_SCHEME_NAME'"
         fi
     fi
@@ -520,7 +535,7 @@ while IFS= read -r WF; do
     show_write DELETE "/workflow/$WF_ID"
     CHANGES=$((CHANGES + 1))
     if [ "$PLAN" != "1" ]; then
-        http_delete "/workflow/$WF_ID" >/dev/null || die "DELETE /workflow/$WF_ID ('$WF') failed"
+        delete_retrying "/workflow/$WF_ID" || die "DELETE /workflow/$WF_ID ('$WF') failed"
         echo "deleted workflow '$WF'"
     fi
 done <<EOF

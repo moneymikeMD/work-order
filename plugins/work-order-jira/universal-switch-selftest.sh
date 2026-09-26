@@ -53,7 +53,7 @@ cat > "$STUB" <<'STUBEOF'
 #!/bin/bash
 # A jira-http.sh-shaped stub over fixtures/switch/. State lives in
 # $WO_TEST_STATE. Knobs: SW_SCHEME=missing, SW_INUSE=<status id>, SW_GROUP_DROP=<status>,
-# SW_TASK=failed|empty, SW_BUSY=1 (one 409 first), SW_EXTRA_SCHEME=<scheme id still using the old workflow>.
+# SW_TASK=failed|empty, SW_BUSY=1 (one 409 first), SW_LOCKED=1 (one lock 500 on delete), SW_EXTRA_SCHEME=<scheme id still using the old workflow>.
 set -uo pipefail
 FX="$WO_TEST_FX"
 ST="$WO_TEST_STATE"
@@ -151,6 +151,10 @@ case "$M:$P" in
         else echo '{"id":"10500","status":"COMPLETE","progress":100}'; fi ;;
     # SYNTHETIC: the deletes answer 204, or 400 while still in use (per the API docs).
     DELETE:/workflowscheme/10005)
+        if [ "${SW_LOCKED:-}" = "1" ] && [ ! -f "$ST/locked-once" ]; then
+            : > "$ST/locked-once"
+            printf 'HTTP 500\n{"message":"Cannot acquire workflow lock. There is a currently running workflow task: x","status-code":500}\n' >&2; exit 1
+        fi
         [ -f "$ST/switched" ] || { printf 'HTTP 400\n{"errorMessages":["scheme is active"]}\n' >&2; exit 1; }
         : > "$ST/scheme-deleted" ;;
     DELETE:/workflow/$LABWF)
@@ -265,6 +269,11 @@ fresh busy
 SW_BUSY=1 run --yes
 eq "a 409 from a running site task is retried, not fatal" "0" "$RC"
 contains "  and says so" "another Jira task is running" "$OUT"
+
+fresh locked
+SW_LOCKED=1 run --yes
+eq "a workflow-lock 500 on a delete is retried, not fatal" "0" "$RC"
+contains "  and says so" "holds the lock; retrying DELETE" "$OUT"
 
 fresh empty303
 SW_TASK=empty run --yes
