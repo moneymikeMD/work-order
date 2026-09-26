@@ -59,6 +59,10 @@ skill).
             instead of calling jira-api.sh (its shape: the body of a
             GET /rest/api/3/search/jql response — {"issues": [...]}).
 
+        An Epic or Sub-task is a grouping, not a ticket (BINDING.md
+        [JIRA-16]): no ticket rule, `next` or collision check applies to it.
+        Epics keep their own `board` heading; Sub-tasks are dropped.
+
 Whichever source is used, lint/board/next run the SAME glob-overlap
 collision check and defer_until logic against the same in-memory ticket
 shape (id, title, executor, touches, verify, human_steps, appends,
@@ -337,6 +341,21 @@ def fetch_jira_json(jira_api, fixture):
     return {"issues": issues, "isLast": True}
 
 
+_GROUPING_LEVELS = {1: "epic", -1: "subtask"}
+_GROUPING_NAMES = {"epic": "epic", "sub-task": "subtask", "subtask": "subtask"}
+
+
+def jira_grouping_kind(fields):
+    """'epic' or 'subtask' for an issue that is a grouping rather than a ticket
+    (BINDING.md [JIRA-16]), else None. Reads issuetype.hierarchyLevel, falling
+    back to the type name only when the level is absent."""
+    itype = (fields or {}).get("issuetype") or {}
+    level = itype.get("hierarchyLevel")
+    if isinstance(level, int) and not isinstance(level, bool):
+        return _GROUPING_LEVELS.get(level)
+    return _GROUPING_NAMES.get(str(itype.get("name") or "").strip().lower())
+
+
 def jira_issue_to_ticket(issue):
     """One Jira issue -> the same dict shape load_files() produces."""
     f = issue.get("fields") or {}
@@ -384,8 +403,7 @@ def jira_issue_to_ticket(issue):
         "appends": _lines(f.get(JIRA_FIELD_APPENDS)),
         "executor": executor,
         "epic": epic,
-        # An Epic has no parent by construction, so "orphan" would be a false alarm.
-        "_is_epic": (f.get("issuetype") or {}).get("name") == "Epic",
+        "_is_epic": jira_grouping_kind(f) == "epic",
         "defer_until": f.get(JIRA_FIELD_DEFER_UNTIL),
         "_path": key,
         "_stage": stage,
@@ -459,6 +477,8 @@ def load_jira(jira_api, fixture):
             f"'{JIRA_JQL}' — refusing to silently proceed as if there were "
             "nothing to do (fail fast at the start)")
 
+    # A Sub-task is a step of its parent, which carries the contract ([JIRA-16]).
+    issues = [i for i in issues if jira_grouping_kind(i.get("fields")) != "subtask"]
     tickets = [jira_issue_to_ticket(i) for i in issues]
     have = {t["id"] for t in tickets}
     # Derived from what came back, not from JIRA_PROJECT_KEY: it is the fetch's
@@ -752,9 +772,8 @@ def lint(tickets, root, scope=None):
             continue
         seen[tid].append(where)
 
-        # A shadow stand-in has no title/verify/executor by construction — skip
-        # the checks that would otherwise flag it as a broken real ticket.
-        if t.get("_shadow"):
+        # Shadows and Epics are not tickets, so no ticket check applies to them.
+        if t.get("_shadow") or t.get("_is_epic"):
             continue
 
         required = ["title", "created", "updated"]
@@ -763,10 +782,9 @@ def lint(tickets, root, scope=None):
                 err(tid, f"{tid}: missing `{f}`")
 
         ex = t.get("executor")
-        is_epic = t.get("_is_epic")
         # Past triage and live, a missing executor is terminal rather than
         # untidy: every verb drops the ticket and the set still reads clean.
-        if not is_epic and not ex and stage != "cancelled":
+        if not ex and stage != "cancelled":
             if stage in PENDING and stage != "triage":
                 err(tid, f"{tid}: no executor at `{stage}` — declared but "
                             f"undispatchable: excluded from `next`, shown as "
@@ -822,7 +840,7 @@ def lint(tickets, root, scope=None):
             # a contract. Only id/title/created/updated bind here; demanding
             # verify would report every freshly written ticket as broken.
             pass
-        elif not is_epic:
+        else:
             if not t.get("verify"):
                 err(tid, f"{tid}: no verify — nobody can prove this is done")
             # Empty, not just unset: a Jira textarea that was never filled in
@@ -875,6 +893,7 @@ def lint(tickets, root, scope=None):
             err(tid, f"{tid}: duplicated across {', '.join(paths)}")
 
     startable = [t for t in tickets if t["_stage"] in WORKABLE
+                 and not t.get("_is_epic")
                  and not external_blockers(t)
                  and all(next((x for x in tickets if x.get("id") == d), {}).get("_stage") in RESOLVING
                          for d in (t.get("blocked_by") or []))]
@@ -1260,7 +1279,8 @@ def selftest():
           "dispatchable; a contract written as prose over an empty field, an "
           "empty touches on an agent ticket, and a live ticket with no "
           "executor are each an error naming the specific defect, while a "
-          "contracted control whose body names the same fields is silent")
+          "contracted control whose body names the same fields is silent; "
+          "Epics and Sub-tasks are groupings, held to no ticket rule")
     return 0
 
 
@@ -1355,6 +1375,40 @@ def _jira_fixture_selftest():
             if control in lint_out:
                 failures.append(f"lint: control {control} agrees with its own "
                                 f"fields but was reported: {lint_out!r}")
+
+    tickets = load("groupings.json")
+    if tickets:
+        code, lint_out = capture(lint, tickets)
+        _, next_out = capture(nxt, tickets)
+        _, board_out = capture(board, tickets)
+        if code != 1 or "PROJ-61: no verify" not in lint_out:
+            failures.append(f"lint: Task PROJ-61 with no verify was not reported "
+                            f"(exit {code}): {lint_out!r}")
+        for grouping in ("PROJ-60", "PROJ-63", "PROJ-64", "PROJ-65"):
+            if grouping in lint_out:
+                failures.append(f"lint: grouping {grouping} was held to the ticket "
+                                f"contract or collided: {lint_out!r}")
+            if re.search(rf"\] {grouping}\s", next_out):
+                failures.append(f"next: grouping {grouping} is startable")
+        if "PROJ-62" not in next_out:
+            failures.append(f"next: Task PROJ-62 under an Epic is missing: {next_out!r}")
+        for subtask in ("PROJ-63", "PROJ-64"):
+            if subtask in board_out:
+                failures.append(f"board: Sub-task {subtask} is shown as a ticket")
+        epics_block = board_out.split("Epics", 1)[-1] if "Epics" in board_out else ""
+        if "PROJ-60" not in epics_block or "PROJ-65" not in epics_block:
+            failures.append(f"board: Epics PROJ-60/PROJ-65 missing from the Epics "
+                            f"heading: {board_out!r}")
+        if "epic PROJ-60 (To Do) Export groundwork" not in board_out:
+            failures.append(f"board: PROJ-62 lost its epic annotation: {board_out!r}")
+    for itype, want in (({"name": "Task", "hierarchyLevel": 1}, "epic"),
+                        ({"name": "Epic", "hierarchyLevel": 0}, None),
+                        ({"name": "Story", "hierarchyLevel": -1}, "subtask"),
+                        ({"name": "Subtask"}, "subtask"),
+                        ({"name": "Task"}, None)):
+        got = jira_grouping_kind({"issuetype": itype})
+        if got != want:
+            failures.append(f"jira_grouping_kind({itype}) is {got!r}, want {want!r}")
 
     # The narrowing: only ANOTHER project's blocker is taken on its nested
     # status. A same-project non-Done key is still a genuine dangling id.

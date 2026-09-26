@@ -33,7 +33,7 @@ which is what an exporter that writes one produces.
 ## Recording your own
 
 ```
-jira-api.sh raw GET '/search/jql?jql=project%20%3D%20LAB&fields=summary,status,labels,issuelinks,created,updated,description,customfield_10043,...' > search.jql.json
+jira-api.sh raw GET '/search/jql?jql=project%20%3D%20LAB&fields=summary,status,labels,issuelinks,created,updated,issuetype,parent,description,customfield_10043,...' > search.jql.json
 jira-api.sh raw GET /field                                                     > field.list.json
 jira-api.sh raw GET /project/LAB                                               > project.json
 ```
@@ -51,7 +51,8 @@ they carry no `self` links for the same reason.
 
 | Directory | Is |
 | --- | --- |
-| `conforming/` | the six tickets of `fixtures/conforming/`, as Jira issues; passes at all three profiles |
+| `conforming/` | the six tickets of `fixtures/conforming/`, as Jira issues, plus an Epic and a Sub-task with no contract fields (`[JIRA-16]`); passes at all three profiles |
+| `violates-MUST-7-no-verify/` | the conforming set with `verify` emptied on one Task; the Epic and Sub-task beside it add no finding |
 | `violates-MUST-25-unmapped-status/` | one issue in `Build Broken`, a status with no lifecycle position (`[JIRA-3]`) |
 | `violates-MUST-31-no-boundary/` | one issue whose description has no out-of-scope heading |
 | `violates-MUST-40-claim-mismatch/` | a project description claiming a profile the set was not validated at |

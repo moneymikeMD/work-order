@@ -122,6 +122,9 @@ def _jira(res, root, reqs, spec_path, version_path):
     bodiless = [t["_where"] for t in tickets if "# " not in (t["_body"] or "")]
     res.check(not bodiless, "every jira ticket carries its description as a Markdown body",
               f"empty or heading-less: {bodiless}")
+    groupings = [t["_where"] for t in tickets if t["_where"] in ("WOJ-7", "WOJ-8")]
+    res.check(not groupings, "an Epic and a Sub-task are groupings, not tickets ([JIRA-16])",
+              f"read as tickets: {groupings}")
 
 
 def selftest(spec_path, version_path):

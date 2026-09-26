@@ -66,6 +66,17 @@ implementation MUST resolve every field id by name at runtime and MUST NOT
 carry a hardcoded id. A field id copied from one site is a wrong field, not a
 missing one, on the next.
 
+### 2.1 Groupings
+
+[JIRA-16] An issue whose type sits at `hierarchyLevel` 1 (Epic) or -1
+(Sub-task) is not a ticket. An Epic is a grouping, the thing a ticket's `epic`
+field names; a Sub-task is a step of its parent, and the parent carries the
+contract. A reader MUST skip both when it assembles the ticket set, so no
+ticket requirement, startability rule or `touches` collision check applies to
+them. The level is read from `fields.issuetype.hierarchyLevel`; only when a
+response omits it does the type name decide (`Epic`, `Sub-task`, `Subtask`).
+Both types run the Grouping workflow, which carries no validators.
+
 ## 3. Lifecycle — `[MUST-42]`
 
 **The single representation of a ticket's lifecycle position is the issue's

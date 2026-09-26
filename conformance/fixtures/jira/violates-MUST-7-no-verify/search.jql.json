@@ -116,39 +116,7 @@
             }
           ]
         },
-        "customfield_11002": {
-          "type": "doc",
-          "version": 1,
-          "content": [
-            {
-              "type": "paragraph",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "python3 -m pytest tests/test_export_csv.py -q"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "python3 -m ex.cli export --format csv --limit 1 | head -1 | grep -c '^id,name,created$'"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "# Today src/export/csv.py does not exist and --format csv exits 2, so both fail."
-                }
-              ]
-            }
-          ]
-        },
+        "customfield_11002": null,
         "customfield_11003": null,
         "customfield_11004": {
           "type": "doc",

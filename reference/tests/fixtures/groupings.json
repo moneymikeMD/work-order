@@ -1,0 +1,296 @@
+{
+  "isLast": true,
+  "issues": [
+    {
+      "id": "10060",
+      "key": "PROJ-60",
+      "fields": {
+        "summary": "Export groundwork",
+        "status": {
+          "name": "To Do",
+          "statusCategory": {
+            "key": "new"
+          }
+        },
+        "labels": [],
+        "issuelinks": [],
+        "created": "2026-09-26T09:00:00.000-0400",
+        "updated": "2026-09-26T09:00:00.000-0400",
+        "issuetype": {
+          "name": "Epic",
+          "hierarchyLevel": 1,
+          "subtask": false
+        },
+        "description": null,
+        "customfield_10043": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "src/a.py"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_10044": null,
+        "customfield_10045": null,
+        "customfield_10046": null,
+        "customfield_10047": {
+          "id": "10100",
+          "value": "agent"
+        },
+        "customfield_10048": null,
+        "customfield_10049": null
+      }
+    },
+    {
+      "id": "10061",
+      "key": "PROJ-61",
+      "fields": {
+        "summary": "A task with no verify",
+        "status": {
+          "name": "Open",
+          "statusCategory": {
+            "key": "new"
+          }
+        },
+        "labels": [],
+        "issuelinks": [],
+        "created": "2026-09-26T09:00:00.000-0400",
+        "updated": "2026-09-26T09:00:00.000-0400",
+        "issuetype": {
+          "name": "Task",
+          "hierarchyLevel": 0,
+          "subtask": false
+        },
+        "description": null,
+        "customfield_10043": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "src/b.py"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_10044": null,
+        "customfield_10045": null,
+        "customfield_10046": null,
+        "customfield_10047": {
+          "id": "10100",
+          "value": "agent"
+        },
+        "customfield_10048": null,
+        "customfield_10049": null
+      }
+    },
+    {
+      "id": "10062",
+      "key": "PROJ-62",
+      "fields": {
+        "summary": "Write the CSV exporter",
+        "status": {
+          "name": "Open",
+          "statusCategory": {
+            "key": "new"
+          }
+        },
+        "labels": [],
+        "issuelinks": [],
+        "created": "2026-09-26T09:00:00.000-0400",
+        "updated": "2026-09-26T09:00:00.000-0400",
+        "issuetype": {
+          "name": "Task",
+          "hierarchyLevel": 0,
+          "subtask": false
+        },
+        "description": null,
+        "customfield_10043": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "src/a.py"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_10044": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "true"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_10045": null,
+        "customfield_10046": null,
+        "customfield_10047": {
+          "id": "10100",
+          "value": "agent"
+        },
+        "customfield_10048": null,
+        "customfield_10049": null,
+        "parent": {
+          "key": "PROJ-60",
+          "fields": {
+            "summary": "Export groundwork",
+            "issuetype": {
+              "name": "Epic",
+              "hierarchyLevel": 1,
+              "subtask": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "10063",
+      "key": "PROJ-63",
+      "fields": {
+        "summary": "Add the header row",
+        "status": {
+          "name": "Open",
+          "statusCategory": {
+            "key": "new"
+          }
+        },
+        "labels": [],
+        "issuelinks": [],
+        "created": "2026-09-26T09:00:00.000-0400",
+        "updated": "2026-09-26T09:00:00.000-0400",
+        "issuetype": {
+          "name": "Subtask",
+          "hierarchyLevel": -1,
+          "subtask": true
+        },
+        "description": null,
+        "customfield_10043": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "src/a.py"
+                }
+              ]
+            }
+          ]
+        },
+        "customfield_10044": null,
+        "customfield_10045": null,
+        "customfield_10046": null,
+        "customfield_10047": {
+          "id": "10100",
+          "value": "agent"
+        },
+        "customfield_10048": null,
+        "customfield_10049": null,
+        "parent": {
+          "key": "PROJ-62",
+          "fields": {
+            "summary": "Write the CSV exporter",
+            "issuetype": {
+              "name": "Task",
+              "hierarchyLevel": 0,
+              "subtask": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "10064",
+      "key": "PROJ-64",
+      "fields": {
+        "summary": "A sub-task whose type carries no level",
+        "status": {
+          "name": "Open",
+          "statusCategory": {
+            "key": "new"
+          }
+        },
+        "labels": [],
+        "issuelinks": [],
+        "created": "2026-09-26T09:00:00.000-0400",
+        "updated": "2026-09-26T09:00:00.000-0400",
+        "issuetype": {
+          "name": "Sub-task"
+        },
+        "description": null,
+        "customfield_10043": null,
+        "customfield_10044": null,
+        "customfield_10045": null,
+        "customfield_10046": null,
+        "customfield_10047": null,
+        "customfield_10048": null,
+        "customfield_10049": null,
+        "parent": {
+          "key": "PROJ-62",
+          "fields": {
+            "summary": "Write the CSV exporter",
+            "issuetype": {
+              "name": "Task",
+              "hierarchyLevel": 0,
+              "subtask": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "10065",
+      "key": "PROJ-65",
+      "fields": {
+        "summary": "An epic whose type carries no level",
+        "status": {
+          "name": "To Do",
+          "statusCategory": {
+            "key": "new"
+          }
+        },
+        "labels": [],
+        "issuelinks": [],
+        "created": "2026-09-26T09:00:00.000-0400",
+        "updated": "2026-09-26T09:00:00.000-0400",
+        "issuetype": {
+          "name": "Epic"
+        },
+        "description": null,
+        "customfield_10043": null,
+        "customfield_10044": null,
+        "customfield_10045": null,
+        "customfield_10046": null,
+        "customfield_10047": null,
+        "customfield_10048": null,
+        "customfield_10049": null
+      }
+    }
+  ]
+}
