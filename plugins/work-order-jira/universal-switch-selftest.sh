@@ -53,7 +53,7 @@ cat > "$STUB" <<'STUBEOF'
 #!/bin/bash
 # A jira-http.sh-shaped stub over fixtures/switch/. State lives in
 # $WO_TEST_STATE. Knobs: SW_SCHEME=missing, SW_INUSE=<status id>, SW_GROUP_DROP=<status>,
-# SW_TASK=failed|empty, SW_EXTRA_SCHEME=<scheme id still using the old workflow>.
+# SW_TASK=failed|empty, SW_BUSY=1 (one 409 first), SW_EXTRA_SCHEME=<scheme id still using the old workflow>.
 set -uo pipefail
 FX="$WO_TEST_FX"
 ST="$WO_TEST_STATE"
@@ -137,6 +137,10 @@ case "$M:$P" in
         printf '%s' "$B" > "$ST/switch-body.json"
         [ "${SW_TASK:-}" = "failed" ] || : > "$ST/switched"
         # Measured live on WO 2026-09-26: the 303 body was empty.
+        if [ "${SW_BUSY:-}" = "1" ] && [ ! -f "$ST/busy-once" ]; then
+            : > "$ST/busy-once"
+            printf 'HTTP 409\n{"errorMessages":["Another task is currently running, please try again later."]}\n' >&2; exit 1
+        fi
         [ "${SW_TASK:-}" = "empty" ] && { printf 'HTTP 303\n' >&2; exit 1; }
         printf 'HTTP 303\n{"self":"https://example.atlassian.net/rest/api/3/task/10500","id":"10500","description":"Switch workflow scheme","status":"ENQUEUED","progress":0,"submitted":1,"submittedBy":1,"elapsedRuntime":0,"lastUpdate":1}\n' >&2
         exit 1 ;;
@@ -256,6 +260,11 @@ SW_TASK=failed run --yes
 eq "an async switch task that ends FAILED is a failure" "1" "$RC"
 contains "  and says so" "ended FAILED" "$OUT"
 not_contains "  and nothing is deleted" "DELETE" "$(writes)"
+
+fresh busy
+SW_BUSY=1 run --yes
+eq "a 409 from a running site task is retried, not fatal" "0" "$RC"
+contains "  and says so" "another Jira task is running" "$OUT"
 
 fresh empty303
 SW_TASK=empty run --yes
