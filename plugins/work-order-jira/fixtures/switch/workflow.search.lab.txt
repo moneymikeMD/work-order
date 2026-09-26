@@ -1,0 +1,3 @@
+# jira-http.sh GET /workflow/search?workflowName=Software%20Simplified%20Workflow%20for%20Project%20LAB&expand=statuses
+# Captured live 2026-09-26 against example.atlassian.net (read-only).
+{"maxResults":50,"startAt":0,"total":1,"isLast":true,"values":[{"id":{"name":"Software Simplified Workflow for Project LAB","entityId":"c01c212e-e092-4d2b-92aa-ca757e11a56f"},"statuses":[{"id":"1","name":"Open"},{"id":"10009","name":"To Do"},{"id":"10010","name":"Done"},{"id":"10011","name":"Triage"},{"id":"10012","name":"Awaiting Deployment"},{"id":"10013","name":"Deferred"},{"id":"10014","name":"Completed"},{"id":"10015","name":"Cancelled"},{"id":"3","name":"In Progress"}]}]}

@@ -1,0 +1,4 @@
+# jira-http.sh GET /workflowscheme/99999999
+# Captured live 2026-09-26 against example.atlassian.net (read-only).
+HTTP 404
+{"errorMessages":["The workflow scheme does not exist."],"errors":{}}

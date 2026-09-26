@@ -1,0 +1,3 @@
+# jira-http.sh GET /workflow/c01c212e-e092-4d2b-92aa-ca757e11a56f/workflowSchemes
+# Captured live 2026-09-26 against example.atlassian.net (read-only).
+{"workflowId":"c01c212e-e092-4d2b-92aa-ca757e11a56f","workflowSchemes":{"nextPageToken":null,"values":[{"id":"10005"}]}}

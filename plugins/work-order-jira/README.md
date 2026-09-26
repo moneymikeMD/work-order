@@ -19,9 +19,13 @@ re-release because an endpoint moved.
 - **`universal-apply.sh`** — converge the two site-wide Universal workflows
   and their shared workflow scheme towards `universal-workflows.json`,
   additively. `--dry-run` first; it validates against Jira and writes nothing.
+- **`universal-switch.sh`** — move a project onto the shared Universal
+  workflow scheme and delete its old per-project workflows and scheme.
+  Offline tests: `universal-switch-selftest.sh`.
 - **`fixtures/`** — responses recorded from a live Jira site.
-- **`selftest.sh`**, **`universal-apply-selftest.sh`** — offline; stub the HTTP
-  client and reach no network.
+- **`selftest.sh`**, **`universal-apply-selftest.sh`**,
+  **`universal-switch-selftest.sh`** — offline; stub the HTTP client and reach
+  no network.
 
 ## Requirements
 

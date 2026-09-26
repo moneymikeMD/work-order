@@ -1,0 +1,3 @@
+# jira-http.sh GET /project/LAB
+# Captured live 2026-09-26 against example.atlassian.net (read-only).
+{"id":"10004","key":"LAB","style":"classic","projectTypeKey":"software","issueTypes":[{"id":"10010","name":"Task","subtask":false,"hierarchyLevel":0},{"id":"10011","name":"Sub-task","subtask":true,"hierarchyLevel":-1},{"id":"10005","name":"Story","subtask":false,"hierarchyLevel":0},{"id":"10012","name":"Bug","subtask":false,"hierarchyLevel":0},{"id":"10000","name":"Epic","subtask":false,"hierarchyLevel":1}]}
