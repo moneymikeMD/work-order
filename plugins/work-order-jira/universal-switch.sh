@@ -416,10 +416,19 @@ do_switch() {
     [ "$PLAN" = "1" ] && return 0
 
     errf=$(tmpfile) || die "could not create a scratch file"
-    set +e
-    out=$(http_post /workflowscheme/project/switch "$body" 2>"$errf")
-    rc=$?
-    set -e
+    # Jira runs one scheme switch per site at a time and answers 409 meanwhile.
+    local waited=0
+    while :; do
+        set +e
+        out=$(http_post /workflowscheme/project/switch "$body" 2>"$errf")
+        rc=$?
+        set -e
+        if [ "$rc" -eq 0 ] || ! grep -q '^HTTP 409' "$errf"; then break; fi
+        [ "$waited" -lt "$TIMEOUT_SECONDS" ] || { cat "$errf" >&2; die "another Jira task still holds the switch after ${TIMEOUT_SECONDS}s"; }
+        echo "another Jira task is running; retrying the switch in ${POLL_SECONDS}s"
+        sleep "$POLL_SECONDS"
+        waited=$((waited + (POLL_SECONDS > 0 ? POLL_SECONDS : 1)))
+    done
     if [ "$rc" -eq 0 ]; then
         task=$(task_json_from_switch "$out" "$errf") || task=""
     elif grep -q '^HTTP 303' "$errf"; then
