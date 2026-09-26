@@ -371,6 +371,19 @@ wait_for_task() {
     done
 }
 
+# wait_for_scheme — poll the project's scheme until it is the target. Jira's
+# 303 carries the task only in a Location header, which the client drops.
+wait_for_scheme() {
+    local waited=0 now
+    while :; do
+        now=$(current_scheme | jq -r '.id // "" | tostring') || die "could not read the workflow scheme of project $PROJECT_KEY while waiting on the switch"
+        [ "$now" = "$TARGET_SCHEME_ID" ] && { echo "project $PROJECT_KEY is now on '$TARGET_SCHEME_NAME'"; return 0; }
+        [ "$waited" -lt "$TIMEOUT_SECONDS" ] || die "project $PROJECT_KEY is still not on '$TARGET_SCHEME_NAME' after ${TIMEOUT_SECONDS}s — check it by hand"
+        sleep "$POLL_SECONDS"
+        waited=$((waited + (POLL_SECONDS > 0 ? POLL_SECONDS : 1)))
+    done
+}
+
 do_switch() {
     local plan body out errf rc task task_id
     echo "project $PROJECT_KEY is on '$CURRENT_SCHEME_NAME' (id $CURRENT_SCHEME_ID)"
@@ -395,14 +408,20 @@ do_switch() {
     rc=$?
     set -e
     if [ "$rc" -eq 0 ]; then
-        task=$(task_json_from_switch "$out" "$errf") || die "the switch returned an empty body — no task to wait on"
+        task=$(task_json_from_switch "$out" "$errf") || task=""
+    elif grep -q '^HTTP 303' "$errf"; then
+        task=$(task_json_from_switch "" "$errf") || task=""
     else
-        task=$(task_json_from_switch "" "$errf") || { cat "$errf" >&2; die "POST /workflowscheme/project/switch failed"; }
+        cat "$errf" >&2; die "POST /workflowscheme/project/switch failed"
     fi
     task_id=$(printf '%s' "$task" | jq -r '[(.id // empty | tostring), ((.self // "") | capture("/task/(?<i>[0-9]+)").i)] | .[0] // empty' 2>/dev/null) || task_id=""
-    [ -n "$task_id" ] || die "the switch answered without a task id — check project $PROJECT_KEY by hand. Body: $task"
-    echo "switch task $task_id started"
-    wait_for_task "$task_id"
+    if [ -n "$task_id" ]; then
+        echo "switch task $task_id started"
+        wait_for_task "$task_id"
+    else
+        echo "the switch answered with no task id; waiting for the project's scheme to change"
+        wait_for_scheme
+    fi
     SWITCHED=1
 }
 

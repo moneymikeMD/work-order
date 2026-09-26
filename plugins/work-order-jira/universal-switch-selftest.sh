@@ -53,7 +53,7 @@ cat > "$STUB" <<'STUBEOF'
 #!/bin/bash
 # A jira-http.sh-shaped stub over fixtures/switch/. State lives in
 # $WO_TEST_STATE. Knobs: SW_SCHEME=missing, SW_INUSE=<status id>, SW_GROUP_DROP=<status>,
-# SW_TASK=failed, SW_EXTRA_SCHEME=<scheme id still using the old workflow>.
+# SW_TASK=failed|empty, SW_EXTRA_SCHEME=<scheme id still using the old workflow>.
 set -uo pipefail
 FX="$WO_TEST_FX"
 ST="$WO_TEST_STATE"
@@ -136,6 +136,8 @@ case "$M:$P" in
         # reports as a non-2xx: "HTTP 303" on stderr, then the body.
         printf '%s' "$B" > "$ST/switch-body.json"
         [ "${SW_TASK:-}" = "failed" ] || : > "$ST/switched"
+        # Measured live on WO 2026-09-26: the 303 body was empty.
+        [ "${SW_TASK:-}" = "empty" ] && { printf 'HTTP 303\n' >&2; exit 1; }
         printf 'HTTP 303\n{"self":"https://example.atlassian.net/rest/api/3/task/10500","id":"10500","description":"Switch workflow scheme","status":"ENQUEUED","progress":0,"submitted":1,"submittedBy":1,"elapsedRuntime":0,"lastUpdate":1}\n' >&2
         exit 1 ;;
     GET:/task/10500)
@@ -254,6 +256,12 @@ SW_TASK=failed run --yes
 eq "an async switch task that ends FAILED is a failure" "1" "$RC"
 contains "  and says so" "ended FAILED" "$OUT"
 not_contains "  and nothing is deleted" "DELETE" "$(writes)"
+
+fresh empty303
+SW_TASK=empty run --yes
+eq "a 303 with no task body falls back to polling the project's scheme" "0" "$RC"
+contains "  and says so" "waiting for the project's scheme to change" "$OUT"
+not_contains "  never polls a task" "GET /task/" "$(cat "$LOG")"
 
 fresh wfinuse
 SW_EXTRA_SCHEME=10099 run --yes
