@@ -524,7 +524,8 @@ contains "  as an unknown flag" "unknown flag '--workflow-apply'" "$OUT"
 OUT=$("$PROVISION" --dry-run --project ZZPROBE --http "$STUB" --rules x 2>&1); RC=$?
 eq "provision rejects the retired --rules flag" "1" "$RC"
 
-OUT=$("$PROVISION" --dry-run --project ZZPROBE --http "$STUB" --universal-switch "$USWITCH" 2>&1); RC=$?
+reset_log prov-default-apply
+OUT=$(WO_TEST_LOG="$LOG" "$PROVISION" --dry-run --project ZZPROBE --http "$STUB" --universal-switch "$USWITCH" 2>&1); RC=$?
 if [ -x "$HERE/universal-apply.sh" ]; then
     eq "provision finds universal-apply.sh beside itself by default" "0" "$RC"
 else
