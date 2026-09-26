@@ -193,9 +193,9 @@ def load_jira_set(root, stages):
     """Read a recorded Jira set from ROOT. Returns (tickets, strays, layout,
     claim_text, claim_source): a ticket per issue in a mapped lifecycle
     position, and a stray per issue in any other status, per [JIRA-3]. The
-    mapped set is the seven statuses of BINDING.md section 3 plus its two
-    read-only legacy aliases, intersected with the positions STAGES names.
-    Epics and Sub-tasks are groupings, not tickets, and are skipped ([JIRA-16])."""
+    mapped set is the seven statuses of BINDING.md section 3, intersected
+    with the positions STAGES names. Epics and Sub-tasks are groupings, not
+    tickets, and are skipped ([JIRA-16])."""
     root = Path(root)
     listing = root / "field.list.json" if root.is_dir() else None
     ids = resolve_field_ids(_read_json(listing) if listing and listing.is_file() else None)
@@ -223,8 +223,8 @@ def load_jira_set(root, stages):
             stage = status_to_stage.get(status)
             if stage is None:
                 strays.append((key, f"status '{status or '(none)'}' is not one of the "
-                                    "seven lifecycle positions or their two legacy "
-                                    "aliases, so the ticket has none ([JIRA-3])"))
+                                    "seven lifecycle positions, so the ticket has "
+                                    "none ([JIRA-3])"))
                 continue
             ticket = issue_to_ticket(issue, ids)
             ticket["_stage"] = stage

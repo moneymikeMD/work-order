@@ -211,12 +211,9 @@ JIRA_FIELDS = ",".join([
 # The legacy /rest/api/3/search is 410 Gone on newer sites; /search/jql
 # returns no "total" and paginates by nextPageToken, not startAt.
 def _jira_jql(project_key):
-    """The one JQL fetch (see JIRA_SEARCH_PATH's docstring): excludes
-    Completed/Cancelled, and Done — the closed status a template-derived
-    Space (LAB and others) ships instead of Completed. A project on that
-    template still needs Done excluded here or every closed ticket comes
-    back and lint()/board() flag it as jira-unknown-status:Done."""
-    return f"project = {project_key} AND status not in (Completed, Cancelled, Done) ORDER BY key ASC"
+    """The one JQL fetch (see JIRA_SEARCH_PATH's docstring): excludes the two
+    terminal positions, Completed and Cancelled."""
+    return f"project = {project_key} AND status not in (Completed, Cancelled) ORDER BY key ASC"
 
 
 JIRA_PROJECT_KEY = os.environ.get("ISSUES_JIRA_PROJECT", "PROJ")
@@ -224,12 +221,11 @@ JIRA_JQL = _jira_jql(JIRA_PROJECT_KEY)
 JIRA_SEARCH_PATH = "/search/jql"
 JIRA_MAX_RESULTS = 500
 
-# The seven statuses the work-order Jira binding binds, plus the scrum
-# template's own two, which it reads as aliases and never writes (BINDING.md
-# section 3). Triage and Deferred are positions but never WORKABLE: both are
-# parked until something moves them, and the thing that moves a Deferred issue
-# is a global Jira automation that scans defer_until daily and transitions it
-# into To Do, which reads back as open.
+# The seven statuses the work-order Jira binding binds (BINDING.md section
+# 3). Triage and Deferred are positions but never WORKABLE: both are parked
+# until something moves them, and the thing that moves a Deferred issue is a
+# global Jira automation that scans defer_until daily and transitions it into
+# Open.
 JIRA_STATUS_TO_STAGE = {
     "Triage": "triage",
     "Open": "open",
@@ -238,11 +234,6 @@ JIRA_STATUS_TO_STAGE = {
     "Deferred": "deferred",
     "Completed": "completed",
     "Cancelled": "cancelled",
-    # Read-only aliases, the scrum template's own ready and closed statuses.
-    "To Do": "open",
-    # Template Spaces ship Done, not Completed, as the closed status; it must
-    # also be excluded in _jira_jql() or every closed ticket comes back.
-    "Done": "completed",
 }
 
 
@@ -1074,21 +1065,21 @@ def _no_executor_fixture():
 
 
 def _done_status_fixture():
-    """A ticket whose Jira status is the template's `Done` (not `Completed`)
+    """A ticket whose Jira status is the template's `Done` — retired as a
+    stage (WO-81), so it now reads as an unmapped stray, not `completed` —
     plus a shadow stand-in (see _jira_shadow_for_blocker), the shape
     load_jira() actually produces when a blocked_by target is excluded from
-    the fetch. Exercises two things found together on 2026-09-11: `Done`
-    must map to the `completed` stage, and lint()'s summary count must
-    exclude the shadow the same way board()'s total already does — the two
-    disagreed by exactly the shadow count before this fixture existed."""
+    the fetch. Exercises lint()'s summary count excluding the shadow the same
+    way board()'s total already does — the two disagreed by exactly the
+    shadow count before this fixture existed."""
     base = {
         "created": "2026-01-01", "updated": "2026-01-01", "tags": [],
         "blocked_by": [], "human_steps": [], "appends": [], "epic": None,
         "defer_until": None, "_is_epic": False, "_body": "",
     }
-    done = dict(base, id="ZZ-902", title="closed via template's Done status",
+    done = dict(base, id="ZZ-902", title="in the template's Done status",
                 executor="agent", touches=["scratch/zz902/*"], verify="true",
-                _path="ZZ-902", _stage=JIRA_STATUS_TO_STAGE["Done"])
+                _path="ZZ-902", _stage="jira-unknown-status:Done")
     shadow = {
         "id": "ZZ-903", "title": "", "created": "", "updated": "",
         "tags": [], "blocked_by": [], "touches": [], "verify": "",
@@ -1196,10 +1187,12 @@ def _lifecycle_selftest():
             failures.append(f"{stage} is missing from STAGES")
     if JIRA_STATUS_TO_STAGE.get("Open") != "open":
         failures.append("the Jira status 'Open' does not map to the open "
-                        "position — it is what the position binds to")
-    if JIRA_STATUS_TO_STAGE.get("To Do") != "open":
-        failures.append("the Jira status 'To Do' does not read back as the open "
-                        "position — the deferral automation moves issues there")
+                        "position — it is what the position binds to, and what "
+                        "the deferral automation moves issues into")
+    if JIRA_STATUS_TO_STAGE.get("To Do") is not None:
+        failures.append("the Jira status 'To Do' still maps to a stage — it "
+                        "was retired as a read-only alias (WO-81) and should "
+                        "now be an unmapped stray")
     return failures
 
 
@@ -1207,7 +1200,7 @@ def selftest():
     """Fixture-based checks, no <dir>, Jira, or network access needed:
     1. a ticket captured with only a title/description and no executor set
        must never land in `next` or a wave.
-    2. a Jira `Done` status lands in the `completed` stage, and lint()'s
+    2. a Jira `Done` status is an unmapped stray (WO-81), and lint()'s
        "N tickets" summary agrees with board()'s "N total" once a shadow
        stand-in is in play (see _done_status_fixture).
     Prints PASS/FAIL and returns an exit code."""
@@ -1242,8 +1235,9 @@ def selftest():
 
     done_tickets = _done_status_fixture()
     done_ticket = next(t for t in done_tickets if t["id"] == "ZZ-902")
-    if done_ticket["_stage"] != "completed":
-        failures.append(f"Done status mapped to stage '{done_ticket['_stage']}', not 'completed'")
+    if done_ticket["_stage"] != "jira-unknown-status:Done":
+        failures.append(f"Done status mapped to stage '{done_ticket['_stage']}', "
+                        f"expected the unmapped stray 'jira-unknown-status:Done'")
 
     lint_out = capture(lint, done_tickets, "selftest")
     board_out2 = capture(board, done_tickets, "selftest")
@@ -1269,7 +1263,7 @@ def selftest():
         return 1
     print("SELFTEST OK — no-executor ticket excluded from next, "
           "flagged [?] not startable: no executor in board; Done status "
-          "maps to completed; lint/board ticket counts agree; scope "
+          "is an unmapped stray (WO-81); lint/board ticket counts agree; scope "
           "classifies touches/appends/UNDECLARED and exits 0/1/2; "
           "awaiting-deployment is not dispatched but still resolves a "
           "blocked_by; a cross-project blocker is external, not missing; "
