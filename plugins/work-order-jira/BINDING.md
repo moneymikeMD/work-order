@@ -107,6 +107,13 @@ write a position anywhere but `status`, per `[MUST-26]`. `statusCategory` in
 particular collapses `Triage`, `Open` and `Deferred` into one value and cannot
 be derived back.
 
+The workflows still keep `fields.resolution` accurate for Jira's own reports and
+filters: `complete` sets it to `Done`, every `cancel` to `Won't Do`, and
+`re-open`, `re-work` and the grouping workflow's `Continue Progress` clear it.
+These are `system:update-field` actions in `universal-workflows.json`. They
+record the outcome for Jira; they do not make resolution a second
+representation of the position, and no implementation reads it.
+
 [JIRA-3] A ticket whose status is not one of the seven above has no lifecycle
 position under this binding. An implementation MUST report that as an error
 and MUST NOT guess a position from the status name, its category, or its

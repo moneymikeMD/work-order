@@ -1,0 +1,193 @@
+# POST /workflows '{"workflowNames":["Universal Simpllfied Workflow"]}' — the Simplified tier workflow (name typo is real), no actions
+# Captured live 2026-09-26 against example.atlassian.net (host scrubbed), read-only.
+{
+  "statuses": [
+    {
+      "id": "1",
+      "statusReference": "1",
+      "name": "Open",
+      "statusCategory": "TODO",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "3",
+      "statusReference": "3",
+      "name": "In Progress",
+      "statusCategory": "IN_PROGRESS",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    },
+    {
+      "id": "10010",
+      "statusReference": "10010",
+      "name": "Done",
+      "statusCategory": "DONE",
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "description": ""
+    }
+  ],
+  "workflows": [
+    {
+      "scope": {
+        "type": "GLOBAL"
+      },
+      "version": {
+        "versionNumber": 1,
+        "id": "718c9aed-9f10-470e-be0c-499d71c45db6"
+      },
+      "id": "0184d04c-22c3-4397-b23b-bf9db253d65f",
+      "name": "Universal Simpllfied Workflow",
+      "description": "A simple workflow for simple projects.",
+      "isEditable": true,
+      "startPointLayout": {
+        "x": 1046.15234375,
+        "y": -471.9687316894531
+      },
+      "statuses": [
+        {
+          "statusReference": "1",
+          "layout": {
+            "x": 1025.81640625,
+            "y": -339.32267456054683
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "3",
+          "layout": {
+            "x": 1009.7890625,
+            "y": -221.93088989257808
+          },
+          "properties": {},
+          "deprecated": false
+        },
+        {
+          "statusReference": "10010",
+          "layout": {
+            "x": 1025.81640625,
+            "y": -92.43088989257808
+          },
+          "properties": {},
+          "deprecated": false
+        }
+      ],
+      "transitions": [
+        {
+          "id": "1",
+          "type": "INITIAL",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "toPort": 1
+            }
+          ],
+          "name": "Create",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "2",
+          "type": "DIRECTED",
+          "toStatusReference": "3",
+          "links": [
+            {
+              "fromStatusReference": "1",
+              "fromPort": 5,
+              "toPort": 1
+            }
+          ],
+          "name": "In Progress",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "3",
+          "type": "DIRECTED",
+          "toStatusReference": "10010",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 5,
+              "toPort": 1
+            }
+          ],
+          "name": "Done",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "6",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "3",
+              "fromPort": 7,
+              "toPort": 7
+            }
+          ],
+          "name": "Open",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "4",
+          "type": "DIRECTED",
+          "toStatusReference": "1",
+          "links": [
+            {
+              "fromStatusReference": "10010",
+              "fromPort": 3,
+              "toPort": 3
+            }
+          ],
+          "name": "Open",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        },
+        {
+          "id": "5",
+          "type": "DIRECTED",
+          "toStatusReference": "3",
+          "links": [
+            {
+              "fromStatusReference": "10010",
+              "fromPort": 2,
+              "toPort": 5
+            }
+          ],
+          "name": "In Progress",
+          "description": "",
+          "actions": [],
+          "validators": [],
+          "triggers": [],
+          "properties": {}
+        }
+      ],
+      "loopedTransitionContainerLayout": {}
+    }
+  ]
+}

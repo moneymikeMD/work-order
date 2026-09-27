@@ -18,8 +18,8 @@
 #
 # Convergence is additive. A workflow present only under its spec
 # `renamed_from` name is renamed; a missing status, transition (matched by
-# from -> to, never by name) or validator (matched by ruleKey + parameters) is
-# added; a missing scheme mapping is added. A missing project category,
+# from -> to, never by name), validator or action (each matched by ruleKey +
+# parameters) is added; a missing scheme mapping is added. A missing project category,
 # screen, screen scheme, issue type screen scheme or issue type scheme is
 # created; a missing field,
 # mapping or issue type is added to an existing one. Nothing is ever changed or
@@ -91,8 +91,10 @@ SPEC_JSON=$(jq -c '
         | .transitions[] |= (
             need((.name | type) == "string" and (.to | type) == "string" and ((.from | type) == "string" or .from == null) and (.validators | type) == "array";
                  "each transition needs a name, a to, a from (a status name or null) and a validators array")
-            | .validators[] |= need((.ruleKey | type) == "string" and (.parameters | type) == "object";
-                 "each validator needs a ruleKey string and a parameters object")))
+            | .actions //= []
+            | need((.actions | type) == "array"; "the actions of a transition, when present, must be an array")
+            | (.validators[], .actions[]) |= need((.ruleKey | type) == "string" and (.parameters | type) == "object";
+                 "each validator and action needs a ruleKey string and a parameters object")))
     | .scheme |= need((.name | type) == "string" and (.defaultWorkflow | type) == "string"
                       and (.issueTypeMappings | type) == "object" and (.issueTypeHierarchyLevels | type) == "object";
                       "the scheme needs name, defaultWorkflow, issueTypeMappings and issueTypeHierarchyLevels")
@@ -101,27 +103,32 @@ SPEC_JSON=$(jq -c '
 STATUSES=$(http_get "/statuses/search?maxResults=100") \
     || die "could not read /statuses/search: $(http_err)"
 FIELDS=$(http_get "/field") || die "could not read /field: $(http_err)"
+RESOLUTIONS=$(http_get "/resolution") || die "could not read /resolution: $(http_err)"
 
 # Every status name becomes {name, id, category}, every transition end a status
-# id, and every {field:NAME} a custom field id. Anything that resolves to zero
-# or several site objects is left as UNRESOLVED:... and fatal below.
-RESOLVED=$(jq -cn --argjson spec "$SPEC_JSON" --argjson statuses "$STATUSES" --argjson fields "$FIELDS" '
+# id, every {field:NAME} a custom field id and every {resolution:NAME} a
+# resolution id. Anything that resolves to zero or several site objects is left
+# as UNRESOLVED:... and fatal below.
+RESOLVED=$(jq -cn --argjson spec "$SPEC_JSON" --argjson statuses "$STATUSES" --argjson fields "$FIELDS" --argjson res "$RESOLUTIONS" '
     def one($kind; $n; $m): if ($m | length) == 1 then $m[0].id else "UNRESOLVED:" + $kind + ":" + $n end;
     def sid($n): if $n == null then null else one("status"; $n; [$statuses.values[] | select(.name == $n)]) end;
-    def field_ph:
+    def ph:
         if type == "string" and test("^\\{field:.+\\}$") then
             capture("^\\{field:(?<n>.+)\\}$").n as $n | one("field"; $n; [$fields[] | select(.name == $n)])
+        elif type == "string" and test("^\\{resolution:.+\\}$") then
+            capture("^\\{resolution:(?<n>.+)\\}$").n as $n | one("resolution"; $n; [$res[] | select(.name == $n)])
         else . end;
     $spec.workflows | map(
         .statuses |= map(. as $n | {name: $n, id: sid($n),
             category: ([$statuses.values[] | select(.name == $n) | .statusCategory][0] // null)})
         | .transitions |= map(.fromName = .from | .toName = .to | .from = sid(.from) | .to = sid(.to)
-            | .validators |= map({ruleKey, parameters: (.parameters | map_values(field_ph))})))
+            | .validators |= map({ruleKey, parameters: (.parameters | map_values(ph))})
+            | .actions |= map({ruleKey, parameters: (.parameters | map_values(ph))})))
     ') || die "could not resolve the names in '$SPEC'"
 UNRESOLVED=$(printf '%s' "$RESOLVED" | jq -r '[.. | strings | select(startswith("UNRESOLVED:"))] | unique | join(", ")') \
     || die "could not scan the resolved spec"
 [ -z "$UNRESOLVED" ] || die "'$SPEC' names something this site does not have exactly once: $UNRESOLVED"
-if printf '%s' "$RESOLVED" | grep -Eiq '\{[[:space:]]*field[[:space:]]*:'; then
+if printf '%s' "$RESOLVED" | grep -Eiq '\{[[:space:]]*(field|resolution)[[:space:]]*:'; then
     die "'$SPEC' still contains a placeholder-shaped value after resolution (a typo, wrong case, or extra text) — refusing to send it"
 fi
 
@@ -162,11 +169,16 @@ locate_workflow() {
 # rename, statuses/transitions/validators to add, what is not in the spec, and
 # errors. Pure function of the spec, the bulk-get in $BULK and $CUR_NAME.
 plan_workflow() {
-    jq -cn --argjson s "$1" --argjson bulk "$BULK" --arg cur "$CUR_NAME" --argjson fields "$FIELDS" --argjson statuses "$STATUSES" '
+    jq -cn --argjson s "$1" --argjson bulk "$BULK" --arg cur "$CUR_NAME" --argjson fields "$FIELDS" --argjson statuses "$STATUSES" --argjson res "$RESOLUTIONS" '
         def sname($id): if $id == null then "(create)" else ([$statuses.values[] | select(.id == $id) | .name][0] // ("status " + $id)) end;
         def rule_label: if .parameters.fieldsRequired then
                 (.parameters.fieldsRequired as $f | "requires " + ([$fields[] | select(.id == $f) | .name][0] // $f))
+            elif .ruleKey == "system:update-field" and .parameters.field == "resolution" then
+                (.parameters.value as $v | if ($v // "") == "" then "clears resolution"
+                 else "sets resolution " + ([$res[] | select(.id == $v) | .name][0] // $v) end)
             else .ruleKey end;
+        def core: {ruleKey, parameters};
+        def missing($want; $have): [$want[] | select(. as $r | any($have[]; . == $r) | not)];
         def is_initial: ((.type // "") | ascii_downcase) == "initial";
         def froms: [(.links // [])[] | .fromStatusReference | select(. != null)];
         [$bulk.workflows[] | select(.name == $cur)] as $wfs
@@ -182,16 +194,21 @@ plan_workflow() {
         | [$missing | to_entries[] | .key as $k | .value
             | {id: (($maxid + 1 + $k) | tostring), type: "DIRECTED", name, description: "",
                toStatusReference: .to, links: [{fromStatusReference: .from}],
-               actions: [], validators, triggers: [], properties: {},
-               _label: "\(.name)  \(.fromName) -> \(.toName)", _rules: (.validators | map(rule_label))}
+               actions, validators, triggers: [], properties: {},
+               _label: "\(.name)  \(.fromName) -> \(.toName)", _rules: ((.validators + .actions) | map(rule_label))}
           ] as $addT
         | [$pairs[] | select((.m | length) == 1)
             | .m[0] as $e | .t as $t
-            | (($e.validators // []) | map({ruleKey, parameters})) as $hv
-            | [$t.validators[] | select(. as $v | any($hv[]; . == $v) | not)] as $add
+            | missing($t.validators; ($e.validators // []) | map(core)) as $add
             | select(($add | length) > 0)
             | {id: $e.id, validators: $add, _label: "\($e.name) (\($e.id))  \($t.fromName // "(create)") -> \($t.toName)", _rules: ($add | map(rule_label))}
           ] as $addV
+        | [$pairs[] | select((.m | length) == 1)
+            | .m[0] as $e | .t as $t
+            | missing($t.actions; ($e.actions // []) | map(core)) as $add
+            | select(($add | length) > 0)
+            | {id: $e.id, actions: $add, _label: "\($e.name) (\($e.id))  \($t.fromName // "(create)") -> \($t.toName)", _rules: ($add | map(rule_label))}
+          ] as $addA
         | ([$s.statuses[].id]) as $specSids
         | [$s.statuses[] | select(.id as $i | [$wf.statuses[].statusReference] | index($i) | not)
             | {id, statusReference: .id, name, statusCategory: .category}] as $addS
@@ -206,13 +223,16 @@ plan_workflow() {
             addStatuses: $addS,
             addTransitions: $addT,
             addValidators: $addV,
+            addActions: $addA,
             notInSpec: (
                 [$wf.statuses[] | select(.statusReference as $r | $specSids | index($r) | not) | "status \(sname(.statusReference))"]
                 + [$have[] | select(.id as $i | $matchedIds | index($i) | not)
                     | "transition \(.id) \"\(.name)\"  \(if is_initial then "(create)" elif (froms | length) == 0 then "(any)" else (froms | map(sname(.)) | join(",")) end) -> \(sname(.toStatusReference))"]
                 + [$pairs[] | select((.m | length) == 1) | .m[0] as $e | .t as $t
-                    | (($e.validators // [])[] | select(({ruleKey, parameters}) as $v | any($t.validators[]; . == $v) | not)
+                    | (($e.validators // [])[] | select(core as $v | any($t.validators[]; . == $v) | not)
                         | "validator \(.ruleKey) (\(rule_label)) on transition \($e.id) \"\($e.name)\""),
+                      (($e.actions // [])[] | select(core as $v | any($t.actions[]; . == $v) | not)
+                        | "action \(.ruleKey) (\(rule_label)) on transition \($e.id) \"\($e.name)\""),
                       (select($e.name != $t.name) | "transition \($e.id) is named \"\($e.name)\" here, \"\($t.name)\" in the spec")]
             ),
             errors: (
@@ -224,7 +244,8 @@ plan_workflow() {
             )
           }
           | .changes = ((if .rename then 1 else 0 end) + (.addStatuses | length) + (.addTransitions | length)
-                        + ([.addValidators[].validators | length] | add // 0))
+                        + ([.addValidators[].validators | length] | add // 0)
+                        + ([.addActions[].actions | length] | add // 0))
         end'
 }
 
@@ -246,7 +267,9 @@ build_body() {
                     transitions: (
                         ($wf.transitions | map(. as $t
                             | [$p.addValidators[] | select(.id == $t.id) | .validators[]] as $add
-                            | if ($add | length) > 0 then .validators = ((.validators // []) + $add) else . end))
+                            | [$p.addActions[] | select(.id == $t.id) | .actions[]] as $addA
+                            | if ($add | length) > 0 then .validators = ((.validators // []) + $add) else . end
+                            | if ($addA | length) > 0 then .actions = ((.actions // []) + $addA) else . end))
                         + [$p.addTransitions[] | del(._label, ._rules)])
                   }
             ]
@@ -288,6 +311,7 @@ print_plan() {
         (.addStatuses[] | "  add status:       \(.name)"),
         (.addTransitions[] | "  add transition:   \(._label)  [id \(.id)]\(if (._rules | length) > 0 then "  " + (._rules | join(", ")) else "" end)"),
         (.addValidators[] | "  add validator:    \(._label): \(._rules | join(", "))"),
+        (.addActions[] | "  add action:       \(._label): \(._rules | join(", "))"),
         (.notInSpec[] | "  not in spec (left alone): \(.)"),
         "  \(.changes) change\(if .changes == 1 then "" else "s" end)"'
 }
