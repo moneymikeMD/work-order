@@ -316,7 +316,7 @@ eq "  and the grouping workflow carries zero validators in all" "0" \
 
 # res BODY — each transition carrying an action, as "id=<resolution value>", "" for a clear.
 res() { printf '%s' "$1" | jq -r '[.workflows[0].transitions[] | select((.actions // []) | length > 0)
-    | "\(.id)=\([.actions[] | select(.ruleKey == "system:update-field" and .parameters.field == "resolution" and .parameters.mode == "") | .parameters.value] | join("+"))"]
+    | "\(.id)=\([.actions[] | select(.ruleKey == "system:update-field" and .parameters.field == "resolution" and .parameters.mode == (if .parameters.value == "" then "" else "replace" end)) | .parameters.value] | join("+"))"]
     | sort_by(split("=")[0] | tonumber) | join(" ")'; }
 eq "resolution: complete sets Done, every cancel Won't Do, re-open and re-work clear it" \
     "5=10000 6=10001 9= 11=10001 12= 13= 15= 16=10001 17=10001 18=10001" "$(res "$TB")"
