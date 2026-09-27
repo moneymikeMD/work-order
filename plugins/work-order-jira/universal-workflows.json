@@ -7,7 +7,7 @@
     "A transition is identified by (from, to), never by its name. from is null only for the initial transition, the one Jira runs on create.",
     "No transition carries system:previous-status-validator: the task workflow's transitions are DIRECTED, so reaching Completed through Awaiting Deployment is structural (owner decision 2026-09-26, reversing NWM-110). There is no In Progress -> Completed transition: every ticket occupies Awaiting Deployment before Completed (work-order MUST-27). Every transition into Open requires verify.",
     "The grouping workflow carries no validator by design: Epics and Sub-tasks are not tickets.",
-    "actions are post-functions, matched by ruleKey + parameters like validators. system:update-field on resolution sets it on every transition into Completed or Done ({resolution:Done}) and Cancelled ({resolution:Won't Do}), and clears it (value \"\") on every re-open and re-work and on each grouping or Simplified transition back out of a terminal status. {resolution:<name>} resolves to that resolution's id via GET /resolution.",
+    "actions are post-functions, matched by ruleKey + parameters like validators. system:update-field on resolution sets it on every transition into Completed or Done ({resolution:Done}) and Cancelled ({resolution:Won't Do}), and clears it (value \"\") on every re-open and re-work and on each grouping or Simplified transition back out of a terminal status. {resolution:<name>} resolves to that resolution's id via GET /resolution. A set is declared with mode \"replace\" because Jira stores it that way whatever mode is sent (measured 2026-09-26); a clear keeps mode \"\".",
     "The Simplified workflow's name typo is its live name; it is declared here only for its resolution actions."
   ],
   "workflows": [
@@ -36,22 +36,22 @@
         ]},
         {"name": "ready for verification", "from": "In Progress", "to": "Awaiting Deployment", "validators": []},
         {"name": "re-work", "from": "Awaiting Deployment", "to": "In Progress", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "", "mode": ""}}], "validators": []},
-        {"name": "complete", "from": "Awaiting Deployment", "to": "Completed", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Done}", "mode": ""}}], "validators": [
+        {"name": "complete", "from": "Awaiting Deployment", "to": "Completed", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Done}", "mode": "replace"}}], "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:verify}", "ignoreContext": "true", "errorMessage": "verify is required before completing (work-order MUST-7)"}}
         ]},
-        {"name": "cancel", "from": "Triage", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": ""}}], "validators": [
+        {"name": "cancel", "from": "Triage", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": "replace"}}], "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
         ]},
-        {"name": "cancel", "from": "Open", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": ""}}], "validators": [
+        {"name": "cancel", "from": "Open", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": "replace"}}], "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
         ]},
-        {"name": "cancel", "from": "Deferred", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": ""}}], "validators": [
+        {"name": "cancel", "from": "Deferred", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": "replace"}}], "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
         ]},
-        {"name": "cancel", "from": "In Progress", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": ""}}], "validators": [
+        {"name": "cancel", "from": "In Progress", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": "replace"}}], "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
         ]},
-        {"name": "cancel", "from": "Awaiting Deployment", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": ""}}], "validators": [
+        {"name": "cancel", "from": "Awaiting Deployment", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": "replace"}}], "validators": [
           {"ruleKey": "system:validate-field-value", "parameters": {"ruleType": "fieldRequired", "fieldsRequired": "{field:outcome}", "ignoreContext": "true", "errorMessage": "outcome is required to cancel (work-order MUST-28)"}}
         ]},
         {"name": "re-open", "from": "In Progress", "to": "Open", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "", "mode": ""}}], "validators": [
@@ -74,10 +74,10 @@
         {"name": "Open", "from": "Triage", "to": "Open", "validators": []},
         {"name": "Start Progress", "from": "Open", "to": "In Progress", "validators": []},
         {"name": "Stop Progress", "from": "In Progress", "to": "Open", "validators": []},
-        {"name": "Complete", "from": "In Progress", "to": "Completed", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Done}", "mode": ""}}], "validators": []},
-        {"name": "Cancel", "from": "Triage", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": ""}}], "validators": []},
-        {"name": "Cancel", "from": "Open", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": ""}}], "validators": []},
-        {"name": "Cancel", "from": "In Progress", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": ""}}], "validators": []},
+        {"name": "Complete", "from": "In Progress", "to": "Completed", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Done}", "mode": "replace"}}], "validators": []},
+        {"name": "Cancel", "from": "Triage", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": "replace"}}], "validators": []},
+        {"name": "Cancel", "from": "Open", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": "replace"}}], "validators": []},
+        {"name": "Cancel", "from": "In Progress", "to": "Cancelled", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Won't Do}", "mode": "replace"}}], "validators": []},
         {"name": "Continue Progress", "from": "Completed", "to": "In Progress", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "", "mode": ""}}], "validators": []},
         {"name": "Continue Progress", "from": "Cancelled", "to": "In Progress", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "", "mode": ""}}], "validators": []}
       ]
@@ -88,7 +88,7 @@
       "transitions": [
         {"name": "Create", "from": null, "to": "Open", "validators": []},
         {"name": "In Progress", "from": "Open", "to": "In Progress", "validators": []},
-        {"name": "Done", "from": "In Progress", "to": "Done", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Done}", "mode": ""}}], "validators": []},
+        {"name": "Done", "from": "In Progress", "to": "Done", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "{resolution:Done}", "mode": "replace"}}], "validators": []},
         {"name": "Open", "from": "In Progress", "to": "Open", "validators": []},
         {"name": "Open", "from": "Done", "to": "Open", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "", "mode": ""}}], "validators": []},
         {"name": "In Progress", "from": "Done", "to": "In Progress", "actions": [{"ruleKey": "system:update-field", "parameters": {"field": "resolution", "value": "", "mode": ""}}], "validators": []}
