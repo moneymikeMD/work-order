@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.8.0](https://github.com/moneymikeMD/work-order/compare/v1.7.0...v1.8.0) (2026-09-27)
+
+
+### Features
+
+* **conformance:** treat Epics and Sub-tasks as groupings, not tickets (WO-76) ([#57](https://github.com/moneymikeMD/work-order/issues/57)) ([5820f6e](https://github.com/moneymikeMD/work-order/commit/5820f6efd764db7c878c8813b1a0455bd3ec9865))
+* **jira:** converge the Universal workflows and shared scheme from a repo spec (WO-71) ([#61](https://github.com/moneymikeMD/work-order/issues/61)) ([5716c24](https://github.com/moneymikeMD/work-order/commit/5716c240a699dcce3d6084070637ee4ebfc56ed7))
+* **jira:** provisioning assigns the shared Universal scheme instead of copying a workflow per project (WO-79) ([#60](https://github.com/moneymikeMD/work-order/issues/60)) ([a5ba0c6](https://github.com/moneymikeMD/work-order/commit/a5ba0c65045cf6fae9987b687c17f161e5461e37))
+* **jira:** retire the To Do and Done read-only aliases (WO-81) ([#68](https://github.com/moneymikeMD/work-order/issues/68)) ([483b5e3](https://github.com/moneymikeMD/work-order/commit/483b5e3204da8d9390e8f7169bb13c320b575f24))
+* **jira:** shared Universal issue type schemes, screens and categories in two tiers (WO-89) ([#69](https://github.com/moneymikeMD/work-order/issues/69)) ([78fe9e1](https://github.com/moneymikeMD/work-order/commit/78fe9e132862ab27e42a1cf8e32627ed33bebf87))
+* **jira:** universal-switch.sh moves a project onto the Universal scheme (WO-77) ([#62](https://github.com/moneymikeMD/work-order/issues/62)) ([633764c](https://github.com/moneymikeMD/work-order/commit/633764c469f8266d7b887ec6a76edc7ce72d51a2))
+* **jira:** workflows set and clear resolution (WO-91) ([#70](https://github.com/moneymikeMD/work-order/issues/70)) ([34e6734](https://github.com/moneymikeMD/work-order/commit/34e673414b1ad6410448b71b703eb6107a3ebcf4))
+
+
+### Bug Fixes
+
+* **jira:** declare resolution-setting actions with mode replace (WO-91) ([#71](https://github.com/moneymikeMD/work-order/issues/71)) ([d15664d](https://github.com/moneymikeMD/work-order/commit/d15664dec629b0c96ff8c6176188ecf3f0f9e162))
+* **jira:** universal-switch maps every issue type the old scheme names (WO-80) ([#65](https://github.com/moneymikeMD/work-order/issues/65)) ([1cd8f72](https://github.com/moneymikeMD/work-order/commit/1cd8f72a6dbe7fd9cc0a1990755634e3fae9d834))
+* **jira:** universal-switch maps every status the target workflow lacks (WO-78) ([#63](https://github.com/moneymikeMD/work-order/issues/63)) ([b517a47](https://github.com/moneymikeMD/work-order/commit/b517a47a3239cb66f1c503bd067bebcd1e900beb))
+* **jira:** universal-switch retries a delete while a workflow task holds the lock (WO-80) ([#67](https://github.com/moneymikeMD/work-order/issues/67)) ([9c7442c](https://github.com/moneymikeMD/work-order/commit/9c7442c09332a9a02e999f272f7943599deb9b3b))
+* **jira:** universal-switch retries while another Jira task holds the switch (WO-80) ([#66](https://github.com/moneymikeMD/work-order/issues/66)) ([cbe126f](https://github.com/moneymikeMD/work-order/commit/cbe126f9a5588a16a35ad69b882d044f80dcdfa0))
+* **jira:** universal-switch waits on the project's scheme when the 303 carries no task (WO-78) ([#64](https://github.com/moneymikeMD/work-order/issues/64)) ([0171159](https://github.com/moneymikeMD/work-order/commit/0171159928f1a8bf22b24b68cac473b58d602baa))
+
 ## [1.7.0](https://github.com/moneymikeMD/work-order/compare/v1.6.0...v1.7.0) (2026-09-24)
 
 
