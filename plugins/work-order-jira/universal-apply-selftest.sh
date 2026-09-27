@@ -74,6 +74,7 @@ by_name() {
     case "$n" in
         "Universal Managed Workflow") src=workflows.bulkget.task.txt ;;
         "Universal Managed Epic Workflow") src=workflows.bulkget.epic.txt ;;
+        "Universal Simpllfied Workflow") src=workflows.bulkget.simplified.txt ;;
         *) absent ;;
     esac
     id=$(fx "$src" | jq -r '.workflows[0].id')
@@ -85,7 +86,8 @@ by_id() {
     local id="$1"
     if [ -f "$ST/wf.$id.json" ]; then cat "$ST/wf.$id.json"; return 0; fi
     fx workflows.bulkget.task.txt | jq -e --arg id "$id" 'select(.workflows[0].id == $id)' \
-        || fx workflows.bulkget.epic.txt | jq -e --arg id "$id" 'select(.workflows[0].id == $id)'
+        || fx workflows.bulkget.epic.txt | jq -e --arg id "$id" 'select(.workflows[0].id == $id)' \
+        || fx workflows.bulkget.simplified.txt | jq -e --arg id "$id" 'select(.workflows[0].id == $id)'
 }
 
 # Screens and schemes this test created live in $ST as JSON arrays.
@@ -111,6 +113,7 @@ map_its() {
 case "$M:$P" in
     GET:/statuses/search*) fx statuses.search.txt ;;
     GET:/field) fx field.list.txt ;;
+    GET:/resolution) fx resolution.list.txt ;;
     GET:/issuetype)
         if [ "${WO_TEST_ITYPES:-}" = "dupes" ]; then
             # SYNTHETIC: a second company-managed Sub-task, an Epic-named
@@ -260,10 +263,10 @@ EPIC_ID=$(fxbody workflows.bulkget.epic.txt | jq -r '.workflows[0].id')
 fresh dry
 OUT=$(run --dry-run); RC=$?
 eq "dry-run against the recorded workflows exits 0" "0" "$RC"
-contains "  plans 17 changes on the task workflow" "17 changes" "$OUT"
+contains "  plans 24 changes on the task workflow, 7 of them resolution actions" "24 changes" "$OUT"
 contains "  names the rename" "\"Universal Managed Epic Workflow\" -> \"Universal Managed Grouping Workflow\"" "$OUT"
 contains "  plans the scheme create" "create: default \"Universal Managed Workflow\"" "$OUT"
-contains "  totals 31 changes, 10 of them screens and schemes" "31 changes planned." "$OUT"
+contains "  totals 45 changes: 14 resolution actions, 10 screens and schemes" "45 changes planned." "$OUT"
 contains "  the ticket screen gets the standard and all eight contract fields" "create: 25 fields: Summary (summary)" "$OUT"
 contains "  the grouping screen gets the standard fields only" "create: 17 fields: Summary (summary)" "$OUT"
 contains "  Epic and Sub-task map to the grouping screen scheme" \
@@ -274,7 +277,7 @@ contains "  the existing categories need nothing" "$(printf 'project category "U
 contains "  the declared simplified workflow scheme is only reported" "absent: this script declares it and never creates it" "$OUT"
 contains "  a screen scheme names its screen by the id Jira will assign" \
     'POST /rest/api/3/screenscheme {"name":"Universal Managed Ticket Screen Scheme","description":"Owned by moneymikeMD/work-order.","screens":{"default":"<id of screen \"Universal Managed Ticket Screen\">"}}' "$OUT"
-eq "  called validation once per changed workflow" "2" "$(grep -c '^POST /workflows/update/validation' "$LOG")"
+eq "  called validation once per changed workflow" "3" "$(grep -c '^POST /workflows/update/validation' "$LOG")"
 eq "  and wrote nothing" "0" "$(writes)"
 not_contains "  and never adds a previous-status validator" "previous-status" "$OUT"
 
@@ -299,8 +302,8 @@ eq "  and left exactly as stored, never gated or removed" \
 eq "  re-work, ready for verification and Create stay ungated" "0" \
     "$(printf '%s' "$TB" | jq '[.workflows[0].transitions[] | select(.id == "1" or .id == "4" or .id == "15") | .validators[]] | length')"
 eq "  untouched transitions are carried byte for byte" \
-    "$(fxbody workflows.bulkget.task.txt | jq -c '[.workflows[0].transitions[] | select(.id == "15" or .id == "4")]')" \
-    "$(printf '%s' "$TB" | jq -c '[.workflows[0].transitions[] | select(.id == "15" or .id == "4")]')"
+    "$(fxbody workflows.bulkget.task.txt | jq -c '[.workflows[0].transitions[] | select(.id == "1" or .id == "4")]')" \
+    "$(printf '%s' "$TB" | jq -c '[.workflows[0].transitions[] | select(.id == "1" or .id == "4")]')"
 eq "  every stored status is declared with id and statusReference" \
     "$(fxbody workflows.bulkget.task.txt | jq -c '.statuses')" "$(printf '%s' "$TB" | jq -c '.statuses')"
 
@@ -310,6 +313,18 @@ eq "  adds Cancel from Triage and Open with no validator" '[["10011","10015",0],
     "$(printf '%s' "$EB" | jq -c '[.workflows[0].transitions[] | select(.id == "9" or .id == "10") | [.links[0].fromStatusReference, .toStatusReference, (.validators | length)]]')"
 eq "  and the grouping workflow carries zero validators in all" "0" \
     "$(printf '%s' "$EB" | jq '[.workflows[0].transitions[].validators[]] | length')"
+
+# res BODY — each transition carrying an action, as "id=<resolution value>", "" for a clear.
+res() { printf '%s' "$1" | jq -r '[.workflows[0].transitions[] | select((.actions // []) | length > 0)
+    | "\(.id)=\([.actions[] | select(.ruleKey == "system:update-field" and .parameters.field == "resolution" and .parameters.mode == "") | .parameters.value] | join("+"))"]
+    | sort_by(split("=")[0] | tonumber) | join(" ")'; }
+eq "resolution: complete sets Done, every cancel Won't Do, re-open and re-work clear it" \
+    "5=10000 6=10001 9= 11=10001 12= 13= 15= 16=10001 17=10001 18=10001" "$(res "$TB")"
+eq "  grouping: Complete sets Done, Cancel Won't Do, Continue Progress clears" \
+    "4=10000 5=10001 6= 7= 9=10001 10=10001" "$(res "$EB")"
+SB=$(body_of "Universal Simpllfied Workflow" "$OUT")
+eq "  simplified: Done sets Done, both transitions out of Done clear" "3=10000 4= 5=" "$(res "$SB")"
+contains "  and the plan says so in words" "complete (5)  Awaiting Deployment -> Completed: sets resolution Done" "$OUT"
 
 SCHEME=$(printf '%s\n' "$OUT" | sed -n '/^Exact request body for POST \/rest\/api\/3\/workflowscheme:/,/^}/p' | sed 1d | jq -c .)
 eq "scheme create body: default task workflow, Epic and Sub-task on the grouping workflow" \
@@ -342,7 +357,7 @@ OUT=$(run --yes); RC=$?
 eq "--yes applies both workflows and the scheme" "0" "$RC"
 contains "  proves the rules were stored" "rule diff is empty" "$OUT"
 contains "  and reads back clean" "read-back confirms: 0 changes outstanding." "$OUT"
-eq "  with two workflow updates and one scheme create" "2 1" \
+eq "  with three workflow updates and one scheme create" "3 1" \
     "$(grep -c '^POST /workflows/update {' "$LOG") $(grep -c '^POST /workflowscheme ' "$LOG")"
 kept() {
     jq -r --argjson was "$(fxbody "$1")" \
@@ -391,11 +406,27 @@ OUT=$(run --dry-run); RC=$?
 eq "with some validators already stored, dry-run exits 0" "0" "$RC"
 contains "  appending only the missing touches rule to start work" "start work (3)  Open -> In Progress: requires touches" "$OUT"
 contains "  reporting the site-local rule as left alone" "not in spec (left alone): validator system:validate-field-value" "$OUT"
-contains "  planning one change fewer" "16 changes" "$OUT"
+contains "  planning one change fewer" "23 changes" "$OUT"
 TB=$(body_of "Universal Managed Workflow" "$OUT")
 eq "  existing rules kept verbatim, in order, with their ids, touches appended" \
     '["6bceb88f-467a-460e-b1aa-3d5d5a21b916","e56f4066-2557-4336-8db3-9f5de87b415e",null]|["customfield_10044","customfield_10046","customfield_10043"]' \
     "$(printf '%s' "$TB" | jq -r '[.workflows[0].transitions[] | select(.id == "3") | .validators] | .[0] | "\(map(.id) | tojson)|\(map(.parameters.fieldsRequired) | tojson)"')"
+
+fresh preserve-action
+# SYNTHETIC: re-work already clears resolution (uuid id as Jira stores it), and
+# complete carries a site-local field update the spec does not name.
+fxbody workflows.bulkget.task.txt | jq -c '.workflows[0].transitions |= map(
+    if .id == "15" then .actions = [{ruleKey: "system:update-field", parameters: {field: "resolution", value: "", mode: ""}, id: "0b6f0c1e-1111-4a4a-9d9d-000000000015"}]
+    elif .id == "5" then .actions = [{ruleKey: "system:update-field", parameters: {field: "assignee", value: "", mode: ""}, id: "0b6f0c1e-1111-4a4a-9d9d-000000000005"}]
+    else . end)' > "$STATE/wf.$TASK_ID.json"
+OUT=$(run --dry-run); RC=$?
+eq "with a resolution action already stored, dry-run exits 0" "0" "$RC"
+not_contains "  and re-work gains no second clear" "re-work (15)  Awaiting Deployment -> In Progress: clears resolution" "$OUT"
+contains "  the site-local action is reported, not removed" "not in spec (left alone): action system:update-field (system:update-field) on transition 5 \"complete\"" "$OUT"
+TB=$(body_of "Universal Managed Workflow" "$OUT")
+eq "  complete keeps its stored action first and gains the resolution after it" \
+    '["0b6f0c1e-1111-4a4a-9d9d-000000000005",null]|["assignee","resolution"]' \
+    "$(printf '%s' "$TB" | jq -r '[.workflows[0].transitions[] | select(.id == "5") | .actions] | .[0] | "\(map(.id) | tojson)|\(map(.parameters.field) | tojson)"')"
 
 # ---- 5. rename paths -------------------------------------------------------------
 

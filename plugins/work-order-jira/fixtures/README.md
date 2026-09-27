@@ -48,6 +48,8 @@ scheme yet, and none of the shared screens or issue type schemes.
 | `issuetypescheme.list.txt`, `issuetypescheme.mapping.txt` | every issue type scheme and its issue types |
 | `projectcategory.list.txt` | `GET /projectCategory` — both tier categories, made by hand |
 | `screens.10088.tabs.txt`, `screens.10088.tab.10091.fields.txt` | WO's default screen, the source of the spec's standard field set |
+| `resolution.list.txt` | `GET /resolution` — the ids `{resolution:<name>}` resolves to |
+| `workflows.bulkget.simplified.txt` | `POST /workflows` for `Universal Simpllfied Workflow`, version 1 with no actions |
 
 ## Requests, not responses
 
