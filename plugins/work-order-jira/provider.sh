@@ -11,6 +11,9 @@
 #   provider.sh [--dry-run] [--http PATH] comment KEY TEXT
 #   provider.sh [--dry-run] [--http PATH] create PROJECT ISSUETYPE SUMMARY
 #                                                [--ticket PATH]
+#   provider.sh [--dry-run] [--http PATH] link   KEY --blocked-by BLOCKER
+#                                                [--replace]
+#   provider.sh [--dry-run] [--http PATH] unlink KEY --blocked-by BLOCKER
 #
 #   POSITION       one of triage, open, in-progress, awaiting-deployment,
 #                  deferred, completed, cancelled. Resolved to a transition by
@@ -21,15 +24,26 @@
 #                  decision object, or a list holding exactly one. Its fields
 #                  become the issue's description, labels and custom fields.
 #                  SUMMARY may then be empty, and the title comes from it.
+#   --blocked-by   the issue that blocks KEY, named for the direction so the
+#                  call reads like the ticket's blocked_by field.
+#   --replace      link only: delete a Blocks link in the reversed direction
+#                  first, instead of refusing.
 #   --http PATH    a jira-http.sh-shaped client. Default: lib/jira-http.sh.
 #   --dry-run      print the requests and exit 0, reaching no network.
 #
 # create resolves every custom field id by name from GET /field at run time
 # ([JIRA-8]), over the one field table in lib/common.sh that provision.sh
 # creates them from. --dry-run resolves nothing and prints <name> in each
-# id's place. blocked_by and epic are not written — see BINDING.md section 5.
+# id's place. blocked_by and epic are not written — see BINDING.md section 5;
+# `link` writes the Blocks links in a second pass, once both issues exist.
 #
-# transition, comment and create are live writes with no interactive
+# link reads KEY's issuelinks first. A Blocks link from BLOCKER to KEY already
+# there is a no-op, exit 0. The reversed link makes it refuse, exit 1, naming
+# the link id, unless --replace deletes it first. After writing it reads KEY
+# back and exits 1 unless an inward Blocks entry names BLOCKER. unlink deletes
+# the matching link by the id read from KEY and reads back that it is gone.
+#
+# transition, comment, create, link and unlink are live writes with no interactive
 # confirmation, so the provider works unattended; --dry-run or
 # WORK_ORDER_JIRA_DRY_RUN=1 turns every call into a printed request.
 #
@@ -77,7 +91,7 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || die "--http needs a path"
             HTTP="$2"; shift 2 ;;
         -h|--help)
-            sed -n '3,44p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,56p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --) shift; break ;;
         -*) die "unknown flag '$1' — run with --help" ;;
@@ -129,6 +143,22 @@ position_for_status() {
 $POSITION_STATUSES
 EOF
     return 1
+}
+
+# blocks_ids KEY_JSON DIRECTION BLOCKER — print the ids of the Blocks links on
+# an issue's readback. On read, an entry carrying inwardIssue is "is blocked
+# by": DIRECTION `inward` selects the BLOCKER-blocks-KEY links, `outward` the
+# reversed ones.
+blocks_ids() {
+    printf '%s' "$1" | jq -r --arg d "$2" --arg b "$3" '
+        .fields.issuelinks[]?
+        | select(.type.name == "Blocks" and (.[$d + "Issue"].key // "") == $b)
+        | .id'
+}
+
+# read_links KEY — print the issue readback carrying issuelinks.
+read_links() {
+    http GET "/issue/$1?fields=issuelinks"
 }
 
 verb="${1:-}"
@@ -264,7 +294,7 @@ case "$verb" in
         NLINKS=$(printf '%s' "$TICKET" | jq -r '(.blocked_by // []) | length') \
             || die "could not read 'blocked_by' from '$TICKET_PATH'"
         [ "$NLINKS" = "0" ] \
-            || warn "blocked_by carries $NLINKS id(s) that create does not write: a Jira issue link needs its target to exist already, so link in a second pass (BINDING.md section 5)"
+            || warn "blocked_by carries $NLINKS id(s) that create does not write: a Jira issue link needs its target to exist already, so run 'provider.sh link KEY --blocked-by BLOCKER' for each in a second pass (BINDING.md section 5)"
 
         if [ "$DRY_RUN" = "1" ]; then
             FIELD_JSON=""
@@ -347,10 +377,85 @@ EOF
         http POST "/issue" "$BODY"
         ;;
 
+    link|unlink)
+        [ $# -ge 1 ] || die "usage: provider.sh [--dry-run] $verb KEY --blocked-by BLOCKER$([ "$verb" = link ] && printf ' [--replace]')"
+        LKEY="$1"; shift
+        require_issue_key "$LKEY" || die "$WO_JIRA_KEY_ERR"
+        BLOCKER=""; REPLACE=0
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --blocked-by)
+                    [ $# -ge 2 ] || die "--blocked-by needs an issue key"
+                    BLOCKER="$2"; shift 2 ;;
+                --replace)
+                    [ "$verb" = "link" ] || die "--replace belongs to link, not $verb"
+                    REPLACE=1; shift ;;
+                *) die "unexpected argument '$1' after $verb's KEY" ;;
+            esac
+        done
+        [ -n "$BLOCKER" ] || die "$verb needs --blocked-by BLOCKER: the direction is named, never taken from argument order"
+        require_issue_key "$BLOCKER" || die "$WO_JIRA_KEY_ERR"
+        [ "$BLOCKER" != "$LKEY" ] || die "an issue cannot block itself: '$LKEY'"
+
+        LBODY=$(jq -cn --arg k "$LKEY" --arg b "$BLOCKER" \
+            '{type: {name: "Blocks"}, inwardIssue: {key: $b}, outwardIssue: {key: $k}}') \
+            || die "could not build the issue link request body"
+
+        if [ "$DRY_RUN" = "1" ]; then
+            read_links "$LKEY"
+            if [ "$verb" = "link" ]; then
+                [ "$REPLACE" = "0" ] || printf 'WOULD first DELETE /issueLink/<id> for any Blocks link where %s blocks %s\n' "$LKEY" "$BLOCKER"
+                http POST "/issueLink" "$LBODY"
+            else
+                printf 'WOULD DELETE /issueLink/<id> for each Blocks link where %s blocks %s\n' "$BLOCKER" "$LKEY"
+            fi
+            read_links "$LKEY"
+            exit 0
+        fi
+
+        CURRENT=$(read_links "$LKEY") || die "could not read the issue links of '$LKEY'"
+        SAME=$(blocks_ids "$CURRENT" inward "$BLOCKER") || die "could not parse the issue links of '$LKEY'"
+        REVERSED=$(blocks_ids "$CURRENT" outward "$BLOCKER") || die "could not parse the issue links of '$LKEY'"
+
+        if [ "$verb" = "unlink" ]; then
+            if [ -z "$SAME" ]; then
+                [ -z "$REVERSED" ] \
+                    || warn "'$LKEY' blocks '$BLOCKER' (link id $(printf '%s' "$REVERSED" | tr '\n' ' ')), which is the reverse of what was asked; left alone"
+                printf '%s is not blocked by %s; nothing to unlink\n' "$LKEY" "$BLOCKER"
+                exit 0
+            fi
+            for LID in $SAME; do
+                http DELETE "/issueLink/$LID" >/dev/null || die "could not delete issue link $LID"
+            done
+            AFTER=$(read_links "$LKEY") || die "could not read '$LKEY' back after unlinking"
+            [ -z "$(blocks_ids "$AFTER" inward "$BLOCKER")" ] \
+                || die "read-back of '$LKEY' still shows a Blocks link from '$BLOCKER' after the delete"
+            printf 'unlinked %s from blocked-by %s\n' "$LKEY" "$BLOCKER"
+            exit 0
+        fi
+
+        if [ -n "$SAME" ]; then
+            printf '%s is already blocked by %s\n' "$LKEY" "$BLOCKER"
+            exit 0
+        fi
+        if [ -n "$REVERSED" ]; then
+            [ "$REPLACE" = "1" ] \
+                || die "'$LKEY' already blocks '$BLOCKER' (link id $(printf '%s' "$REVERSED" | tr '\n' ' ')), the reverse of what was asked; Jira accepts a second link without correcting the first, so pass --replace to delete it first"
+            for LID in $REVERSED; do
+                http DELETE "/issueLink/$LID" >/dev/null || die "could not delete the reversed issue link $LID"
+            done
+        fi
+        http POST "/issueLink" "$LBODY" >/dev/null || die "could not create the Blocks link"
+        AFTER=$(read_links "$LKEY") || die "could not read '$LKEY' back after linking"
+        [ -n "$(blocks_ids "$AFTER" inward "$BLOCKER")" ] \
+            || die "read-back of '$LKEY' shows no inward Blocks link naming '$BLOCKER'; the link was not written"
+        printf 'linked %s blocked-by %s\n' "$LKEY" "$BLOCKER"
+        ;;
+
     "")
-        die "usage: provider.sh [--dry-run] VERB [ARG...] (verbs: fetch, position, transition, comment, create)"
+        die "usage: provider.sh [--dry-run] VERB [ARG...] (verbs: fetch, position, transition, comment, create, link, unlink)"
         ;;
     *)
-        die "unknown tracker verb '$verb' (fetch, position, transition, comment, create)"
+        die "unknown tracker verb '$verb' (fetch, position, transition, comment, create, link, unlink)"
         ;;
 esac

@@ -165,6 +165,35 @@ case "$M:$P" in
         # SYNTHETIC: the created body is kept so the GET below can serve it back.
         printf '%s' "$B" > "$WO_TEST_WORK/created-issue.json"
         fx issue.create.json ;;
+    # SYNTHETIC: issue links, kept as {id, inward, outward} so the stub reads
+    # them the way Jira does: an entry on the outward issue carries
+    # inwardIssue, and one on the inward issue carries outwardIssue.
+    # WO_TEST_LINKS seeds PROJ-1 / PROJ-2: right, reversed, or none;
+    # nowrite accepts a POST and stores nothing.
+    GET:/issue/*fields=issuelinks)
+        LF="$WO_TEST_WORK/links.json"
+        if [ ! -f "$LF" ]; then
+            case "${WO_TEST_LINKS:-none}" in
+                right)    echo '[{"id":"9001","inward":"PROJ-2","outward":"PROJ-1"}]' > "$LF" ;;
+                reversed) echo '[{"id":"9001","inward":"PROJ-1","outward":"PROJ-2"}]' > "$LF" ;;
+                *)        echo '[]' > "$LF" ;;
+            esac
+        fi
+        K="${P#/issue/}"; K="${K%%\?*}"
+        jq -c --arg k "$K" '{key: $k, fields: {issuelinks: [.[]
+            | if .outward == $k then {id, type: {name: "Blocks"}, inwardIssue: {key: .inward}}
+              elif .inward == $k then {id, type: {name: "Blocks"}, outwardIssue: {key: .outward}}
+              else empty end]}}' "$LF" ;;
+    POST:/issueLink)
+        LF="$WO_TEST_WORK/links.json"
+        [ -f "$LF" ] || echo '[]' > "$LF"
+        if [ "${WO_TEST_LINKS:-none}" != "nowrite" ]; then
+            jq -c --argjson b "$B" '. + [{id: "9100", inward: $b.inwardIssue.key, outward: $b.outwardIssue.key}]' "$LF" > "$LF.new" \
+                && mv "$LF.new" "$LF"
+        fi ;;
+    DELETE:/issueLink/*)
+        LF="$WO_TEST_WORK/links.json"
+        jq -c --arg id "${P#/issueLink/}" 'map(select(.id != $id))' "$LF" > "$LF.new" && mv "$LF.new" "$LF" ;;
     GET:/issue/*/transitions) fx issue.transitions.json ;;
     POST:/issue/*/transitions) echo '{}' ;;
     POST:/issue/*/comment) echo '{}' ;;
@@ -196,7 +225,7 @@ LOG=""
 reset_log() {
     LOG="$WORK/log.$1"
     : > "$LOG"
-    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK"/probe.*
+    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK"/probe.*
 }
 export WO_TEST_FX="$FX"
 export WO_TEST_WORK="$WORK"
@@ -602,6 +631,79 @@ OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_US_RC=1 \
       "$PROVISION" --yes --project SPK4 --http "$STUB" "${USE_SPIES[@]}" 2>&1); RC=$?
 eq "provision fails when universal-switch fails" "1" "$RC"
 contains "  naming the script and the project" "universal-switch-spy.sh failed for 'SPK4'" "$OUT"
+
+# ---- provider link / unlink ---------------------------------------------
+
+reset_log link-new
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" link PROJ-1 --blocked-by PROJ-2 2>&1); RC=$?
+eq "link writes a new Blocks link and exits 0" "0" "$RC"
+POSTED=$(grep '^POST /issueLink ' "$LOG" | sed 's/^POST \/issueLink //')
+eq "  with the blocker as inwardIssue and the blocked ticket as outwardIssue" \
+   '{"type":{"name":"Blocks"},"inwardIssue":{"key":"PROJ-2"},"outwardIssue":{"key":"PROJ-1"}}' "$POSTED"
+eq "  then reads the blocked ticket back after the write" "GET /issue/PROJ-1?fields=issuelinks" \
+   "$(sed -n '/^POST \/issueLink /,$p' "$LOG" | sed -n '2p')"
+
+reset_log link-swapped
+SWAPPED="$WORK/provider-swapped.sh"
+sed -e 's/inwardIssue: {key: \$b}, outwardIssue: {key: \$k}/inwardIssue: {key: $k}, outwardIssue: {key: $b}/' "$PROVIDER" > "$SWAPPED"
+chmod +x "$SWAPPED"
+cp -R "$HERE/lib" "$WORK/lib"
+OUT=$(WO_TEST_LOG="$LOG" "$SWAPPED" --http "$STUB" link PROJ-1 --blocked-by PROJ-2 2>&1); RC=$?
+eq "mutation: swapping inwardIssue and outwardIssue in the payload turns the link row red" "1" "$RC"
+contains "  because the read-back shows no inward entry naming the blocker" "shows no inward Blocks link naming 'PROJ-2'" "$OUT"
+
+reset_log link-exists
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LINKS=right "$PROVIDER" --http "$STUB" link PROJ-1 --blocked-by PROJ-2 2>&1); RC=$?
+eq "link on an existing right-direction link exits 0" "0" "$RC"
+eq "  and issues no POST and no DELETE" "0" "$(grep -c '^POST \|^DELETE ' "$LOG" || true)"
+
+reset_log link-reversed
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LINKS=reversed "$PROVIDER" --http "$STUB" link PROJ-1 --blocked-by PROJ-2 2>&1); RC=$?
+eq "link on a reversed link without --replace exits 1" "1" "$RC"
+contains "  naming the link id" "9001" "$OUT"
+eq "  and issues no write" "0" "$(grep -c '^POST \|^DELETE ' "$LOG" || true)"
+
+reset_log link-replace
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LINKS=reversed "$PROVIDER" --http "$STUB" link PROJ-1 --blocked-by PROJ-2 --replace 2>&1); RC=$?
+eq "link --replace over a reversed link exits 0" "0" "$RC"
+DEL_AT=$(grep -n '^DELETE /issueLink/9001' "$LOG" | head -1 | cut -d: -f1)
+POST_AT=$(grep -n '^POST /issueLink ' "$LOG" | head -1 | cut -d: -f1)
+nonempty "  with the DELETE of the reversed link logged" "$DEL_AT"
+if [ -n "$DEL_AT" ] && [ -n "$POST_AT" ] && [ "$DEL_AT" -lt "$POST_AT" ]; then ok "  and the DELETE precedes the POST"; else bad "  and the DELETE precedes the POST (delete at '$DEL_AT', post at '$POST_AT')"; fi
+
+reset_log link-nowrite
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LINKS=nowrite "$PROVIDER" --http "$STUB" link PROJ-1 --blocked-by PROJ-2 2>&1); RC=$?
+eq "link exits 1 when the read-back lacks the link" "1" "$RC"
+contains "  and says the link was not written" "was not written" "$OUT"
+
+reset_log unlink
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LINKS=right "$PROVIDER" --http "$STUB" unlink PROJ-1 --blocked-by PROJ-2 2>&1); RC=$?
+eq "unlink exits 0" "0" "$RC"
+contains "  deleting by the id it read from the blocked ticket" "DELETE /issueLink/9001" "$(cat "$LOG")"
+eq "  and reads the ticket back after the delete" "GET /issue/PROJ-1?fields=issuelinks" \
+   "$(sed -n '/^DELETE /,$p' "$LOG" | sed -n '2p')"
+
+reset_log unlink-reversed
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LINKS=reversed "$PROVIDER" --http "$STUB" unlink PROJ-1 --blocked-by PROJ-2 2>&1); RC=$?
+eq "unlink leaves a reversed link alone and exits 0" "0" "$RC"
+contains "  warning that it is the reverse" "reverse of what was asked" "$OUT"
+eq "  with no DELETE" "0" "$(grep -c '^DELETE ' "$LOG" || true)"
+
+reset_log link-args
+OUT=$("$PROVIDER" --http "$STUB" link PROJ-1 PROJ-2 2>&1); RC=$?
+eq "link takes its direction from the flag, so a bare second key is refused" "1" "$RC"
+OUT=$("$PROVIDER" --http "$STUB" link PROJ-1 2>&1); RC=$?
+eq "link without --blocked-by is refused" "1" "$RC"
+OUT=$("$PROVIDER" --http "$STUB" link PROJ-1 --blocked-by PROJ-1 2>&1); RC=$?
+eq "link refuses an issue blocking itself" "1" "$RC"
+OUT=$("$PROVIDER" --http "$STUB" unlink PROJ-1 --blocked-by PROJ-2 --replace 2>&1); RC=$?
+eq "unlink refuses --replace" "1" "$RC"
+
+reset_log link-dry
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --dry-run --http "$STUB" link PROJ-1 --blocked-by PROJ-2 2>&1); RC=$?
+eq "link --dry-run exits 0" "0" "$RC"
+contains "  and prints the POST it would make" "WOULD POST /issueLink" "$OUT"
+eq "  the stub never serving a write" "0" "$(grep -c '^POST \|^DELETE ' "$LOG" | tr -d ' ')"
 
 # ---- summary ------------------------------------------------------------
 
