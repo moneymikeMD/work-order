@@ -49,8 +49,9 @@
 #
 # create first searches PROJECT for an open issue (statusCategory not Done)
 # whose summary equals SUMMARY exactly. JQL summary matching is fuzzy, so the
-# exact comparison is made client-side. A match prints its key on stdout, writes
-# nothing and exits 3, so a retry is told from a fresh create.
+# exact comparison is made client-side. A match writes nothing, exits 3 and
+# prints the existing issue as {id,key,self}, so a retry is told from a fresh
+# create by the exit code.
 #
 # link reads KEY's issuelinks first. A Blocks link from BLOCKER to KEY already
 # there is a no-op, exit 0. The reversed link makes it refuse, exit 1, naming
@@ -65,8 +66,12 @@
 # Exit status:
 #   0  the verb succeeded.
 #   1  a read, a write or an argument failed.
-#   3  `create` only: an open issue with this exact summary exists; its key is
-#      on stdout and nothing was written. --allow-duplicate skips the check.
+#   3  `create` only: an open issue with this exact summary exists; nothing was
+#      written. --allow-duplicate skips the check.
+#
+# create stdout: a JSON object carrying `.id`, `.key` and `.self` on exit 0 (the
+# issue created) and on exit 3 (the existing issue), so `jq -r .key` reads the
+# issue either way and the exit code says which it is.
 #   4  `position` only: the issue's status is not one this binding binds.
 #      Distinct from 1 on purpose, per BINDING.md [JIRA-11]: stdout carries
 #      `unmapped-status<TAB><name>` and a caller must not have to match prose
@@ -108,7 +113,7 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || die "--http needs a path"
             HTTP="$2"; shift 2 ;;
         -h|--help)
-            sed -n '3,74p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,78p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --) shift; break ;;
         -*) die "unknown flag '$1' — run with --help" ;;
@@ -199,12 +204,14 @@ outcome_field_id() {
     printf '%s' "$id"
 }
 
-# open_duplicate PROJECT SUMMARY — print the key of an issue in PROJECT whose
-# summary equals SUMMARY exactly and whose statusCategory is not Done, or
-# nothing. JQL's ~ is fuzzy, so the equality is tested here.
+# open_duplicate PROJECT SUMMARY — print {id,key,self} of an issue in PROJECT
+# whose summary equals SUMMARY exactly and whose statusCategory is not Done, or
+# nothing. JQL's ~ is fuzzy, so the equality is tested here. The summary is
+# escaped for Lucene (backslash before each special character), then for the
+# JQL string literal (every backslash doubled, quotes escaped).
 open_duplicate() {
     local proj="$1" summary="$2" esc jql page token url hit
-    esc=$(printf '%s' "$summary" | jq -Rr 'gsub("(?<c>[-+&|!(){}^~*?:/\\[\\]\\\\])"; "\\\\" + .c) | gsub("\""; "\\\"")')
+    esc=$(printf '%s' "$summary" | jq -Rr 'gsub("(?<c>[-+&|!(){}^~*?:/\\[\\]\\\\])"; "\\" + .c) | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"")')
     jql="project = \"$proj\" AND statusCategory != Done AND summary ~ \"$esc\""
     url="/search/jql?jql=$(printf '%s' "$jql" | jq -sRr @uri)&fields=summary,status&maxResults=100"
     token=""
@@ -216,7 +223,7 @@ open_duplicate() {
         page=$(http GET "$url${token:+&nextPageToken=$token}") \
             || die "could not search '$proj' for an existing issue titled '$summary'; pass --allow-duplicate to create without the check"
         hit=$(printf '%s' "$page" | jq -r --arg s "$summary" \
-            '[.issues[]? | select(.fields.summary == $s and ((.fields.status.statusCategory.key // "") != "done"))][0].key // empty') \
+            '[.issues[]? | select(.fields.summary == $s and ((.fields.status.statusCategory.key // "") != "done"))][0] | if . == null then empty else {id, key, self} end') \
             || die "could not parse the duplicate-check search response"
         if [ -n "$hit" ]; then printf '%s' "$hit"; return 0; fi
         [ "$(printf '%s' "$page" | jq -r '.isLast // true')" = "false" ] || return 0
@@ -225,12 +232,13 @@ open_duplicate() {
     done
 }
 
-# refuse_duplicate PROJECT SUMMARY — exit 3 naming the existing issue.
+# refuse_duplicate PROJECT SUMMARY — print the existing issue as JSON, exit 3.
 refuse_duplicate() {
     local dup
     dup=$(open_duplicate "$1" "$2") || exit 1
     [ -z "$dup" ] && return 0
     printf '%s\n' "$dup"
+    dup=$(printf '%s' "$dup" | jq -r '.key')
     warn "'$dup' is already open in $1 with the summary '$2'; nothing written (exit 3). Pass --allow-duplicate to create anyway."
     exit 3
 }

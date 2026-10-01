@@ -156,7 +156,7 @@ case "$M:$P" in
     GET:/search/jql*fields=summary,status*)
         if [ -n "${WO_TEST_DUP:-}" ]; then
             jq -cn --arg s "$WO_TEST_DUP" --arg c "${WO_TEST_DUP_CAT:-new}" \
-                '{issues: [{key: "PROJ-77", fields: {summary: $s, status: {statusCategory: {key: $c}}}}], isLast: true}'
+                '{issues: [{id: "10077", key: "PROJ-77", self: "https://example.atlassian.net/rest/api/3/issue/10077", fields: {summary: $s, status: {statusCategory: {key: $c}}}}], isLast: true}'
         else
             echo '{"issues":[],"isLast":true}'
         fi ;;
@@ -804,7 +804,8 @@ eq "  the stub never serving a write" "0" "$(grep -c '^POST \|^PUT \|^DELETE ' "
 reset_log dup-exact
 OUT=$(WO_TEST_LOG="$LOG" WO_TEST_DUP="Fix the thing" "$PROVIDER" --http "$STUB" create PROJ Task "Fix the thing" 2>/dev/null); RC=$?
 eq "create with an open issue of identical summary exits 3" "3" "$RC"
-eq "  printing the existing key" "PROJ-77" "$OUT"
+eq "  printing the existing issue as {id,key,self}" \
+   '{"id":"10077","key":"PROJ-77","self":"https://example.atlassian.net/rest/api/3/issue/10077"}' "$(printf '%s' "$OUT" | jq -c .)"
 eq "  and issuing no POST /issue" "0" "$(grep -c '^POST /issue ' "$LOG" | tr -d ' ')"
 contains "  the search excludes Done issues" "statusCategory" "$(grep '^GET /search/jql' "$LOG")"
 
@@ -832,6 +833,53 @@ reset_log dup-dry
 OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --dry-run --http "$STUB" create PROJ Task "Fix the thing" 2>&1); RC=$?
 eq "create --dry-run exits 0" "0" "$RC"
 contains "  and prints the duplicate search it would make" "WOULD GET /search/jql" "$OUT"
+
+jql_sent() { grep '^GET /search/jql' "$1" | head -1 | sed 's/^GET \/search\/jql?jql=//; s/&fields=.*//' | python3 -c 'import sys,urllib.parse; print(urllib.parse.unquote(sys.stdin.read().strip()))'; }
+
+OLDPROVIDER="$WORK/provider-old-escape.sh"
+python3 - "$PROVIDER" "$OLDPROVIDER" <<'PYEOF2'
+import sys
+s = open(sys.argv[1]).read()
+new = ' | gsub("\\\\\\\\"; "\\\\\\\\")'
+assert new in s
+open(sys.argv[2], "w").write(s.replace(new, ""))
+PYEOF2
+chmod +x "$OLDPROVIDER"
+
+reset_log esc-backslash
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create PROJ Task 'a\b' >/dev/null 2>&1
+eq "a backslash in the summary reaches JQL as one Lucene-escaped, string-escaped backslash" \
+   'project = "PROJ" AND statusCategory != Done AND summary ~ "a\\\\b"' "$(jql_sent "$LOG")"
+reset_log esc-backslash-old
+WO_TEST_LOG="$LOG" "$OLDPROVIDER" --http "$STUB" create PROJ Task 'a\b' >/dev/null 2>&1
+not_contains "mutation: without the doubling step the backslash row is red" 'summary ~ "a\\\\b"' "$(jql_sent "$LOG")"
+
+reset_log esc-bsq
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create PROJ Task 'a\"b' >/dev/null 2>&1
+eq "a backslash then a quote cannot close the JQL string early" \
+   'project = "PROJ" AND statusCategory != Done AND summary ~ "a\\\\\"b"' "$(jql_sent "$LOG")"
+reset_log esc-bsq-old
+WO_TEST_LOG="$LOG" "$OLDPROVIDER" --http "$STUB" create PROJ Task 'a\"b' >/dev/null 2>&1
+not_contains "mutation: without the doubling step the backslash-quote row is red" 'summary ~ "a\\\\\"b"' "$(jql_sent "$LOG")"
+
+reset_log esc-quote
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create PROJ Task 'Fix "quoted" thing' >/dev/null 2>&1
+eq "plain quotes in the summary are escaped" \
+   'project = "PROJ" AND statusCategory != Done AND summary ~ "Fix \"quoted\" thing"' "$(jql_sent "$LOG")"
+
+reset_log esc-dup
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_DUP='a\"b' "$PROVIDER" --http "$STUB" create PROJ Task 'a\"b' 2>/dev/null); RC=$?
+eq "an exact match on a backslash-and-quote summary still exits 3" "3" "$RC"
+
+reset_log contract-new
+NEWOUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create PROJ Task "Brand new" 2>/dev/null); NEWRC=$?
+reset_log contract-dup
+DUPOUT=$(WO_TEST_LOG="$LOG" WO_TEST_DUP="Brand new" "$PROVIDER" --http "$STUB" create PROJ Task "Brand new" 2>/dev/null); DUPRC=$?
+eq "create stdout contract: exit 0 prints JSON with .id, .key and .self" "true" \
+   "$(printf '%s' "$NEWOUT" | jq -r '(.id != null) and (.key != null) and (.self != null)' 2>/dev/null)"
+eq "  exit 3 prints JSON with the same three fields" "true" \
+   "$(printf '%s' "$DUPOUT" | jq -r '(.id != null) and (.key != null) and (.self != null)' 2>/dev/null)"
+eq "  so \$(provider.sh create ...) is read with jq -r .key on both paths, exits 0 and 3" "0:3" "$NEWRC:$DUPRC"
 
 # ---- summary ------------------------------------------------------------
 

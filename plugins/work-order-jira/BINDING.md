@@ -520,8 +520,9 @@ The field list is not restated here: `lib/common.sh` holds the one table, and
 files a second issue. Before its POST, `create` searches PROJECT for an issue
 whose `statusCategory` is not `Done` and whose summary matches, and compares the
 summary client-side for exact equality, because JQL's `~` is fuzzy. On a match
-it prints the existing key on stdout, writes nothing and exits 3, so a caller can
-tell a retry from a fresh create. `--allow-duplicate` skips the check. A summary
+it writes nothing, exits 3 and prints the existing issue as `{id, key, self}`,
+the same shape a successful create prints, so `jq -r .key` reads either and the
+exit code tells a retry from a fresh create. `--allow-duplicate` skips the check. A summary
 that only resembles an open one is created.
 
 **`transition --outcome`.** `provider.sh transition KEY POSITION --outcome TEXT`
