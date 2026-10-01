@@ -8,9 +8,10 @@
 #   provider.sh [--dry-run] [--http PATH] fetch KEY
 #   provider.sh [--dry-run] [--http PATH] position KEY
 #   provider.sh [--dry-run] [--http PATH] transition KEY POSITION|TRANSITION_ID
+#                                                [--outcome TEXT]
 #   provider.sh [--dry-run] [--http PATH] comment KEY TEXT
 #   provider.sh [--dry-run] [--http PATH] create PROJECT ISSUETYPE SUMMARY
-#                                                [--ticket PATH]
+#                                                [--ticket PATH] [--allow-duplicate]
 #   provider.sh [--dry-run] [--http PATH] link   KEY --blocked-by BLOCKER
 #                                                [--replace]
 #   provider.sh [--dry-run] [--http PATH] unlink KEY --blocked-by BLOCKER
@@ -20,10 +21,14 @@
 #                  the status name BINDING.md binds it to, read live from the
 #                  issue.
 #   TEXT           '-' reads the comment from stdin.
+#   --outcome TEXT transition only: the ticket's outcome ('-' reads stdin).
+#                  Written in its own PUT before the transition, because Jira
+#                  ignores a field in a transition body here ([JIRA-7]).
 #   --ticket PATH  a decision-list document (decision-list/FORMAT.md): one
 #                  decision object, or a list holding exactly one. Its fields
 #                  become the issue's description, labels and custom fields.
 #                  SUMMARY may then be empty, and the title comes from it.
+#   --allow-duplicate  create only: skip the duplicate check below.
 #   --blocked-by   the issue that blocks KEY, named for the direction so the
 #                  call reads like the ticket's blocked_by field.
 #   --replace      link only: delete a Blocks link in the reversed direction
@@ -36,6 +41,16 @@
 # creates them from. --dry-run resolves nothing and prints <name> in each
 # id's place. blocked_by and epic are not written — see BINDING.md section 5;
 # `link` writes the Blocks links in a second pass, once both issues exist.
+#
+# transition --outcome resolves the transition first, so a refusal writes
+# nothing; then PUTs outcome as an ADF document, reads the field back, takes the
+# transition and reads the status back. A move to cancelled with no --outcome
+# and an empty outcome field exits 1 naming --outcome before any write.
+#
+# create first searches PROJECT for an open issue (statusCategory not Done)
+# whose summary equals SUMMARY exactly. JQL summary matching is fuzzy, so the
+# exact comparison is made client-side. A match prints its key on stdout, writes
+# nothing and exits 3, so a retry is told from a fresh create.
 #
 # link reads KEY's issuelinks first. A Blocks link from BLOCKER to KEY already
 # there is a no-op, exit 0. The reversed link makes it refuse, exit 1, naming
@@ -50,6 +65,8 @@
 # Exit status:
 #   0  the verb succeeded.
 #   1  a read, a write or an argument failed.
+#   3  `create` only: an open issue with this exact summary exists; its key is
+#      on stdout and nothing was written. --allow-duplicate skips the check.
 #   4  `position` only: the issue's status is not one this binding binds.
 #      Distinct from 1 on purpose, per BINDING.md [JIRA-11]: stdout carries
 #      `unmapped-status<TAB><name>` and a caller must not have to match prose
@@ -91,7 +108,7 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || die "--http needs a path"
             HTTP="$2"; shift 2 ;;
         -h|--help)
-            sed -n '3,56p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,74p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --) shift; break ;;
         -*) die "unknown flag '$1' — run with --help" ;;
@@ -161,6 +178,63 @@ read_links() {
     http GET "/issue/$1?fields=issuelinks"
 }
 
+# adf_text JSON — print every text node of an ADF document, one per line.
+adf_text() {
+    printf '%s' "$1" | jq -r '[.. | objects | select(.type == "text") | .text] | join("\n")'
+}
+
+# outcome_field_id — print this site's id for the custom field named outcome
+# ([JIRA-8]); under --dry-run print <outcome> and read nothing.
+outcome_field_id() {
+    local fields id
+    if [ "$DRY_RUN" = "1" ]; then
+        http GET "/field" >&2
+        printf '<outcome>'
+        return 0
+    fi
+    fields=$(http GET "/field") || die "could not read this site's field list to resolve the outcome field id ([JIRA-8])"
+    id=$(printf '%s' "$fields" | jq -r '[.[] | select(.custom == true and .name == "outcome")][0].id // empty') \
+        || die "could not parse this site's field list"
+    [ -n "$id" ] || die "this site has no custom field named 'outcome' — run provision.sh ([JIRA-7], [JIRA-8])"
+    printf '%s' "$id"
+}
+
+# open_duplicate PROJECT SUMMARY — print the key of an issue in PROJECT whose
+# summary equals SUMMARY exactly and whose statusCategory is not Done, or
+# nothing. JQL's ~ is fuzzy, so the equality is tested here.
+open_duplicate() {
+    local proj="$1" summary="$2" esc jql page token url hit
+    esc=$(printf '%s' "$summary" | jq -Rr 'gsub("(?<c>[-+&|!(){}^~*?:/\\[\\]\\\\])"; "\\\\" + .c) | gsub("\""; "\\\"")')
+    jql="project = \"$proj\" AND statusCategory != Done AND summary ~ \"$esc\""
+    url="/search/jql?jql=$(printf '%s' "$jql" | jq -sRr @uri)&fields=summary,status&maxResults=100"
+    token=""
+    if [ "$DRY_RUN" = "1" ]; then
+        http GET "$url" >&2
+        return 0
+    fi
+    while :; do
+        page=$(http GET "$url${token:+&nextPageToken=$token}") \
+            || die "could not search '$proj' for an existing issue titled '$summary'; pass --allow-duplicate to create without the check"
+        hit=$(printf '%s' "$page" | jq -r --arg s "$summary" \
+            '[.issues[]? | select(.fields.summary == $s and ((.fields.status.statusCategory.key // "") != "done"))][0].key // empty') \
+            || die "could not parse the duplicate-check search response"
+        if [ -n "$hit" ]; then printf '%s' "$hit"; return 0; fi
+        [ "$(printf '%s' "$page" | jq -r '.isLast // true')" = "false" ] || return 0
+        token=$(printf '%s' "$page" | jq -r '.nextPageToken // empty')
+        [ -n "$token" ] || return 0
+    done
+}
+
+# refuse_duplicate PROJECT SUMMARY — exit 3 naming the existing issue.
+refuse_duplicate() {
+    local dup
+    dup=$(open_duplicate "$1" "$2") || exit 1
+    [ -z "$dup" ] && return 0
+    printf '%s\n' "$dup"
+    warn "'$dup' is already open in $1 with the summary '$2'; nothing written (exit 3). Pass --allow-duplicate to create anyway."
+    exit 3
+}
+
 verb="${1:-}"
 [ -n "$verb" ] && shift
 
@@ -196,33 +270,97 @@ case "$verb" in
         ;;
 
     transition)
-        [ $# -eq 2 ] || die "usage: provider.sh [--dry-run] transition KEY POSITION|TRANSITION_ID"
+        [ $# -ge 2 ] || die "usage: provider.sh [--dry-run] transition KEY POSITION|TRANSITION_ID [--outcome TEXT]"
         require_issue_key "$1" || die "$WO_JIRA_KEY_ERR"
-        TARGET="$2"
+        TKEY="$1"; TARGET="$2"; shift 2
+        OUTCOME=""; HAVE_OUTCOME=0
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --outcome)
+                    [ $# -ge 2 ] || die "--outcome needs a text ('-' reads stdin)"
+                    OUTCOME="$2"; HAVE_OUTCOME=1; shift 2 ;;
+                *) die "unexpected argument '$1' after transition's KEY and target" ;;
+            esac
+        done
+        if [ "$HAVE_OUTCOME" = "1" ]; then
+            if [ "$OUTCOME" = "-" ]; then
+                OUTCOME=$(cat) || die "could not read the outcome from stdin"
+            fi
+            [ -n "$OUTCOME" ] || die "refusing an empty --outcome for '$TKEY'"
+        fi
+        WANT_STATUS=""
         case "$TARGET" in
             *[!0-9]*)
                 WANT_STATUS=$(status_for_position "$TARGET") \
                     || die "'$TARGET' is not a lifecycle position (triage, open, in-progress, awaiting-deployment, deferred, completed, cancelled) and is not a numeric transition id"
                 if [ "$DRY_RUN" = "1" ]; then
-                    http GET "/issue/$1/transitions"
+                    http GET "/issue/$TKEY/transitions"
                     printf 'WOULD then POST the transition whose .to.name is %s\n' "$WANT_STATUS"
-                    exit 0
+                    TRANSITION_ID="<id>"
+                else
+                    AVAILABLE=$(http GET "/issue/$TKEY/transitions") \
+                        || die "could not read the available transitions for '$TKEY'"
+                    TRANSITION_ID=$(printf '%s' "$AVAILABLE" | jq -r --arg n "$WANT_STATUS" \
+                        '[.transitions[]? | select(.to.name == $n)][0].id // empty') \
+                        || die "could not parse the transitions response for '$TKEY'"
+                    [ -n "$TRANSITION_ID" ] \
+                        || die "no transition into '$WANT_STATUS' is available on '$TKEY' right now — a workflow validator may be blocking it, or the status is not on this project's workflow (run provision.sh)"
                 fi
-                AVAILABLE=$(http GET "/issue/$1/transitions") \
-                    || die "could not read the available transitions for '$1'"
-                TRANSITION_ID=$(printf '%s' "$AVAILABLE" | jq -r --arg n "$WANT_STATUS" \
-                    '[.transitions[]? | select(.to.name == $n)][0].id // empty') \
-                    || die "could not parse the transitions response for '$1'"
-                [ -n "$TRANSITION_ID" ] \
-                    || die "no transition into '$WANT_STATUS' is available on '$1' right now — a workflow validator may be blocking it, or the status is not on this project's workflow (run provision.sh)"
                 ;;
             *)
                 TRANSITION_ID="$TARGET"
                 ;;
         esac
+
+        OFID=""
+        if [ "$HAVE_OUTCOME" = "1" ] || [ "$WANT_STATUS" = "Cancelled" ]; then
+            OFID=$(outcome_field_id) || exit 1
+        fi
+
+        if [ "$HAVE_OUTCOME" = "0" ] && [ "$WANT_STATUS" = "Cancelled" ]; then
+            if [ "$DRY_RUN" = "1" ]; then
+                http GET "/issue/$TKEY?fields=$OFID"
+                printf 'WOULD refuse, exit 1, unless that field is already set or --outcome is given\n'
+            else
+                CURRENT=$(http GET "/issue/$TKEY?fields=$OFID") \
+                    || die "could not read the outcome field of '$TKEY'"
+                HAVE=$(printf '%s' "$CURRENT" | jq -r --arg f "$OFID" '(.fields[$f] // null) | if . == null then "" else tostring end')
+                [ -n "$HAVE" ] && [ -n "$(adf_text "$(printf '%s' "$CURRENT" | jq -c --arg f "$OFID" '.fields[$f]')" | tr -d '[:space:]')" ] \
+                    || die "cancelling '$TKEY' needs an outcome ([JIRA-7]) and its outcome field is empty; nothing written. Pass --outcome TEXT"
+            fi
+        fi
+
+        if [ "$HAVE_OUTCOME" = "1" ]; then
+            ODOC=$(jira_adf_doc "$OUTCOME") || die "could not build the outcome ADF document"
+            OBODY=$(jq -cn --arg f "$OFID" --argjson d "$ODOC" '{fields: {($f): $d}}') \
+                || die "could not build the outcome request body"
+            if [ "$DRY_RUN" = "1" ]; then
+                http PUT "/issue/$TKEY" "$OBODY"
+                http GET "/issue/$TKEY?fields=$OFID"
+            else
+                http PUT "/issue/$TKEY" "$OBODY" >/dev/null || die "could not write the outcome of '$TKEY'; no transition was taken"
+                BACK=$(http GET "/issue/$TKEY?fields=$OFID") || die "could not read the outcome of '$TKEY' back; no transition was taken"
+                GOT=$(adf_text "$(printf '%s' "$BACK" | jq -c --arg f "$OFID" '.fields[$f] // {}')") \
+                    || die "could not parse the outcome read-back of '$TKEY'"
+                [ "$GOT" = "$(adf_text "$ODOC")" ] \
+                    || die "read-back of '$TKEY' does not show the outcome that was written; no transition was taken"
+            fi
+        fi
+
         BODY=$(jq -cn --arg id "$TRANSITION_ID" '{transition: {id: $id}}') \
             || die "could not build the transition request body"
-        http POST "/issue/$1/transitions" "$BODY"
+        http POST "/issue/$TKEY/transitions" "$BODY"
+        if [ "$DRY_RUN" = "1" ]; then
+            http GET "/issue/$TKEY?fields=status"
+        else
+            AFTER=$(http GET "/issue/$TKEY?fields=status") || die "could not read '$TKEY' back after the transition"
+            NOW=$(printf '%s' "$AFTER" | jq -r '.fields.status.name // empty') \
+                || die "could not parse the status read-back of '$TKEY'"
+            if [ -n "$WANT_STATUS" ] && [ "$NOW" != "$WANT_STATUS" ]; then
+                die "read-back of '$TKEY' shows status '$NOW', not '$WANT_STATUS'; the transition did not take"
+            fi
+            printf '%s is now %s\n' "$TKEY" "$NOW"
+        fi
         ;;
 
     comment)
@@ -239,12 +377,13 @@ case "$verb" in
         ;;
 
     create)
-        [ $# -ge 3 ] || die "usage: provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH]"
+        [ $# -ge 3 ] || die "usage: provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH] [--allow-duplicate]"
         PROJ="$1"; ISSUETYPE="$2"; SUMMARY="$3"
         shift 3
-        TICKET_PATH=""
+        TICKET_PATH=""; ALLOW_DUP=0
         while [ $# -gt 0 ]; do
             case "$1" in
+                --allow-duplicate) ALLOW_DUP=1; shift ;;
                 --ticket)
                     [ $# -ge 2 ] || die "--ticket needs a path"
                     TICKET_PATH="$2"; shift 2 ;;
@@ -258,6 +397,7 @@ case "$verb" in
             BODY=$(jq -cn --arg proj "$PROJ" --arg type "$ISSUETYPE" --arg summary "$SUMMARY" \
                 '{fields: {project: {key: $proj}, issuetype: {name: $type}, summary: $summary}}') \
                 || die "could not build the create-issue request body"
+            [ "$ALLOW_DUP" = "1" ] || refuse_duplicate "$PROJ" "$SUMMARY"
             http POST "/issue" "$BODY"
             exit 0
         fi
@@ -279,6 +419,8 @@ case "$verb" in
                 || die "could not read 'title' from '$TICKET_PATH'"
         fi
         [ -n "$SUMMARY" ] || die "a ticket needs a title — SUMMARY was empty and '$TICKET_PATH' carries no 'title' (work-order MUST-3)"
+
+        [ "$ALLOW_DUP" = "1" ] || refuse_duplicate "$PROJ" "$SUMMARY"
 
         BADTAG=$(printf '%s' "$TICKET" | jq -r '[(.tags // [])[] | select(test("[[:space:]]"))][0] // empty') \
             || die "could not read 'tags' from '$TICKET_PATH'"
