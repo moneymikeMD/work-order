@@ -79,7 +79,7 @@ cat > "$STUB" <<'STUBEOF'
 #!/bin/bash
 # A jira-http.sh-shaped stub. Responses come from fixtures/ except where
 # marked SYNTHETIC. Knobs: WO_TEST_PROJECT, WO_TEST_FIELDS, WO_TEST_SEARCH,
-# WO_TEST_STATUS.
+# WO_TEST_STATUS, WO_TEST_OUTCOME, WO_TEST_DUP.
 set -uo pipefail
 FX="$WO_TEST_FX"
 printf '%s\n' "$*" >> "$WO_TEST_LOG"
@@ -151,6 +151,15 @@ case "$M:$P" in
         printf '%s' "$NEXT" > "$WO_TEST_WORK/fieldseq"
         printf '{"id":"customfield_%s"}\n' "$NEXT" ;;
 
+    # SYNTHETIC: the create duplicate check. WO_TEST_DUP is the summary of the one
+    # issue the search returns; WO_TEST_DUP_CAT its statusCategory key.
+    GET:/search/jql*fields=summary,status*)
+        if [ -n "${WO_TEST_DUP:-}" ]; then
+            jq -cn --arg s "$WO_TEST_DUP" --arg c "${WO_TEST_DUP_CAT:-new}" \
+                '{issues: [{id: "10077", key: "PROJ-77", self: "https://example.atlassian.net/rest/api/3/issue/10077", fields: {summary: $s, status: {statusCategory: {key: $c}}}}], isLast: true}'
+        else
+            echo '{"issues":[],"isLast":true}'
+        fi ;;
     GET:/search/jql*)
         if [ "${WO_TEST_SEARCH:-ok}" = "400-once" ]; then
             SEEN="$WO_TEST_WORK/probe.$(printf '%s' "$P" | cksum | tr -d ' ')"
@@ -195,10 +204,25 @@ case "$M:$P" in
         LF="$WO_TEST_WORK/links.json"
         jq -c --arg id "${P#/issueLink/}" 'map(select(.id != $id))' "$LF" > "$LF.new" && mv "$LF.new" "$LF" ;;
     GET:/issue/*/transitions) fx issue.transitions.json ;;
-    POST:/issue/*/transitions) echo '{}' ;;
+    # SYNTHETIC: a transition POST is remembered so the status read-back that
+    # follows it reports the status that transition leads to.
+    POST:/issue/*/transitions) printf '%s' "$B" | jq -r '.transition.id' > "$WO_TEST_WORK/transitioned"; echo '{}' ;;
+    # SYNTHETIC: the outcome field. WO_TEST_OUTCOME=set seeds it, nowrite makes
+    # a PUT accept and store nothing; otherwise a PUT is served back on the GET.
+    PUT:/issue/*)
+        [ "${WO_TEST_OUTCOME:-}" = "nowrite" ] || printf '%s' "$B" | jq -c '.fields | to_entries[0].value' > "$WO_TEST_WORK/outcome.json"
+        echo '{}' ;;
+    GET:/issue/*fields=customfield_10053)
+        if [ -f "$WO_TEST_WORK/outcome.json" ]; then V=$(cat "$WO_TEST_WORK/outcome.json")
+        elif [ "${WO_TEST_OUTCOME:-}" = "set" ]; then
+            V='{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"prior reason"}]}]}'
+        else V=null; fi
+        jq -cn --argjson v "$V" '{key: "PROJ-1", fields: {customfield_10053: $v}}' ;;
     POST:/issue/*/comment) echo '{}' ;;
     GET:/issue/*fields=status)
-        if [ -n "${WO_TEST_STATUS:-}" ]; then
+        if [ -f "$WO_TEST_WORK/transitioned" ]; then
+            fx issue.status.json | jq -c --arg s "$(fx issue.transitions.json | jq -r --arg id "$(cat "$WO_TEST_WORK/transitioned")" '.transitions[] | select(.id == $id) | .to.name')" '.fields.status.name = $s'
+        elif [ -n "${WO_TEST_STATUS:-}" ]; then
             fx issue.status.json | jq -c --arg s "$WO_TEST_STATUS" '.fields.status.name = $s'
         else
             fx issue.status.json
@@ -225,7 +249,7 @@ LOG=""
 reset_log() {
     LOG="$WORK/log.$1"
     : > "$LOG"
-    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK"/probe.*
+    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.*
 }
 export WO_TEST_FX="$FX"
 export WO_TEST_WORK="$WORK"
@@ -348,7 +372,7 @@ contains "provider transition completed resolves the transition into Completed" 
     'POST /issue/PROJ-1/transitions {"transition":{"id":"81"}}' "$(cat "$LOG")"
 
 reset_log transition-cancel
-WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled >/dev/null 2>&1
+WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome "dropped" >/dev/null 2>&1
 contains "provider transition cancelled resolves its own transition" \
     '{"transition":{"id":"91"}}' "$(cat "$LOG")"
 
@@ -704,6 +728,158 @@ OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --dry-run --http "$STUB" link PROJ-1 --bloc
 eq "link --dry-run exits 0" "0" "$RC"
 contains "  and prints the POST it would make" "WOULD POST /issueLink" "$OUT"
 eq "  the stub never serving a write" "0" "$(grep -c '^POST \|^DELETE ' "$LOG" | tr -d ' ')"
+
+# ---- provider transition --outcome and create's duplicate check (WO-96) ---
+
+MUTANT="$WORK/provider-outcome-in-body.sh"
+reset_log cancel-outcome
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome "superseded by PROJ-9" 2>&1); RC=$?
+eq "transition cancelled --outcome exits 0" "0" "$RC"
+contains "  and reports the status read back" "PROJ-1 is now Cancelled" "$OUT"
+PUT_AT=$(grep -n '^PUT /issue/PROJ-1 ' "$LOG" | head -1 | cut -d: -f1)
+TRANS_AT=$(grep -n '^POST /issue/PROJ-1/transitions ' "$LOG" | head -1 | cut -d: -f1)
+nonempty "  with the outcome PUT logged" "$PUT_AT"
+nonempty "  and the transition POST logged" "$TRANS_AT"
+if [ -n "$PUT_AT" ] && [ -n "$TRANS_AT" ] && [ "$PUT_AT" -lt "$TRANS_AT" ]; then ok "  the outcome PUT comes before the transition POST"; else bad "  the outcome PUT comes before the transition POST"; fi
+eq "  the PUT body is the outcome as an ADF document under the resolved field id" \
+   '{"fields":{"customfield_10053":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"superseded by PROJ-9"}]}]}}}' \
+   "$(grep '^PUT /issue/PROJ-1 ' "$LOG" | sed 's/^PUT \/issue\/PROJ-1 //')"
+eq "  the transition body carries no fields" '{"transition":{"id":"91"}}' \
+   "$(grep '^POST /issue/PROJ-1/transitions ' "$LOG" | sed 's/^POST \/issue\/PROJ-1\/transitions //')"
+READ_OUTCOME_AT=$(grep -n '^GET /issue/PROJ-1?fields=customfield_10053' "$LOG" | head -1 | cut -d: -f1)
+READ_STATUS_AT=$(grep -n '^GET /issue/PROJ-1?fields=status' "$LOG" | tail -1 | cut -d: -f1)
+if [ -n "$READ_OUTCOME_AT" ] && [ -n "$PUT_AT" ] && [ "$READ_OUTCOME_AT" -gt "$PUT_AT" ] && [ "$READ_OUTCOME_AT" -lt "$TRANS_AT" ]; then ok "  the outcome is read back between the PUT and the transition"; else bad "  the outcome is read back between the PUT and the transition"; fi
+if [ -n "$READ_STATUS_AT" ] && [ -n "$TRANS_AT" ] && [ "$READ_STATUS_AT" -gt "$TRANS_AT" ]; then ok "  the status is read back after the transition"; else bad "  the status is read back after the transition"; fi
+
+reset_log cancel-outcome-stdin
+printf 'from stdin\n' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome - >/dev/null 2>&1
+contains "transition --outcome - reads the outcome from stdin" '"text":"from stdin"' "$(cat "$LOG")"
+
+sed -e 's/http PUT "\/issue\/\$TKEY" "\$OBODY" >\/dev\/null || die/true || die/' \
+    -e 's/^\( *\)\[ "\$GOT" = .*/\1true \\/' \
+    -e "s#--arg id \"\$TRANSITION_ID\" '{transition: {id: \$id}}'#--arg id \"\$TRANSITION_ID\" --argjson o \"\$ODOC\" '{transition: {id: \$id}, fields: {customfield_10053: \$o}}'#" \
+    "$PROVIDER" > "$MUTANT"
+chmod +x "$MUTANT"
+reset_log cancel-mutant
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$MUTANT" --http "$STUB" transition PROJ-1 cancelled --outcome "superseded by PROJ-9" 2>&1); RC=$?
+nonempty "  the mutant (outcome moved into the transition body) actually ran" "$(cat "$LOG")"
+contains "  and sent the field inside the transition body" '"fields":{"customfield_10053"' "$(grep '^POST /issue/PROJ-1/transitions ' "$LOG")"
+eq "mutation: moving outcome into the transition body leaves row 1's PUT assertion with nothing to find" "" \
+   "$(grep -n '^PUT /issue/PROJ-1 ' "$LOG" | head -1 | cut -d: -f1)"
+
+reset_log cancel-noop
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled 2>&1); RC=$?
+eq "transition cancelled with no --outcome and an empty field exits 1" "1" "$RC"
+contains "  naming --outcome" "--outcome" "$OUT"
+eq "  and writing nothing" "0" "$(grep -c '^POST \|^PUT \|^DELETE ' "$LOG" | tr -d ' ')"
+
+reset_log cancel-prior
+WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_OUTCOME=set "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled >/dev/null 2>&1; RC=$?
+eq "transition cancelled with no --outcome but the field already set goes through" "0" "$RC"
+eq "  without an outcome PUT" "0" "$(grep -c '^PUT ' "$LOG" | tr -d ' ')"
+
+reset_log cancel-nowrite
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_OUTCOME=nowrite "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome "x" 2>&1); RC=$?
+eq "a PUT whose read-back lacks the outcome exits 1" "1" "$RC"
+eq "  and takes no transition" "0" "$(grep -c '^POST /issue/PROJ-1/transitions' "$LOG" | tr -d ' ')"
+
+reset_log cancel-nofield
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome "x" 2>&1); RC=$?
+eq "--outcome on a site with no outcome field exits 1 before any write" "1" "$RC"
+contains "  naming the field" "no custom field named 'outcome'" "$OUT"
+eq "  and writing nothing" "0" "$(grep -c '^POST \|^PUT ' "$LOG" | tr -d ' ')"
+
+reset_log outcome-args
+OUT=$("$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome 2>&1); RC=$?
+eq "--outcome with no text is refused" "1" "$RC"
+OUT=$("$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --bogus 2>&1); RC=$?
+eq "transition refuses an unknown trailing flag" "1" "$RC"
+
+reset_log cancel-dry
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --dry-run --http "$STUB" transition PROJ-1 cancelled --outcome "x" 2>&1); RC=$?
+eq "transition --outcome --dry-run exits 0" "0" "$RC"
+contains "  and prints the PUT it would make" "WOULD PUT /issue/PROJ-1" "$OUT"
+eq "  the stub never serving a write" "0" "$(grep -c '^POST \|^PUT \|^DELETE ' "$LOG" | tr -d ' ')"
+
+reset_log dup-exact
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_DUP="Fix the thing" "$PROVIDER" --http "$STUB" create PROJ Task "Fix the thing" 2>/dev/null); RC=$?
+eq "create with an open issue of identical summary exits 3" "3" "$RC"
+eq "  printing the existing issue as {id,key,self}" \
+   '{"id":"10077","key":"PROJ-77","self":"https://example.atlassian.net/rest/api/3/issue/10077"}' "$(printf '%s' "$OUT" | jq -c .)"
+eq "  and issuing no POST /issue" "0" "$(grep -c '^POST /issue ' "$LOG" | tr -d ' ')"
+contains "  the search excludes Done issues" "statusCategory" "$(grep '^GET /search/jql' "$LOG")"
+
+reset_log dup-ticket
+TITLE=$(jq -r '.title' "$FX/ticket-minimal.json")
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_DUP="$TITLE" "$PROVIDER" --http "$STUB" create PROJ Task "" --ticket "$FX/ticket-minimal.json" 2>/dev/null); RC=$?
+eq "create --ticket checks the ticket's own title and exits 3 on a match" "3" "$RC"
+eq "  with no POST /issue" "0" "$(grep -c '^POST /issue ' "$LOG" | tr -d ' ')"
+
+reset_log dup-fuzzy
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_DUP="Fix the thing now" "$PROVIDER" --http "$STUB" create PROJ Task "Fix the thing" 2>&1); RC=$?
+eq "a summary that only fuzzily matches still creates" "0" "$RC"
+eq "  with one POST /issue" "1" "$(grep -c '^POST /issue ' "$LOG" | tr -d ' ')"
+
+reset_log dup-done
+WO_TEST_LOG="$LOG" WO_TEST_DUP="Fix the thing" WO_TEST_DUP_CAT="done" "$PROVIDER" --http "$STUB" create PROJ Task "Fix the thing" >/dev/null 2>&1; RC=$?
+eq "an identical summary on a Done issue does not block create" "0" "$RC"
+
+reset_log dup-allow
+WO_TEST_LOG="$LOG" WO_TEST_DUP="Fix the thing" "$PROVIDER" --http "$STUB" create PROJ Task "Fix the thing" --allow-duplicate >/dev/null 2>&1; RC=$?
+eq "--allow-duplicate creates despite an exact match" "0" "$RC"
+eq "  with one POST /issue and no search" "1:0" "$(grep -c '^POST /issue ' "$LOG" | tr -d ' '):$(grep -c '^GET /search/jql' "$LOG" | tr -d ' ')"
+
+reset_log dup-dry
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --dry-run --http "$STUB" create PROJ Task "Fix the thing" 2>&1); RC=$?
+eq "create --dry-run exits 0" "0" "$RC"
+contains "  and prints the duplicate search it would make" "WOULD GET /search/jql" "$OUT"
+
+jql_sent() { grep '^GET /search/jql' "$1" | head -1 | sed 's/^GET \/search\/jql?jql=//; s/&fields=.*//' | python3 -c 'import sys,urllib.parse; print(urllib.parse.unquote(sys.stdin.read().strip()))'; }
+
+OLDPROVIDER="$WORK/provider-old-escape.sh"
+python3 - "$PROVIDER" "$OLDPROVIDER" <<'PYEOF2'
+import sys
+s = open(sys.argv[1]).read()
+new = ' | gsub("\\\\\\\\"; "\\\\\\\\")'
+assert new in s
+open(sys.argv[2], "w").write(s.replace(new, ""))
+PYEOF2
+chmod +x "$OLDPROVIDER"
+
+reset_log esc-backslash
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create PROJ Task 'a\b' >/dev/null 2>&1
+eq "a backslash in the summary reaches JQL as one Lucene-escaped, string-escaped backslash" \
+   'project = "PROJ" AND statusCategory != Done AND summary ~ "a\\\\b"' "$(jql_sent "$LOG")"
+reset_log esc-backslash-old
+WO_TEST_LOG="$LOG" "$OLDPROVIDER" --http "$STUB" create PROJ Task 'a\b' >/dev/null 2>&1
+not_contains "mutation: without the doubling step the backslash row is red" 'summary ~ "a\\\\b"' "$(jql_sent "$LOG")"
+
+reset_log esc-bsq
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create PROJ Task 'a\"b' >/dev/null 2>&1
+eq "a backslash then a quote cannot close the JQL string early" \
+   'project = "PROJ" AND statusCategory != Done AND summary ~ "a\\\\\"b"' "$(jql_sent "$LOG")"
+reset_log esc-bsq-old
+WO_TEST_LOG="$LOG" "$OLDPROVIDER" --http "$STUB" create PROJ Task 'a\"b' >/dev/null 2>&1
+not_contains "mutation: without the doubling step the backslash-quote row is red" 'summary ~ "a\\\\\"b"' "$(jql_sent "$LOG")"
+
+reset_log esc-quote
+WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create PROJ Task 'Fix "quoted" thing' >/dev/null 2>&1
+eq "plain quotes in the summary are escaped" \
+   'project = "PROJ" AND statusCategory != Done AND summary ~ "Fix \"quoted\" thing"' "$(jql_sent "$LOG")"
+
+reset_log esc-dup
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_DUP='a\"b' "$PROVIDER" --http "$STUB" create PROJ Task 'a\"b' 2>/dev/null); RC=$?
+eq "an exact match on a backslash-and-quote summary still exits 3" "3" "$RC"
+
+reset_log contract-new
+NEWOUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" create PROJ Task "Brand new" 2>/dev/null); NEWRC=$?
+reset_log contract-dup
+DUPOUT=$(WO_TEST_LOG="$LOG" WO_TEST_DUP="Brand new" "$PROVIDER" --http "$STUB" create PROJ Task "Brand new" 2>/dev/null); DUPRC=$?
+eq "create stdout contract: exit 0 prints JSON with .id, .key and .self" "true" \
+   "$(printf '%s' "$NEWOUT" | jq -r '(.id != null) and (.key != null) and (.self != null)' 2>/dev/null)"
+eq "  exit 3 prints JSON with the same three fields" "true" \
+   "$(printf '%s' "$DUPOUT" | jq -r '(.id != null) and (.key != null) and (.self != null)' 2>/dev/null)"
+eq "  so \$(provider.sh create ...) is read with jq -r .key on both paths, exits 0 and 3" "0:3" "$NEWRC:$DUPRC"
 
 # ---- summary ------------------------------------------------------------
 

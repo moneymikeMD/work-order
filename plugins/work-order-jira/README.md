@@ -83,13 +83,16 @@ gave it. Both workflows create issues at `Triage`, the entry state — see
 ./provider.sh fetch PROJ-12
 ./provider.sh position PROJ-12                    # -> in-progress; exit 4 if unmapped
 ./provider.sh transition PROJ-12 awaiting-deployment
+./provider.sh transition PROJ-12 cancelled --outcome "Superseded by PROJ-14"
 ./provider.sh comment PROJ-12 -                   # body on stdin
-./provider.sh create PROJ Task "What will be true when this is done"
+./provider.sh create PROJ Task "What will be true when this is done"   # exit 3 if an open issue has this title
 ```
 
 `transition` takes a lifecycle position, not a Jira transition id, and resolves
 it against the live issue. A transition that a validator refuses fails loudly
-rather than moving the ticket somewhere else.
+rather than moving the ticket somewhere else. `--outcome` writes the cancelled
+ticket's outcome in its own request first; `create` refuses, exit 3, to file a
+second open issue with the same summary unless given `--allow-duplicate`.
 
 ## Tests
 

@@ -467,7 +467,7 @@ checked here too.
 | `provision.sh` | creates or converges a Space on a tier (`--tier managed`, the default, is a conforming Space), `--dry-run` first; its last step runs the two scripts below |
 | `universal-apply.sh` | converges, from `universal-workflows.json`, the shared workflows of section 3.1, their scheme, and both tiers' screens, screen schemes, issue type screen schemes and issue type schemes of section 3.3; takes no project |
 | `universal-switch.sh` | moves one project onto its tier's workflow scheme, issue type scheme, issue type screen scheme and category, mapping its issues' old statuses onto the tier's, then deletes the workflows, schemes and screens it had |
-| `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create` |
+| `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create`, `link`, `unlink` |
 | `lib/jira-http.sh` | the one credentialed HTTP client, and the seam a test stubs |
 | `selftest.sh` | offline; stubs the client and asserts on the decisions the scripts reach |
 
@@ -490,7 +490,7 @@ a stored rule that differs from `universal-workflows.json`.
 ## 10. Writing a ticket — `provider.sh create`
 
 ```
-provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH]
+provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH] [--allow-duplicate]
 ```
 
 Without `--ticket`, `create` writes a title and nothing else. With it, `PATH` is
@@ -515,6 +515,23 @@ none by that name rather than writing an issue missing part of the contract.
 
 The field list is not restated here: `lib/common.sh` holds the one table, and
 `provision.sh` creates exactly the fields `provider.sh` fills.
+
+**Retrying a create.** A create that fails after Jira accepted it, then retried,
+files a second issue. Before its POST, `create` searches PROJECT for an issue
+whose `statusCategory` is not `Done` and whose summary matches, and compares the
+summary client-side for exact equality, because JQL's `~` is fuzzy. On a match
+it writes nothing, exits 3 and prints the existing issue as `{id, key, self}`,
+the same shape a successful create prints, so `jq -r .key` reads either and the
+exit code tells a retry from a fresh create. `--allow-duplicate` skips the check. A summary
+that only resembles an open one is created.
+
+**`transition --outcome`.** `provider.sh transition KEY POSITION --outcome TEXT`
+(`-` reads stdin) satisfies `[JIRA-7]` for a move to `Cancelled`. Jira ignores a
+field placed in a transition body here, so the verb resolves the transition
+first, then PUTs `outcome` as an ADF document in its own request, reads the field
+back, takes the transition and reads the status back. Moving to `cancelled`
+with `--outcome` absent and the field empty exits 1 naming the flag, before any
+write. `--outcome` is accepted on any target.
 
 **`link` and `unlink`.** `provider.sh link KEY --blocked-by BLOCKER` writes
 the `Blocks` link; `unlink` removes it. The flag names the direction, so the
