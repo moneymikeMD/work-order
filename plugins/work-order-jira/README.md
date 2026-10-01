@@ -15,7 +15,7 @@ re-release because an endpoint moved.
   satisfy.
 - **`provision.sh`** — create or converge a Space on a tier; the default,
   `--tier managed`, is a conforming Space.
-- **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`.
+- **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`, `link`, `unlink`.
 - **`universal-apply.sh`** — converge the site-wide Universal workflows, their
   shared workflow scheme, and both tiers' screens, screen schemes, issue type
   screen schemes and issue type schemes towards `universal-workflows.json`,

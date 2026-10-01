@@ -516,9 +516,31 @@ none by that name rather than writing an issue missing part of the contract.
 The field list is not restated here: `lib/common.sh` holds the one table, and
 `provision.sh` creates exactly the fields `provider.sh` fills.
 
+**`link` and `unlink`.** `provider.sh link KEY --blocked-by BLOCKER` writes
+the `Blocks` link; `unlink` removes it. The flag names the direction, so the
+call reads like the ticket's `blocked_by` field, and argument order never
+decides it. Three behaviours of the Jira API, measured on dipuce.atlassian.net
+2026-09-30, shape the verbs:
+
+- On write, `inwardIssue` is the blocker and `outwardIssue` is the blocked
+  ticket. On read, from the blocked ticket's `issuelinks`, an entry carrying
+  `inwardIssue` means "is blocked by", so the read runs opposite to the write.
+- Posting a link that already exists returns 2xx and creates nothing, so a
+  reversed link cannot be fixed by posting the right one on top.
+- The endpoint is `POST /issueLink`; `/issuelinks` is a 404.
+
+`link` reads KEY first. A link already in the right direction is a no-op, exit
+0. A reversed link is refused, exit 1, naming its id, unless `--replace`
+deletes it before the write. After writing, `link` reads KEY back and exits 1
+unless an inward `Blocks` entry names BLOCKER. `unlink` deletes each matching
+link by the id read from KEY and reads back that it is gone; when only the
+reversed link exists it warns and leaves it alone. Link types other than
+`Blocks` are not handled.
+
 **What `create` does not write.** `blocked_by` and `epic` both name another
 issue, and a Jira link or parent needs its target to exist already, so a set
 imported in one pass cannot carry them on the way in. `create` warns when a
-ticket carries `blocked_by` and leaves it to a second pass. `id`, `created` and
+ticket carries `blocked_by` and leaves it to a second pass, which
+`provider.sh link KEY --blocked-by BLOCKER` performs (below). `id`, `created` and
 `updated` are Jira's to assign (section 2); a ticket's own `id` survives only if
 the caller puts it in `tags`.
