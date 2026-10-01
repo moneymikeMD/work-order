@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/moneymikeMD/work-order/compare/v1.8.0...v1.9.0) (2026-10-01)
+
+
+### Features
+
+* **jira:** provider.sh link and unlink verbs for Blocks links (WO-95) ([#73](https://github.com/moneymikeMD/work-order/issues/73)) ([f5c0a3a](https://github.com/moneymikeMD/work-order/commit/f5c0a3a24278cbac6a2260339c9a6b8af7ed2d57))
+* **jira:** provider.sh transition --outcome and duplicate-safe create (WO-96) ([#76](https://github.com/moneymikeMD/work-order/issues/76)) ([ba12351](https://github.com/moneymikeMD/work-order/commit/ba12351d05b36b5b387a994d1c8567c4a4181c03))
+
 ## [1.8.0](https://github.com/moneymikeMD/work-order/compare/v1.7.0...v1.8.0) (2026-09-27)
 
 
