@@ -10,11 +10,10 @@ how the repository itself is worked.
 ## Workflow
 
 - `main` is protected by a ruleset named `main`: every change lands through a
-  pull request, deletion and force-pushes are rejected, `validate` is the one
-  required status check, and one approving review is required. The repository
-  admin role is a bypass actor, so the owner's own PRs merge without waiting —
-  `ai-toolkit/scripts/pr-land.sh` takes that path when every required check is
-  green and nothing else on the head SHA has failed.
+  pull request, deletion and force-pushes are rejected, and `validate` and
+  `no-major` are the required status checks. No approving review is required
+  (owner decision 2026-10-01), so `ai-toolkit/scripts/pr-land.sh` merges once
+  every required check is green. The repository admin role is a bypass actor.
 - Squash merge, branch deleted on merge.
 - Conventional Commits are required, not optional: `release-please` derives the
   version bump and `CHANGELOG.md` from the commit subjects. A non-conforming
@@ -32,8 +31,9 @@ runs the Python selftest entry points — `reference/issues.py selftest` and
 selftest added later is covered with no workflow edit. `no-major` is the version
 cap, described below. `no-personal-paths` consumes an ai-toolkit action.
 
-Only `validate` is a required status check; the other three report. A red
-selftest suite therefore does not block a merge by itself.
+`validate` and `no-major` are required status checks; `selftests` and
+`no-personal-paths` report. A red selftest suite therefore does not block a
+merge by itself.
 
 Every selftest here is offline by construction: each stubs its HTTP client on
 `PATH` and reaches no network, site or credential, which is what lets them run
@@ -95,13 +95,11 @@ release-please reads as a major bump — a `!` after the type or scope, and a
 applies to the pull request title too, because `pr-land.sh` squash-merges and
 the squash subject comes from the title.
 
-The `no-major` job in `.github/workflows/ci.yml` reports on every pull request
-and on every push to `main`; ai-toolkit and night-watchman run the same job.
-It is not a required status check in any of the three, so a `feat!:` subject
-or a `BREAKING CHANGE:` footer goes red on a check nobody has to wait for. The
-cap rests on this rule and on review. Making the job required is NWM-163,
-approved by the owner and not yet applied to the rulesets. Lifting the cap is
-one commit per repo: delete the job.
+The `no-major` job in `.github/workflows/ci.yml` runs on every pull request
+and on every push to `main`, and is a required status check here, in
+ai-toolkit, night-watchman and moneymike-plugins, so a `feat!:` subject or a
+`BREAKING CHANGE:` footer blocks the merge. Lifting the cap is one commit per
+repo: delete the job, and drop it from the ruleset's required checks.
 
 ## Dependencies
 
