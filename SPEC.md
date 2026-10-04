@@ -198,6 +198,16 @@ leaving the field absent.
 [SHOULD-8] `full` — Two tickets that cannot avoid sharing an owned path SHOULD
 be merged into one, or serialised by a `blocked_by` edge.
 
+Cross-repo paths. The cross-repo form of a `touches` or `appends` entry is
+`repo:path`. The prefix before the colon names a checkout by its directory
+basename, by a trailing path of its directory (`memory-graph:` and
+`home_thirdparty_workspace/memory-graph:` name one checkout), or by its git
+remote's repository name. The older `repo/path` spelling is read as the same
+entry, and the reference implementation warns on it so a set converges on the
+colon form. A plain repo-relative path such as `docs/**` names no repository and
+carries no qualifier. This is a convention, not a numbered requirement: no
+conformance check depends on it.
+
 ## 4. Dependencies and startability
 
 [MUST-18] `full` — A ticket MUST carry `blocked_by` as a list of identifiers in

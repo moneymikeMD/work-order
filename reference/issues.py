@@ -13,11 +13,12 @@
                                 classify git diff --name-only <base-ref>...HEAD
                                 paths, run in --repo (default: cwd), vs the
                                 ticket's touches/appends -- a leading
-                                <repo-name>/ component is stripped from each
-                                glob, scoped to the repository's name (the
-                                main worktree's basename, so a linked
-                                worktree resolves the same), before
-                                matching; --repo-name NAME overrides it;
+                                `repo:` (canonical) or `repo/` qualifier is
+                                stripped from each glob when it names this
+                                checkout (main worktree basename, a trailing
+                                path of its directory, or its origin
+                                remote's repo name), before matching;
+                                --repo-name NAME overrides it;
                                 exit 0 all declared, 1 any
                                 UNDECLARED, 2 unresolved ticket or ref
     issues.py selftest         run built-in fixture checks, no <dir> needed
@@ -595,23 +596,62 @@ def overlap(a, b):
     return a == b or fnmatch(a, b) or fnmatch(b, a)
 
 
+_COLON_FORM = re.compile(r"^([^:*?\[\]\s]+):(.+)$")
+
+
+def _names_repo(prefix, ident):
+    """Does `prefix` name the checkout `ident` = (main_dir, names)? It does
+    when it equals one of the names (directory basename, git remote repo
+    name) or is a trailing path of the checkout's directory, so `memory-graph`
+    and `home_thirdparty_workspace/memory-graph` name the same checkout."""
+    main_dir, names = ident
+    prefix = prefix.strip("/")
+    if not prefix:
+        return False
+    if prefix in names:
+        return True
+    return bool(main_dir) and (main_dir == prefix or main_dir.endswith("/" + prefix))
+
+
+def _own_rest(glob, ident):
+    """The repo-relative remainder of `glob` when it is written for the
+    checkout `ident` as `repo:path` or `repo/path`, else None."""
+    m = _COLON_FORM.match(glob)
+    if m:
+        return m.group(2) if _names_repo(m.group(1), ident) else None
+    parts = glob.split("/")
+    for i in range(1, len(parts)):
+        if _names_repo("/".join(parts[:i]), ident):
+            return "/".join(parts[i:])
+    return None
+
+
+def _as_ident(repo):
+    if isinstance(repo, tuple):
+        return repo
+    return (None, [repo])
+
+
 def _strip_repo_prefix(globs, repo):
-    """Drop a leading `<repo>/` component from each glob that has one, so a
-    ~/code-relative touches/appends entry (`work-order/SPEC.md`) compares
-    against a single-repo `git diff`'s repo-relative paths (`SPEC.md`). A
-    glob for a different repo is returned unchanged and therefore never
-    matches — stripping is scoped to `repo` so a `night-watchman/` glob
-    never matches inside `work-order`."""
+    """Drop the leading repo qualifier from each glob written for `repo`, in
+    either form (`repo:path`, canonical, or `repo/path`), so a cross-repo
+    touches/appends entry compares against a single-repo `git diff`'s
+    repo-relative paths. `repo` is a name or a `_repo_ident()` tuple. A glob
+    for a different repo is returned unchanged and therefore never matches."""
     if not repo:
         return list(globs)
-    prefix = f"{repo}/"
-    return [g[len(prefix):] if g.startswith(prefix) else g for g in globs]
+    ident = _as_ident(repo)
+    out = []
+    for g in globs:
+        rest = _own_rest(g, ident)
+        out.append(g if rest is None else rest)
+    return out
 
 
 def overlap_declared(ticket, path, repo=None):
     """Is `path` (repo-relative, as `git diff` in a single checkout emits
     it) declared in ticket's touches or appends, once each glob's leading
-    `<repo>/` component is stripped, scoped to `repo`?"""
+    `repo:` or `repo/` qualifier is stripped, scoped to `repo`?"""
     touches = _strip_repo_prefix(ticket.get("touches") or [], repo)
     appends = _strip_repo_prefix(ticket.get("appends") or [], repo)
     return (any(overlap(path, g) for g in touches) or
@@ -667,14 +707,31 @@ def _where(t, root):
     return path
 
 
-def _repo_name(cwd=None):
-    """The repository's name for `<repo>/` prefix stripping: the basename
-    of the MAIN worktree, which is the parent of `git rev-parse
-    --git-common-dir`. A linked worktree's own directory (`wt-nwm-174`) is
-    not the repo name, and reading it as one made every prefixed glob
-    report UNDECLARED exactly where scope is meant to run (WO-74). Falls
-    back to the directory basename when git cannot answer."""
+def _remote_repo_name(here):
+    try:
+        proc = subprocess.run(["git", "remote", "get-url", "origin"],
+                              capture_output=True, text=True, timeout=30, cwd=here)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    url = (proc.stdout or "").strip().rstrip("/") if proc.returncode == 0 else ""
+    if not url:
+        return None
+    name = re.split(r"[/:]", url)[-1]
+    if name.endswith(".git"):
+        name = name[:-4]
+    return name or None
+
+
+def _repo_ident(cwd=None):
+    """(main_dir, names) for the checkout at `cwd`: the MAIN worktree's
+    directory, which is the parent of `git rev-parse --git-common-dir`, and
+    the names that identify it, its basename and its `origin` remote's repo
+    name. A linked worktree's own directory (`wt-nwm-174`) is neither, and
+    reading it as the repo name made every prefixed glob report UNDECLARED
+    exactly where scope is meant to run (WO-74). Falls back to the directory
+    basename when git cannot answer."""
     here = os.path.abspath(cwd or os.getcwd()).rstrip(os.sep)
+    main_dir = None
     try:
         proc = subprocess.run(
             ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -685,8 +742,53 @@ def _repo_name(cwd=None):
     if proc is not None and proc.returncode == 0:
         common = (proc.stdout or "").strip()
         if common:
-            return os.path.basename(os.path.dirname(common.rstrip(os.sep)))
-    return os.path.basename(here)
+            main_dir = os.path.dirname(common.rstrip(os.sep))
+    if main_dir is None:
+        return (here, [os.path.basename(here)])
+    names = [os.path.basename(main_dir)]
+    remote = _remote_repo_name(main_dir)
+    if remote and remote not in names:
+        names.append(remote)
+    return (main_dir, names)
+
+
+def _repo_name(cwd=None):
+    """The repository's basename for prefix stripping; see _repo_ident()."""
+    return _repo_ident(cwd)[1][0]
+
+
+def _known_repo_prefix(parts, ident):
+    """How many leading components of `parts` name a repo, or 0: the
+    checkout `ident` itself, or a directory beside it under the same parent
+    that holds a `.git`. A plain repo-relative path (`docs/x`) names none."""
+    main_dir, names = ident
+    code_root = os.path.dirname(main_dir) if main_dir else None
+    for i in range(1, len(parts)):
+        cand = "/".join(parts[:i])
+        if _names_repo(cand, ident):
+            return i
+        if code_root and os.path.exists(os.path.join(code_root, cand, ".git")):
+            return i
+    return 0
+
+
+def _split_touch(entry, ident):
+    """(repo_key, path, slash_form) for a touches/appends entry. repo_key is
+    the basename of the repo qualifier, None for an unqualified entry or one
+    naming `ident`'s own checkout, so both spellings of one path compare
+    equal across tickets."""
+    m = _COLON_FORM.match(entry)
+    if m:
+        key, path, slash = os.path.basename(m.group(1).strip("/")), m.group(2), False
+    else:
+        parts = entry.split("/")
+        n = _known_repo_prefix(parts, ident)
+        if not n:
+            return (None, entry, False)
+        key, path, slash = os.path.basename(parts[n - 1]), "/".join(parts[n:]), True
+    if _names_repo(m.group(1) if m else "/".join(parts[:n]), ident):
+        key = None
+    return (key, path, slash)
 
 
 def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
@@ -696,8 +798,9 @@ def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
     globs via overlap_declared(). Prints one "<class>\tpath" line per
     changed path and returns 0 when every path is declared, 1 when any path
     is UNDECLARED, 2 when the ticket or ref cannot be resolved. `repo`
-    scopes the `<repo>/` prefix stripped from touches/appends before
-    matching; if omitted, it is the repository's name — see _repo_name().
+    scopes the `repo:` or `repo/` prefix stripped from touches/appends
+    before matching; if omitted, it is the checkout's identity — see
+    _repo_ident().
     Adapted from mattpocock/skills code-review (spec axis), 2026-09-14."""
     ticket = next((t for t in tickets if t.get("id") == ticket_id), None)
     if ticket is None:
@@ -718,7 +821,7 @@ def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
               file=sys.stderr)
         return 2
     paths = [p for p in (proc.stdout or "").splitlines() if p]
-    effective_repo = repo if repo is not None else _repo_name(cwd)
+    effective_repo = repo if repo is not None else _repo_ident(cwd)
     touches = _strip_repo_prefix(ticket.get("touches") or [], effective_repo)
     appends = _strip_repo_prefix(ticket.get("appends") or [], effective_repo)
     undeclared = 0
@@ -736,7 +839,7 @@ def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
     return 1 if undeclared else 0
 
 
-def lint(tickets, root, scope=None):
+def lint(tickets, root, scope=None, cwd=None):
     """Report every error and warning in the set. The exit code is 1 on any
     error — or, with `scope` (a set of ticket ids), only on an error that
     belongs to one of those tickets: a transition is gated by the ticket
@@ -752,6 +855,16 @@ def lint(tickets, root, scope=None):
         if not isinstance(owners, (tuple, list, set)):
             owners = (owners,)
         errs.append((frozenset(str(o).upper() for o in owners if o), msg))
+
+    ident_cache = []
+
+    def ident():
+        if not ident_cache:
+            ident_cache.append(_repo_ident(cwd))
+        return ident_cache[0]
+
+    def keyed(entries):
+        return [(_split_touch(x, ident())[:2], x) for x in entries or []]
 
     seen = defaultdict(list)
     for t in tickets:
@@ -867,6 +980,15 @@ def lint(tickets, root, scope=None):
                             f"split it, or nothing matches it and every changed "
                             f"file reads UNDECLARED")
 
+        for field in ("touches", "appends"):
+            for path in t.get(field) or []:
+                repo_key, rest, slash = _split_touch(path, ident())
+                if slash:
+                    colon = f"{path[:len(path) - len(rest) - 1]}:{rest}"
+                    warns.append(f"{tid}: {field} entry '{path}' qualifies the "
+                                 f"repo with a slash; write it as '{colon}' "
+                                 f"(SPEC.md's cross-repo form)")
+
         if stage == "completed" and t.get("blocked_by"):
             unresolved = [d for d in t["blocked_by"]
                           if next((x for x in tickets if x.get("id") == d), {}).get("_stage") not in DONE]
@@ -890,15 +1012,17 @@ def lint(tickets, root, scope=None):
                          for d in (t.get("blocked_by") or []))]
     for i, a in enumerate(startable):
         for b in startable[i + 1:]:
-            clash = {x for x in (a.get("touches") or [])
-                     for y in (b.get("touches") or []) if overlap(x, y)}
+            clash = {x for (kx, px), x in keyed(a.get("touches"))
+                     for (ky, py), y in keyed(b.get("touches"))
+                     if kx == ky and overlap(px, py)}
             if clash:
                 err((a['id'], b['id']), f"{a['id']} and {b['id']} are both startable and both "
                             f"touch {sorted(clash)} — add a blocked_by or merge them")
             # Shared append-mostly files are touched by nearly every ticket; hard
             # collisions there would serialise everything, so they are warnings.
-            soft = {x for x in (a.get("appends") or [])
-                    for y in (b.get("appends") or []) if overlap(x, y)}
+            soft = {x for (kx, px), x in keyed(a.get("appends"))
+                    for (ky, py), y in keyed(b.get("appends"))
+                    if kx == ky and overlap(px, py)}
             if soft:
                 warns.append(f"{a['id']} and {b['id']} both append to {sorted(soft)} "
                              f"— expect a small merge, not a conflict")
@@ -1254,6 +1378,7 @@ def selftest():
     failures.extend(_jira_fixture_selftest())
     failures.extend(_notes_md_selftest())
     failures.extend(_lint_scope_selftest())
+    failures.extend(_repo_qualifier_selftest())
     failures.extend(_external_blocker_selftest())
 
     if failures:
@@ -1274,7 +1399,9 @@ def selftest():
           "empty touches on an agent ticket, and a live ticket with no "
           "executor are each an error naming the specific defect, while a "
           "contracted control whose body names the same fields is silent; "
-          "Epics and Sub-tasks are groupings, held to no ticket rule")
+          "Epics and Sub-tasks are groupings, held to no ticket rule; "
+          "repo:path and repo/path both strip, matched by basename, path "
+          "suffix or remote name, and only the slash form warns")
     return 0
 
 
@@ -1509,6 +1636,117 @@ def _scope_selftest():
     return failures
 
 
+def _repo_qualifier_selftest():
+    """WO-94: `repo:path` (canonical) and `repo/path` both strip, the prefix
+    matches by basename, trailing path or remote repo name, only the slash
+    form warns, and both spellings of a path collide in lint."""
+    import io
+    import contextlib
+    failures = []
+    fixture = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "fixtures", "repo-qualified")
+    tickets = {t["id"]: t for t in load_files(fixture)}
+
+    def git(cwd, *args):
+        subprocess.run(["git", *args], cwd=cwd, check=True,
+                       capture_output=True, text=True)
+
+    def stripped(tid, ident):
+        return _strip_repo_prefix(tickets[tid]["touches"], ident)
+
+    with tempfile.TemporaryDirectory() as parent:
+        main = os.path.join(parent, "work-order")
+        nested = os.path.join(parent, "home_thirdparty_workspace", "memory-graph")
+        sibling = os.path.join(parent, "sibling-repo")
+        for d in (main, nested, sibling):
+            os.makedirs(d)
+            git(d, "init", "-q")
+        git(main, "remote", "add", "origin", "git@github.com:owner/wo-remote.git")
+        main_id, nested_id = _repo_ident(main), _repo_ident(nested)
+
+        want = {"T-301": ["SPEC.md"], "T-302": ["reference/issues.py"],
+                "T-304": ["conformance/**"], "T-305": ["docs/**"]}
+        for tid, exp in want.items():
+            if stripped(tid, main_id) != exp:
+                failures.append(f"repo qualifier: {tid} stripped to "
+                                f"{stripped(tid, main_id)!r}, want {exp!r}")
+        if stripped("T-303", main_id) != tickets["T-303"]["touches"]:
+            failures.append("repo qualifier: a glob for another checkout was stripped")
+        if stripped("T-303", nested_id) != ["ts/src/**"]:
+            failures.append(f"repo qualifier: nested-checkout prefix gave "
+                            f"{stripped('T-303', nested_id)!r}")
+        if _strip_repo_prefix(["memory-graph:ts/src/**"], nested_id) != ["ts/src/**"]:
+            failures.append("repo qualifier: basename-only prefix did not match "
+                            "the nested checkout")
+        if _strip_repo_prefix(["home_thirdparty_workspace/memory-graph/ts/**"],
+                              nested_id) != ["ts/**"]:
+            failures.append("repo qualifier: slash form with a nested prefix "
+                            "was not stripped")
+        if stripped("T-306", nested_id) != tickets["T-306"]["touches"]:
+            failures.append("repo qualifier: a branch entry for another repo "
+                            "was altered")
+        if _strip_repo_prefix(["work-order:SPEC.md"], "work-order") != ["SPEC.md"]:
+            failures.append("repo qualifier: a bare name does not strip the "
+                            "colon form")
+
+        def run_lint(ts):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = lint(ts, "selftest", cwd=main)
+            return code, buf.getvalue()
+
+        _, out = run_lint(list(tickets.values()))
+        warned = [l for l in out.splitlines() if "qualifies the repo with a slash" in l]
+        if len(warned) != 1 or "T-302" not in warned[0]:
+            failures.append(f"repo qualifier: want one slash warning, on "
+                            f"T-302, got {warned!r}")
+
+        sib = dict(tickets["T-305"], id="T-307", touches=["sibling-repo/x/**"])
+        _, out = run_lint([sib])
+        if "T-307" not in out or "'sibling-repo:x/**'" not in out:
+            failures.append(f"repo qualifier: slash form naming a sibling repo "
+                            f"did not warn: {out!r}")
+
+        a = dict(tickets["T-301"], id="T-308", touches=["work-order:SPEC.md"])
+        b = dict(tickets["T-302"], id="T-309", touches=["work-order/SPEC.md"])
+        c = dict(tickets["T-302"], id="T-310", touches=["SPEC.md"])
+        d = dict(tickets["T-302"], id="T-311", touches=["other-repo:SPEC.md"])
+        code, out = run_lint([a, b])
+        if code != 1 or "both startable and both touch" not in out:
+            failures.append(f"repo qualifier: colon and slash spellings of one "
+                            f"path did not collide: {out!r}")
+        code, _ = run_lint([a, c])
+        if code != 1:
+            failures.append("repo qualifier: a qualified and an unqualified "
+                            "spelling of the own checkout did not collide")
+        code, out = run_lint([a, d])
+        if code != 0:
+            failures.append(f"repo qualifier: same path in another repo "
+                            f"collided: {out!r}")
+
+        git(main, "config", "user.email", "selftest@example.com")
+        git(main, "config", "user.name", "selftest")
+        git(main, "commit", "-q", "--allow-empty", "-m", "base")
+        git(main, "branch", "base")
+        for name in ("SPEC.md", "conformance.txt"):
+            with open(os.path.join(main, name), "w") as f:
+                f.write("x\n")
+        git(main, "add", "-A")
+        git(main, "commit", "-q", "-m", "work")
+        for form, touches, expect in (
+                ("colon", ["work-order:SPEC.md", "wo-remote:conformance.txt"], 0),
+                ("slash", ["work-order/SPEC.md", "work-order/conformance.txt"], 0),
+                ("other repo", ["other-repo:SPEC.md", "other-repo:conformance.txt"], 1)):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = scope("T-301", "base", [dict(tickets["T-301"], touches=touches)],
+                             cwd=main)
+            if code != expect:
+                failures.append(f"repo qualifier: scope with {form} touches "
+                                f"exited {code}, want {expect}: {buf.getvalue()!r}")
+    return failures
+
+
 def _lint_scope_selftest():
     """WO-69: `lint --scope` prints every error but exits non-zero only for
     an error on a scoped ticket, so a transition is gated by the ticket being
@@ -1662,8 +1900,8 @@ def parse_args(argv):
     `--repo PATH` (scope only) is the checkout `git diff` runs in. Defaults
     to the current directory when omitted, so `issues.py scope <id>
     <base-ref>` run from inside the repo being reviewed needs no flag. The
-    `<repo>/` prefix stripped from touches/appends is scoped to the
-    repository's name, read from git's main worktree (see _repo_name());
+    `repo:`/`repo/` prefix stripped from touches/appends is scoped to the
+    checkout's identity, read from git's main worktree (see _repo_ident());
     `--repo-name NAME` (scope only) overrides that for a caller whose
     checkout directory is not named after the repository.
 
