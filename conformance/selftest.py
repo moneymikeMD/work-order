@@ -30,11 +30,11 @@ class Results:
             print(f"FAIL {label}{': ' + detail if detail else ''}")
 
 
-def _validate(set_dir, profile, spec_path, version_path, source="file"):
+def _validate(set_dir, profile, spec_path, version_path, source="file", repo=()):
     sink = io.StringIO()
     kwargs = {"source": source, "fixture": set_dir} if source == "jira" else {}
     rc, rows = run(None if source == "jira" else set_dir, profile, spec_path, version_path,
-                   quiet=True, out=sink, err=sink, **kwargs)
+                   quiet=True, out=sink, err=sink, repo=repo, **kwargs)
     failed = [r[0] for r in rows if r[2] == "FAIL"]
     reported = [r[0] for r in rows if r[2] == "report"]
     unchecked = [r[0] for r in rows if r[2] == "UNCHECKED"]
@@ -160,10 +160,18 @@ def selftest(spec_path, version_path):
 
     should_only = fixtures / "violates-SHOULD-only"
     if should_only.is_dir():
-        rc, failed, reported, _, _ = _validate(should_only, "full", spec_path, version_path)
+        rc, failed, reported, _, _ = _validate(should_only, "full", spec_path, version_path,
+                                               repo=("dotfiles",))
         res.check(rc == 0 and not failed, "violates-SHOULD-only/ exits 0 with no MUST violated",
                   f"rc {rc}, failures {failed}")
         res.check(bool(reported), "violates-SHOULD-only/ reports at least one SHOULD finding")
+        res.check("SHOULD-13" in reported,
+                  "violates-SHOULD-only/ reports SHOULD-13 for the slash spelling of its own repo",
+                  f"reported: {reported}")
+        for label, repo in (("another repo", ("elsewhere",)), ("no --repo", ())):
+            _, _, rep, _, _ = _validate(should_only, "full", spec_path, version_path, repo=repo)
+            res.check("SHOULD-13" not in rep,
+                      f"SHOULD-13 is not reported when the set belongs to {label}", f"reported: {rep}")
     else:
         res.check(False, "fixtures/violates-SHOULD-only/ exists")
 

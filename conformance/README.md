@@ -7,6 +7,7 @@
 validate.py --profile minimal|full|unattended SET_DIR
 validate.py --source jira --fixture DIR --profile minimal|full|unattended
 validate.py --selftest
+validate.py --repo NAME[,NAME] ...   # lets [SHOULD-13] recognise the set's own repo
 ```
 
 It reads a set in the [file binding](../bindings/file/BINDING.md) — one stage

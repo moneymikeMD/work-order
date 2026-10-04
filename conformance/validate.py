@@ -416,7 +416,8 @@ def is_startable(t, by_id, today):
 
 class Context:
     def __init__(self, tickets, strays, layout, root, profile, claim, version_mm,
-                 source="file"):
+                 source="file", repo=()):
+        self.repo = tuple(repo)
         self.source = source
         self.tickets = tickets
         self.strays = strays
@@ -837,6 +838,37 @@ def should_settle_in_ticket(t, _ctx):
     return None
 
 
+COLON_FORM_RE = re.compile(r"^([^:*?\[\]\s]{2,}):(?![/\\])(.+)$")
+
+
+def should_cross_repo_colon(ctx):
+    """[SHOULD-13]: a slash entry whose leading components name the set's OWN
+    repo (`--repo`) is the legacy spelling of `repo:path`. A set carries no
+    repo identity of its own, so without `--repo` nothing can be recognised
+    and nothing is reported; a slash prefix naming another repo reads as a
+    literal path."""
+    names = ctx.repo
+    out = []
+    for t in ctx.tickets:
+        if t["_stage"] == "triage":
+            continue
+        for field in ("touches", "appends"):
+            for entry in paths_of(t, field):
+                entry = str(entry)
+                if COLON_FORM_RE.match(entry):
+                    continue
+                parts = entry.split("/")
+                for i in range(1, len(parts)):
+                    cand = "/".join(parts[:i])
+                    if any(cand == k or k.endswith("/" + cand) or cand.endswith("/" + k)
+                           for k in names):
+                        out.append(f"{t['_where']}: {field} entry {entry!r} spells the "
+                                   f"repo with a slash; write "
+                                   f"'{cand}:{'/'.join(parts[i:])}'")
+                        break
+    return out
+
+
 CHECKS = {
     "MUST-1": check_ids,
     "MUST-3": per_ticket(lambda t, c: None if str(t.get("title") or "").strip() else "no 'title'",
@@ -881,6 +913,7 @@ CHECKS = {
     "SHOULD-9": per_ticket(should_guided_flow),
     "SHOULD-11": per_ticket(should_be_short),
     "SHOULD-12": per_ticket(should_settle_in_ticket),
+    "SHOULD-13": should_cross_repo_colon,
 }
 
 # Requirements with no mechanical check, each with the reason. Nothing may be
@@ -999,7 +1032,7 @@ def report(rows, ctx, version, quiet, out=sys.stdout, err=None):
 
 
 def run(set_dir, profile, spec_path, version_path, quiet=False, out=sys.stdout, err=None,
-        source="file", fixture=None):
+        source="file", fixture=None, repo=()):
     reqs = parse_spec(spec_path)
     version, version_mm = spec_version(version_path)
     if source == "jira":
@@ -1017,7 +1050,7 @@ def run(set_dir, profile, spec_path, version_path, quiet=False, out=sys.stdout, 
         root = Path(set_dir)
         tickets, strays, layout = load_set(root)
         claim = read_claim(root)
-    ctx = Context(tickets, strays, layout, root, profile, claim, version_mm, source)
+    ctx = Context(tickets, strays, layout, root, profile, claim, version_mm, source, repo)
     rows = evaluate(ctx, reqs)
     return report(rows, ctx, version, quiet, out, err), rows
 
@@ -1039,6 +1072,10 @@ def main(argv):
                              "read the set from; this program never reaches a live site")
     parser.add_argument("--spec", default=None, help="path to SPEC.md (default: beside this program)")
     parser.add_argument("--version-file", default=None, help="path to VERSION-spec")
+    parser.add_argument("--repo", default="",
+                        help="comma-separated names of the repo this set belongs to (directory "
+                             "basename, trailing path or remote name); lets [SHOULD-13] "
+                             "recognise the slash spelling of the set's own repo")
     parser.add_argument("--quiet", action="store_true", help="print only failures and the summary")
     parser.add_argument("--selftest", action="store_true", help="run the fixture checks and exit")
     args = parser.parse_args(argv[1:])
@@ -1066,7 +1103,8 @@ def main(argv):
             parser.error("a set directory and --profile are both required (or use --selftest)")
 
     rc, _ = run(args.set_dir, args.profile, spec_path, version_path, args.quiet,
-                source=args.source, fixture=args.fixture)
+                source=args.source, fixture=args.fixture,
+                repo=[r for r in args.repo.split(',') if r])
     return rc
 
 
