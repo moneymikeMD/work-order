@@ -198,15 +198,17 @@ leaving the field absent.
 [SHOULD-8] `full` — Two tickets that cannot avoid sharing an owned path SHOULD
 be merged into one, or serialised by a `blocked_by` edge.
 
-Cross-repo paths. The cross-repo form of a `touches` or `appends` entry is
-`repo:path`. The prefix before the colon names a checkout by its directory
-basename, by a trailing path of its directory (`memory-graph:` and
-`home_thirdparty_workspace/memory-graph:` name one checkout), or by its git
-remote's repository name. The older `repo/path` spelling is read as the same
-entry, and the reference implementation warns on it so a set converges on the
-colon form. A plain repo-relative path such as `docs/**` names no repository and
-carries no qualifier. This is a convention, not a numbered requirement: no
-conformance check depends on it.
+[SHOULD-13] `full` — A `touches` or `appends` entry naming a path in another
+repository SHOULD be written `repo:path`, the canonical cross-repo form. A
+reader of `touches` or `appends` MUST accept `repo/path` as the same entry, so
+both spellings strip to the same repo-relative path. The prefix before the colon
+names a checkout when it equals the checkout's directory basename, equals a
+trailing path of its directory (`memory-graph:` and
+`home_thirdparty_workspace/memory-graph:` name one checkout), or equals the
+repository name of its git remote. A plain repo-relative path such as `docs/**`,
+a drive path such as `C:/foo/**` and a URL such as `https://x.y/z` carry no
+qualifier. An implementation SHOULD warn on the `repo/path` spelling where it
+can recognise the prefix as a repository.
 
 ## 4. Dependencies and startability
 

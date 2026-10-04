@@ -164,6 +164,8 @@ def selftest(spec_path, version_path):
         res.check(rc == 0 and not failed, "violates-SHOULD-only/ exits 0 with no MUST violated",
                   f"rc {rc}, failures {failed}")
         res.check(bool(reported), "violates-SHOULD-only/ reports at least one SHOULD finding")
+        res.check("SHOULD-13" in reported, "violates-SHOULD-only/ reports SHOULD-13 for a slash-form cross-repo path",
+                  f"reported: {reported}")
     else:
         res.check(False, "fixtures/violates-SHOULD-only/ exists")
 

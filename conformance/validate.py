@@ -837,6 +837,40 @@ def should_settle_in_ticket(t, _ctx):
     return None
 
 
+COLON_FORM_RE = re.compile(r"^([^:*?\[\]\s]{2,}):(?![/\\])(.+)$")
+
+
+def should_cross_repo_colon(ctx):
+    """[SHOULD-13]: a slash entry whose leading components name a repo that
+    the set elsewhere writes as `repo:path` is the same repo spelled the old
+    way. Only prefixes the set itself shows are recognisable."""
+    live = [t for t in ctx.tickets if t["_stage"] != "triage"]
+    known = set()
+    for t in live:
+        for field in ("touches", "appends"):
+            for entry in paths_of(t, field):
+                m = COLON_FORM_RE.match(str(entry))
+                if m:
+                    known.add(m.group(1).strip("/"))
+    out = []
+    for t in live:
+        for field in ("touches", "appends"):
+            for entry in paths_of(t, field):
+                entry = str(entry)
+                if COLON_FORM_RE.match(entry):
+                    continue
+                parts = entry.split("/")
+                for i in range(1, len(parts)):
+                    cand = "/".join(parts[:i])
+                    if any(cand == k or cand.endswith("/" + k) or k.endswith("/" + cand)
+                           for k in known):
+                        out.append(f"{t['_where']}: {field} entry {entry!r} spells the "
+                                   f"repo with a slash; write "
+                                   f"'{cand}:{'/'.join(parts[i:])}'")
+                        break
+    return out
+
+
 CHECKS = {
     "MUST-1": check_ids,
     "MUST-3": per_ticket(lambda t, c: None if str(t.get("title") or "").strip() else "no 'title'",
@@ -881,6 +915,7 @@ CHECKS = {
     "SHOULD-9": per_ticket(should_guided_flow),
     "SHOULD-11": per_ticket(should_be_short),
     "SHOULD-12": per_ticket(should_settle_in_ticket),
+    "SHOULD-13": should_cross_repo_colon,
 }
 
 # Requirements with no mechanical check, each with the reason. Nothing may be

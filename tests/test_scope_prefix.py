@@ -7,8 +7,12 @@ CLAUDE.md's Dependencies section), so nothing here can assume pytest is
 installed. Run directly (`python3 tests/test_scope_prefix.py`) or via
 `python3 -m unittest`.
 """
+import contextlib
+import copy
+import io
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(
@@ -66,6 +70,124 @@ class TestScopeCwdArgument(unittest.TestCase):
         params = inspect.signature(issues.scope).parameters
         self.assertIn("cwd", params)
         self.assertIn("repo", params)
+
+
+MAIN = ("/code/work-order", ["work-order", "wo-remote"])
+NESTED = ("/code/home_thirdparty_workspace/memory-graph", ["memory-graph"])
+
+
+def strip(glob, ident):
+    return issues._strip_repo_prefix([glob], ident)[0]
+
+
+class TestRepoQualifiers(unittest.TestCase):
+    """WO-94: `repo:path` is canonical; `repo/path` strips the same way."""
+
+    def test_colon_form_strips(self):
+        self.assertEqual(strip("work-order:SPEC.md", MAIN), "SPEC.md")
+
+    def test_slash_form_strips(self):
+        self.assertEqual(strip("work-order/SPEC.md", MAIN), "SPEC.md")
+
+    def test_nested_checkout_prefix_matches_by_path_suffix(self):
+        self.assertEqual(strip("home_thirdparty_workspace/memory-graph:ts/src/**", NESTED),
+                         "ts/src/**")
+        self.assertEqual(strip("memory-graph:ts/src/**", NESTED), "ts/src/**")
+        self.assertEqual(strip("home_thirdparty_workspace/memory-graph/ts/**", NESTED),
+                         "ts/**")
+
+    def test_remote_repo_name_matches_when_directory_differs(self):
+        self.assertEqual(strip("wo-remote:conformance/**", MAIN), "conformance/**")
+
+    def test_plain_path_is_left_alone(self):
+        self.assertEqual(strip("docs/**", MAIN), "docs/**")
+
+    def test_branch_like_entry_strips_to_a_glob_that_matches_nothing(self):
+        self.assertEqual(strip("memory-graph:upstream-pr-branch", NESTED),
+                         "upstream-pr-branch")
+        self.assertEqual(strip("memory-graph-fork:upstream-pr-branch", NESTED),
+                         "memory-graph-fork:upstream-pr-branch")
+
+    def test_other_repo_prefix_is_not_stripped(self):
+        for g in ("other-repo:SPEC.md", "other-repo/SPEC.md"):
+            self.assertEqual(strip(g, MAIN), g)
+
+    def test_drive_path_and_url_are_left_alone(self):
+        for g in ("C:/foo/**", "C:foo", "https://x.y/z", "work-order://x"):
+            self.assertEqual(strip(g, MAIN), g)
+
+    def test_overlap_declared_uses_the_colon_form(self):
+        ticket = {"touches": ["work-order:SPEC.md"], "appends": []}
+        self.assertTrue(issues.overlap_declared(ticket, "SPEC.md", repo="work-order"))
+        self.assertFalse(issues.overlap_declared(ticket, "SPEC.md", repo="night-watchman"))
+
+
+def _ticket(tid, touches):
+    return {"id": tid, "title": tid, "created": "2026-01-01", "updated": "2026-01-01",
+            "tags": [], "blocked_by": [], "human_steps": [], "appends": [],
+            "epic": None, "defer_until": None, "_is_epic": False, "_body": "",
+            "executor": "agent", "_stage": "open", "verify": "true",
+            "touches": touches, "_path": tid}
+
+
+def run_lint(tickets, **kw):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = issues.lint(tickets, "selftest", **kw)
+    return code, buf.getvalue()
+
+
+class TestLintSlashWarning(unittest.TestCase):
+    def test_slash_form_warns_and_cites_the_requirement(self):
+        _, out = run_lint([_ticket("T-1", ["work-order/SPEC.md"])], repo=MAIN)
+        self.assertIn("T-1", out)
+        self.assertIn("'work-order:SPEC.md'", out)
+        self.assertIn("SHOULD-13", out)
+
+    def test_colon_form_and_plain_path_do_not_warn(self):
+        _, out = run_lint([_ticket("T-1", ["work-order:SPEC.md"]),
+                           _ticket("T-2", ["docs/**"])], repo=MAIN)
+        self.assertNotIn("slash", out)
+
+    def test_prefix_the_set_writes_as_colon_is_recognised_without_a_repo(self):
+        _, out = run_lint([_ticket("T-1", ["dotfiles:a/**"]),
+                           _ticket("T-2", ["dotfiles/b/**"])])
+        self.assertIn("'dotfiles:b/**'", out)
+
+    def test_unrecognisable_slash_prefix_does_not_warn(self):
+        _, out = run_lint([_ticket("T-1", ["dotfiles/b/**"])])
+        self.assertNotIn("slash", out)
+
+    def test_output_does_not_depend_on_cwd_or_neighbouring_directories(self):
+        tickets = [_ticket("T-1", ["dotfiles:a/**"]), _ticket("T-2", ["dotfiles/b/**"]),
+                   _ticket("T-3", ["docs/**"]), _ticket("T-4", ["sibling/x/**"])]
+        outs = []
+        old = os.getcwd()
+        try:
+            for make_sibling in (False, True):
+                with tempfile.TemporaryDirectory() as d:
+                    if make_sibling:
+                        os.makedirs(os.path.join(d, "sibling", ".git"))
+                    os.chdir(d)
+                    outs.append(run_lint(copy.deepcopy(tickets)))
+        finally:
+            os.chdir(old)
+        self.assertEqual(outs[0], outs[1])
+        self.assertIn("T-2", outs[0][1])
+        self.assertNotIn("T-4", outs[0][1])
+
+
+class TestLintOverlapAcrossSpellings(unittest.TestCase):
+    def test_colon_and_slash_spelling_of_one_path_collide(self):
+        code, out = run_lint([_ticket("T-1", ["dotfiles:SPEC.md"]),
+                              _ticket("T-2", ["dotfiles/SPEC.md"])])
+        self.assertEqual(code, 1)
+        self.assertIn("both startable and both touch", out)
+
+    def test_same_path_in_another_repo_does_not_collide(self):
+        code, out = run_lint([_ticket("T-1", ["other-repo:SPEC.md"]),
+                              _ticket("T-2", ["SPEC.md"])])
+        self.assertEqual(code, 0, out)
 
 
 if __name__ == "__main__":

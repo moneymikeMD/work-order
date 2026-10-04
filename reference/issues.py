@@ -596,7 +596,7 @@ def overlap(a, b):
     return a == b or fnmatch(a, b) or fnmatch(b, a)
 
 
-_COLON_FORM = re.compile(r"^([^:*?\[\]\s]+):(.+)$")
+_COLON_FORM = re.compile(r"^([^:*?\[\]\s]{2,}):(?![/\\])(.+)$")
 
 
 def _names_repo(prefix, ident):
@@ -604,6 +604,8 @@ def _names_repo(prefix, ident):
     when it equals one of the names (directory basename, git remote repo
     name) or is a trailing path of the checkout's directory, so `memory-graph`
     and `home_thirdparty_workspace/memory-graph` name the same checkout."""
+    if ident is None:
+        return False
     main_dir, names = ident
     prefix = prefix.strip("/")
     if not prefix:
@@ -722,6 +724,26 @@ def _remote_repo_name(here):
     return name or None
 
 
+def _git_ident(cwd):
+    """(main_dir, names) when `cwd` is inside a git checkout, else None."""
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, timeout=30, cwd=cwd,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    common = (proc.stdout or "").strip() if proc.returncode == 0 else ""
+    if not common:
+        return None
+    main_dir = os.path.dirname(common.rstrip(os.sep))
+    names = [os.path.basename(main_dir)]
+    remote = _remote_repo_name(main_dir)
+    if remote and remote not in names:
+        names.append(remote)
+    return (main_dir, names)
+
+
 def _repo_ident(cwd=None):
     """(main_dir, names) for the checkout at `cwd`: the MAIN worktree's
     directory, which is the parent of `git rev-parse --git-common-dir`, and
@@ -731,25 +753,7 @@ def _repo_ident(cwd=None):
     exactly where scope is meant to run (WO-74). Falls back to the directory
     basename when git cannot answer."""
     here = os.path.abspath(cwd or os.getcwd()).rstrip(os.sep)
-    main_dir = None
-    try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            capture_output=True, text=True, timeout=30, cwd=here,
-        )
-    except (OSError, subprocess.SubprocessError):
-        proc = None
-    if proc is not None and proc.returncode == 0:
-        common = (proc.stdout or "").strip()
-        if common:
-            main_dir = os.path.dirname(common.rstrip(os.sep))
-    if main_dir is None:
-        return (here, [os.path.basename(here)])
-    names = [os.path.basename(main_dir)]
-    remote = _remote_repo_name(main_dir)
-    if remote and remote not in names:
-        names.append(remote)
-    return (main_dir, names)
+    return _git_ident(here) or (here, [os.path.basename(here)])
 
 
 def _repo_name(cwd=None):
@@ -757,37 +761,51 @@ def _repo_name(cwd=None):
     return _repo_ident(cwd)[1][0]
 
 
-def _known_repo_prefix(parts, ident):
+def _known_prefixes(tickets):
+    """The repo qualifiers the set itself writes in the colon form: a slash
+    entry whose leading components name one of these is recognisably the
+    same repo spelled the old way. Derived from the tickets alone, so the
+    result never depends on the working directory."""
+    known = set()
+    for t in tickets:
+        for field in ("touches", "appends"):
+            for entry in t.get(field) or []:
+                m = _COLON_FORM.match(entry)
+                if m:
+                    known.add(m.group(1).strip("/"))
+    return known
+
+
+def _same_checkout(a, b):
+    return a == b or a.endswith("/" + b) or b.endswith("/" + a)
+
+
+def _slash_prefix_len(parts, ident, known):
     """How many leading components of `parts` name a repo, or 0: the
-    checkout `ident` itself, or a directory beside it under the same parent
-    that holds a `.git`. A plain repo-relative path (`docs/x`) names none."""
-    main_dir, names = ident
-    code_root = os.path.dirname(main_dir) if main_dir else None
+    checkout `ident` itself, or a qualifier the set writes in the colon form
+    elsewhere. A plain repo-relative path (`docs/x`) names none."""
     for i in range(1, len(parts)):
         cand = "/".join(parts[:i])
-        if _names_repo(cand, ident):
-            return i
-        if code_root and os.path.exists(os.path.join(code_root, cand, ".git")):
+        if _names_repo(cand, ident) or any(_same_checkout(cand, k) for k in known):
             return i
     return 0
 
 
-def _split_touch(entry, ident):
+def _split_touch(entry, ident, known=()):
     """(repo_key, path, slash_form) for a touches/appends entry. repo_key is
     the basename of the repo qualifier, None for an unqualified entry or one
     naming `ident`'s own checkout, so both spellings of one path compare
     equal across tickets."""
     m = _COLON_FORM.match(entry)
     if m:
-        key, path, slash = os.path.basename(m.group(1).strip("/")), m.group(2), False
+        qual, path, slash = m.group(1), m.group(2), False
     else:
         parts = entry.split("/")
-        n = _known_repo_prefix(parts, ident)
+        n = _slash_prefix_len(parts, ident, known)
         if not n:
             return (None, entry, False)
-        key, path, slash = os.path.basename(parts[n - 1]), "/".join(parts[n:]), True
-    if _names_repo(m.group(1) if m else "/".join(parts[:n]), ident):
-        key = None
+        qual, path, slash = "/".join(parts[:n]), "/".join(parts[n:]), True
+    key = None if _names_repo(qual, ident) else os.path.basename(qual.strip("/"))
     return (key, path, slash)
 
 
@@ -839,7 +857,7 @@ def scope(ticket_id, base_ref, tickets, cwd=None, repo=None):
     return 1 if undeclared else 0
 
 
-def lint(tickets, root, scope=None, cwd=None):
+def lint(tickets, root, scope=None, repo=None):
     """Report every error and warning in the set. The exit code is 1 on any
     error — or, with `scope` (a set of ticket ids), only on an error that
     belongs to one of those tickets: a transition is gated by the ticket
@@ -856,15 +874,13 @@ def lint(tickets, root, scope=None, cwd=None):
             owners = (owners,)
         errs.append((frozenset(str(o).upper() for o in owners if o), msg))
 
-    ident_cache = []
-
-    def ident():
-        if not ident_cache:
-            ident_cache.append(_repo_ident(cwd))
-        return ident_cache[0]
+    ident = _as_ident(repo) if repo else None
+    if ident is None and isinstance(root, str) and os.path.isdir(root):
+        ident = _git_ident(root)
+    known = _known_prefixes(tickets)
 
     def keyed(entries):
-        return [(_split_touch(x, ident())[:2], x) for x in entries or []]
+        return [(_split_touch(x, ident, known)[:2], x) for x in entries or []]
 
     seen = defaultdict(list)
     for t in tickets:
@@ -982,12 +998,12 @@ def lint(tickets, root, scope=None, cwd=None):
 
         for field in ("touches", "appends"):
             for path in t.get(field) or []:
-                repo_key, rest, slash = _split_touch(path, ident())
+                repo_key, rest, slash = _split_touch(path, ident, known)
                 if slash:
                     colon = f"{path[:len(path) - len(rest) - 1]}:{rest}"
                     warns.append(f"{tid}: {field} entry '{path}' qualifies the "
                                  f"repo with a slash; write it as '{colon}' "
-                                 f"(SPEC.md's cross-repo form)")
+                                 f"([SHOULD-13], the cross-repo form)")
 
         if stage == "completed" and t.get("blocked_by"):
             unresolved = [d for d in t["blocked_by"]
@@ -1379,6 +1395,7 @@ def selftest():
     failures.extend(_notes_md_selftest())
     failures.extend(_lint_scope_selftest())
     failures.extend(_repo_qualifier_selftest())
+    failures.extend(_unittest_selftest())
     failures.extend(_external_blocker_selftest())
 
     if failures:
@@ -1401,7 +1418,8 @@ def selftest():
           "contracted control whose body names the same fields is silent; "
           "Epics and Sub-tasks are groupings, held to no ticket rule; "
           "repo:path and repo/path both strip, matched by basename, path "
-          "suffix or remote name, and only the slash form warns")
+          "suffix or remote name, and only the slash form warns; the "
+          "unittests under tests/ pass")
     return 0
 
 
@@ -1692,7 +1710,7 @@ def _repo_qualifier_selftest():
         def run_lint(ts):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                code = lint(ts, "selftest", cwd=main)
+                code = lint(ts, "selftest", repo=main_id)
             return code, buf.getvalue()
 
         _, out = run_lint(list(tickets.values()))
@@ -1701,11 +1719,12 @@ def _repo_qualifier_selftest():
             failures.append(f"repo qualifier: want one slash warning, on "
                             f"T-302, got {warned!r}")
 
-        sib = dict(tickets["T-305"], id="T-307", touches=["sibling-repo/x/**"])
-        _, out = run_lint([sib])
-        if "T-307" not in out or "'sibling-repo:x/**'" not in out:
-            failures.append(f"repo qualifier: slash form naming a sibling repo "
-                            f"did not warn: {out!r}")
+        colon = dict(tickets["T-305"], id="T-307", touches=["sibling-repo:y/**"])
+        sib = dict(tickets["T-305"], id="T-312", touches=["sibling-repo/x/**"])
+        _, out = run_lint([colon, sib])
+        if "T-312" not in out or "'sibling-repo:x/**'" not in out:
+            failures.append(f"repo qualifier: slash form naming a repo the set "
+                            f"writes as repo:path did not warn: {out!r}")
 
         a = dict(tickets["T-301"], id="T-308", touches=["work-order:SPEC.md"])
         b = dict(tickets["T-302"], id="T-309", touches=["work-order/SPEC.md"])
@@ -1745,6 +1764,20 @@ def _repo_qualifier_selftest():
                 failures.append(f"repo qualifier: scope with {form} touches "
                                 f"exited {code}, want {expect}: {buf.getvalue()!r}")
     return failures
+
+
+def _unittest_selftest():
+    """CI runs only the shell selftests and the two Python entry points, so
+    the stdlib unittests under tests/ run from here to be run at all."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "tests", "test_scope_prefix.py")
+    if not os.path.isfile(path):
+        return []
+    proc = subprocess.run([sys.executable, path], capture_output=True, text=True,
+                          timeout=300)
+    if proc.returncode != 0:
+        return [f"tests/test_scope_prefix.py failed: {(proc.stderr or '').strip()[-600:]}"]
+    return []
 
 
 def _lint_scope_selftest():
