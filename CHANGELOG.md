@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/moneymikeMD/work-order/compare/v1.9.0...v1.10.0) (2026-10-04)
+
+
+### Features
+
+* **reference:** accept repo:path as canonical cross-repo touches form (WO-94) ([#78](https://github.com/moneymikeMD/work-order/issues/78)) ([3b0d94a](https://github.com/moneymikeMD/work-order/commit/3b0d94a28634b78168318e98e02a8346a6c53703))
+
 ## [1.9.0](https://github.com/moneymikeMD/work-order/compare/v1.8.0...v1.9.0) (2026-10-01)
 
 
