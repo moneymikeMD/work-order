@@ -149,18 +149,22 @@ class TestLintSlashWarning(unittest.TestCase):
                            _ticket("T-2", ["docs/**"])], repo=MAIN)
         self.assertNotIn("slash", out)
 
-    def test_prefix_the_set_writes_as_colon_is_recognised_without_a_repo(self):
+    def test_slash_prefix_of_another_repo_is_a_literal_path(self):
         _, out = run_lint([_ticket("T-1", ["dotfiles:a/**"]),
-                           _ticket("T-2", ["dotfiles/b/**"])])
-        self.assertIn("'dotfiles:b/**'", out)
-
-    def test_unrecognisable_slash_prefix_does_not_warn(self):
-        _, out = run_lint([_ticket("T-1", ["dotfiles/b/**"])])
+                           _ticket("T-2", ["dotfiles/b/**"])], repo=MAIN)
         self.assertNotIn("slash", out)
 
+    def test_colon_entry_elsewhere_does_not_make_a_local_directory_a_repo(self):
+        code, out = run_lint([_ticket("T-1", ["tools:a/**"]),
+                              _ticket("T-2", ["tools/b/**"]),
+                              _ticket("T-3", ["tools/a/**"])], repo=MAIN)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("slash", out)
+        self.assertNotIn("both startable", out)
+
     def test_output_does_not_depend_on_cwd_or_neighbouring_directories(self):
-        tickets = [_ticket("T-1", ["dotfiles:a/**"]), _ticket("T-2", ["dotfiles/b/**"]),
-                   _ticket("T-3", ["docs/**"]), _ticket("T-4", ["sibling/x/**"])]
+        tickets = [_ticket("T-1", ["work-order/b/**"]), _ticket("T-2", ["docs/**"]),
+                   _ticket("T-3", ["sibling/x/**"])]
         outs = []
         old = os.getcwd()
         try:
@@ -169,18 +173,18 @@ class TestLintSlashWarning(unittest.TestCase):
                     if make_sibling:
                         os.makedirs(os.path.join(d, "sibling", ".git"))
                     os.chdir(d)
-                    outs.append(run_lint(copy.deepcopy(tickets)))
+                    outs.append(run_lint(copy.deepcopy(tickets), repo=MAIN))
         finally:
             os.chdir(old)
         self.assertEqual(outs[0], outs[1])
-        self.assertIn("T-2", outs[0][1])
-        self.assertNotIn("T-4", outs[0][1])
+        self.assertIn("T-1", outs[0][1])
+        self.assertNotIn("T-3", outs[0][1])
 
 
 class TestLintOverlapAcrossSpellings(unittest.TestCase):
     def test_colon_and_slash_spelling_of_one_path_collide(self):
-        code, out = run_lint([_ticket("T-1", ["dotfiles:SPEC.md"]),
-                              _ticket("T-2", ["dotfiles/SPEC.md"])])
+        code, out = run_lint([_ticket("T-1", ["work-order:SPEC.md"]),
+                              _ticket("T-2", ["work-order/SPEC.md"])], repo=MAIN)
         self.assertEqual(code, 1)
         self.assertIn("both startable and both touch", out)
 

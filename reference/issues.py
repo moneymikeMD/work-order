@@ -761,37 +761,18 @@ def _repo_name(cwd=None):
     return _repo_ident(cwd)[1][0]
 
 
-def _known_prefixes(tickets):
-    """The repo qualifiers the set itself writes in the colon form: a slash
-    entry whose leading components name one of these is recognisably the
-    same repo spelled the old way. Derived from the tickets alone, so the
-    result never depends on the working directory."""
-    known = set()
-    for t in tickets:
-        for field in ("touches", "appends"):
-            for entry in t.get(field) or []:
-                m = _COLON_FORM.match(entry)
-                if m:
-                    known.add(m.group(1).strip("/"))
-    return known
-
-
-def _same_checkout(a, b):
-    return a == b or a.endswith("/" + b) or b.endswith("/" + a)
-
-
-def _slash_prefix_len(parts, ident, known):
-    """How many leading components of `parts` name a repo, or 0: the
-    checkout `ident` itself, or a qualifier the set writes in the colon form
-    elsewhere. A plain repo-relative path (`docs/x`) names none."""
+def _slash_prefix_len(parts, ident):
+    """How many leading components of `parts` name the checkout `ident`, or
+    0. A slash prefix naming any other repo cannot be told from a directory
+    without a repo list, so it is read as a literal path; so is a plain
+    repo-relative path (`docs/x`)."""
     for i in range(1, len(parts)):
-        cand = "/".join(parts[:i])
-        if _names_repo(cand, ident) or any(_same_checkout(cand, k) for k in known):
+        if _names_repo("/".join(parts[:i]), ident):
             return i
     return 0
 
 
-def _split_touch(entry, ident, known=()):
+def _split_touch(entry, ident):
     """(repo_key, path, slash_form) for a touches/appends entry. repo_key is
     the basename of the repo qualifier, None for an unqualified entry or one
     naming `ident`'s own checkout, so both spellings of one path compare
@@ -801,7 +782,7 @@ def _split_touch(entry, ident, known=()):
         qual, path, slash = m.group(1), m.group(2), False
     else:
         parts = entry.split("/")
-        n = _slash_prefix_len(parts, ident, known)
+        n = _slash_prefix_len(parts, ident)
         if not n:
             return (None, entry, False)
         qual, path, slash = "/".join(parts[:n]), "/".join(parts[n:]), True
@@ -877,10 +858,9 @@ def lint(tickets, root, scope=None, repo=None):
     ident = _as_ident(repo) if repo else None
     if ident is None and isinstance(root, str) and os.path.isdir(root):
         ident = _git_ident(root)
-    known = _known_prefixes(tickets)
 
     def keyed(entries):
-        return [(_split_touch(x, ident, known)[:2], x) for x in entries or []]
+        return [(_split_touch(x, ident)[:2], x) for x in entries or []]
 
     seen = defaultdict(list)
     for t in tickets:
@@ -998,7 +978,7 @@ def lint(tickets, root, scope=None, repo=None):
 
         for field in ("touches", "appends"):
             for path in t.get(field) or []:
-                repo_key, rest, slash = _split_touch(path, ident, known)
+                repo_key, rest, slash = _split_touch(path, ident)
                 if slash:
                     colon = f"{path[:len(path) - len(rest) - 1]}:{rest}"
                     warns.append(f"{tid}: {field} entry '{path}' qualifies the "
@@ -1719,12 +1699,13 @@ def _repo_qualifier_selftest():
             failures.append(f"repo qualifier: want one slash warning, on "
                             f"T-302, got {warned!r}")
 
-        colon = dict(tickets["T-305"], id="T-307", touches=["sibling-repo:y/**"])
-        sib = dict(tickets["T-305"], id="T-312", touches=["sibling-repo/x/**"])
-        _, out = run_lint([colon, sib])
-        if "T-312" not in out or "'sibling-repo:x/**'" not in out:
-            failures.append(f"repo qualifier: slash form naming a repo the set "
-                            f"writes as repo:path did not warn: {out!r}")
+        three = [dict(tickets["T-305"], id="T-313", touches=["tools:a/**"]),
+                 dict(tickets["T-305"], id="T-314", touches=["tools/b/**"]),
+                 dict(tickets["T-305"], id="T-315", touches=["tools/a/**"])]
+        code, out = run_lint(three)
+        if code != 0 or "slash" in out or "both startable" in out:
+            failures.append(f"repo qualifier: a local directory named like a "
+                            f"colon-form prefix elsewhere was re-keyed: {out!r}")
 
         a = dict(tickets["T-301"], id="T-308", touches=["work-order:SPEC.md"])
         b = dict(tickets["T-302"], id="T-309", touches=["work-order/SPEC.md"])
@@ -1772,7 +1753,7 @@ def _unittest_selftest():
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "tests", "test_scope_prefix.py")
     if not os.path.isfile(path):
-        return []
+        return [f"{path} is missing: the unit tests CI relies on are gone"]
     proc = subprocess.run([sys.executable, path], capture_output=True, text=True,
                           timeout=300)
     if proc.returncode != 0:
