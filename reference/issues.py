@@ -1042,6 +1042,14 @@ def lint(tickets, root, scope=None, repo=None):
     return 1 if gating else 0
 
 
+def _epic_ref(epic):
+    """The Jira binding's {key, title} dict as-is; the file binding's scalar
+    id as {key: id, title: ""}."""
+    if isinstance(epic, str):
+        return {"key": epic, "title": ""}
+    return epic
+
+
 def compute_epic_rollup(tickets):
     """epic key -> {title, status}, derived ONLY from the children present in
     `tickets` right now. Status rules are tickets-protocol/SKILL.md's:
@@ -1063,7 +1071,7 @@ def compute_epic_rollup(tickets):
     for t in tickets:
         if t.get("_shadow"):
             continue
-        epic = t.get("epic")
+        epic = _epic_ref(t.get("epic"))
         if not epic or not epic.get("key"):
             continue
         entry = rollup.setdefault(epic["key"], {"title": epic.get("title") or "", "stages": []})
@@ -1082,12 +1090,12 @@ def compute_epic_rollup(tickets):
 def epic_label(t, rollup):
     """Trailing per-ticket string for board()/next() output. Empty
     for a shadow stand-in or for a ticket whose source never carries epic
-    data at all (the filesystem source has no epic concept). Otherwise: the
+    data at all. Otherwise: the
     assigned epic + its rolled-up status, or an explicit orphan flag when
     the ticket has no parent in Jira."""
     if t.get("_shadow") or "epic" not in t or t.get("_is_epic"):
         return ""
-    epic = t.get("epic")
+    epic = _epic_ref(t.get("epic"))
     if not epic:
         return "  orphan: no epic link in Jira"
     key = epic["key"]
@@ -1377,6 +1385,7 @@ def selftest():
     failures.extend(_repo_qualifier_selftest())
     failures.extend(_unittest_selftest())
     failures.extend(_external_blocker_selftest())
+    failures.extend(_scalar_epic_selftest())
 
     if failures:
         print("SELFTEST FAILED")
@@ -1398,7 +1407,8 @@ def selftest():
           "contracted control whose body names the same fields is silent; "
           "Epics and Sub-tasks are groupings, held to no ticket rule; "
           "repo:path and repo/path both strip, matched by basename, path "
-          "suffix or remote name, and only the slash form warns; the "
+          "suffix or remote name, and only the slash form warns; a "
+          "file-binding scalar epic labels board and next rows; the "
           "unittests under tests/ pass")
     return 0
 
@@ -1865,6 +1875,31 @@ def _external_blocker_selftest():
     if code != 1 or "blocked_by_external is not a list" not in lint_out:
         failures.append(f"lint: a scalar blocked_by_external was not reported "
                         f"(exit {code}): {lint_out!r}")
+    return failures
+
+
+def _scalar_epic_selftest():
+    """WO-101: a file-binding `epic` is a scalar id, not Jira's dict, and
+    board and next must label it rather than raise."""
+    import io
+    import contextlib
+    failures = []
+    fixture = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "fixtures", "scalar-epic")
+    tickets = load_files(fixture)
+    for name, fn in (("board", board), ("next", nxt)):
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                code = fn(tickets, "selftest")
+        except Exception as e:
+            failures.append(f"scalar epic: {name} raised {type(e).__name__}: {e}")
+            continue
+        if code != 0:
+            failures.append(f"scalar epic: {name} exited {code}")
+        if "epic E-1 (To Do)" not in buf.getvalue():
+            failures.append(f"scalar epic: {name} did not label T-401 with "
+                            f"epic E-1: {buf.getvalue()!r}")
     return failures
 
 
