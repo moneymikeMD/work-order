@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/moneymikeMD/work-order/compare/v1.10.0...v1.10.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **reference:** accept a file-binding scalar epic in the rollup (WO-101) ([#80](https://github.com/moneymikeMD/work-order/issues/80)) ([c2d70b0](https://github.com/moneymikeMD/work-order/commit/c2d70b0e9b2c616fa5cf7e28708022f6e9993b4b))
+
 ## [1.10.0](https://github.com/moneymikeMD/work-order/compare/v1.9.0...v1.10.0) (2026-10-04)
 
 
