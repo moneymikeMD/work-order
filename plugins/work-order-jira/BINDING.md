@@ -480,6 +480,7 @@ checked here too.
 | `issues-api.sh` | the read-only wrapper `reference/issues.py --source jira` calls, over `lib/jira-http.sh` |
 | `lib/jira-http.sh` | the one credentialed HTTP client, and the seam a test stubs |
 | `selftest.sh` | offline; stubs the client and asserts on the decisions the scripts reach |
+| `acceptance.sh` | live; runs every flow of `GOLDEN-FLOWS.md` against a scratch project, before every release |
 
 `provider.sh transition KEY <position>` takes a lifecycle position, and
 refuses a Jira transition id, which would skip the `[JIRA-7]` outcome check and
