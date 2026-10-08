@@ -116,3 +116,33 @@ no-op, so a filing sequence can be re-run after a partial failure.
 No network, no Jira site, no credential: the tests either exercise a `--dry-run`
 path or pass `--http` pointing at a stub, and a stub that is never reached is
 a failure rather than a pass.
+
+## Acceptance
+
+```sh
+./acceptance.sh --project WOACC
+```
+
+Runs every flow in [GOLDEN-FLOWS.md](GOLDEN-FLOWS.md) end to end against a
+live scratch project, the way a session runs it, and prints one `ok` or
+`not ok` line per flow. It files its own issues, labelled `wo-acceptance`, and
+closes every one at the end: deleted when the credential may delete issues in
+the project, cancelled with an outcome otherwise. A run takes about two
+minutes.
+
+It refuses any project whose description does not carry the line
+`work-order-jira acceptance scratch project` and that is not on the Universal
+Managed tier. A scratch project is made once:
+
+```sh
+./provision.sh --yes --project WOACC --name "work-order acceptance"
+lib/jira-http.sh PUT /project/WOACC \
+  '{"description":"work-order-jira acceptance scratch project. acceptance.sh files and closes every issue in it; nothing else lives here."}'
+```
+
+## Releasing
+
+A `work-order-jira` release PR from release-please merges only once
+`./acceptance.sh` passes against the PR's head. CI runs the offline selftests,
+but it holds no Jira credential, so the live suite is run by hand and its
+summary pasted into the release PR.
