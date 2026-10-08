@@ -113,6 +113,20 @@ blocked by an open ticket, deferred to a future date, or waiting on
 through the file binding. night-watchman's `waves.py`, which loads tickets
 through `issues.py`, plans the same startable set.
 
+## Frozen
+
+`work-order-jira` 0.9.0 is feature-complete: every flow above passes live
+against a scratch project, and the release was cut only after it did.
+
+From that release on, the tooling changes only to fix a failing golden flow or
+to add a flow the owner asks for. The tooling is `provider.sh`,
+`provision.sh`, the two universal scripts, `lib/`, `issues-api.sh`, and the
+parts of BINDING.md they implement. A fix starts from the flow it repairs: a
+red `acceptance.sh` run, or a ticket naming the flow and the step that fails.
+A new flow is added to this file first and lands with its acceptance test.
+A verb that would be convenient, or an option no flow needs, is declined, and
+the reason goes on its ticket. Owner rule, 2026-10-08 (WO-106).
+
 ## What is not a flow
 
 Link types other than `Blocks`; Sub-tasks; removing a ticket's epic; boards and

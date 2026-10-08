@@ -16,6 +16,11 @@ how the repository itself is worked.
   to search for it, and it never puts the gap in front of the repository that
   can fix it. For this repository's tools that ticket goes to the WO Jira
   project. Owner rule, 2026-10-08.
+- **work-order-jira is frozen.** Since 0.9.0 it is feature-complete: the
+  flows in `plugins/work-order-jira/GOLDEN-FLOWS.md` pass live. Its tooling
+  changes only to fix a failing golden flow or to add a flow the owner asks
+  for, and every such change lands with the flow's acceptance test. Owner
+  rule, 2026-10-08.
 
 ## Workflow
 
