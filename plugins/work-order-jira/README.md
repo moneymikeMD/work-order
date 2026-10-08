@@ -15,7 +15,7 @@ re-release because an endpoint moved.
   satisfy.
 - **`provision.sh`** — create or converge a Space on a tier; the default,
   `--tier managed`, is a conforming Space.
-- **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`, `link`, `unlink`.
+- **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`, `link`, `unlink`, `parent`.
 - **`universal-apply.sh`** — converge the site-wide Universal workflows, their
   shared workflow scheme, and both tiers' screens, screen schemes, issue type
   screen schemes and issue type schemes towards `universal-workflows.json`,
@@ -86,6 +86,9 @@ gave it. Both workflows create issues at `Triage`, the entry state — see
 ./provider.sh transition PROJ-12 cancelled --outcome "Superseded by PROJ-14"
 ./provider.sh comment PROJ-12 -                   # body on stdin
 ./provider.sh create PROJ Task "What will be true when this is done"   # exit 3 if an open issue has this title
+./provider.sh create PROJ Task "" --ticket decision.json   # its epic, when filed, becomes the parent
+./provider.sh link PROJ-13 --blocked-by PROJ-12
+./provider.sh parent PROJ-13 --epic PROJ-10             # --replace to move it from another epic
 ```
 
 `transition` takes a lifecycle position, not a Jira transition id, and resolves
@@ -93,6 +96,8 @@ it against the live issue. A transition that a validator refuses fails loudly
 rather than moving the ticket somewhere else. `--outcome` writes the cancelled
 ticket's outcome in its own request first; `create` refuses, exit 3, to file a
 second open issue with the same summary unless given `--allow-duplicate`.
+`parent` sets a ticket's epic and reads it back; `create --ticket` does the
+same in the create request when the decision's `epic` already exists.
 
 ## Tests
 

@@ -174,6 +174,30 @@ case "$M:$P" in
         # SYNTHETIC: the created body is kept so the GET below can serve it back.
         printf '%s' "$B" > "$WO_TEST_WORK/created-issue.json"
         fx issue.create.json ;;
+    # SYNTHETIC: issue types and epics. WO_TEST_LEVELS maps KEY:LEVEL, space
+    # separated, and a key it does not name reads as a 404 by issuetype.
+    # WO_TEST_PARENT_OF seeds KEY:EPIC; a parent PUT is kept per key, the
+    # created issue (PROJ-42) carries the parent its create sent, and
+    # WO_TEST_PARENT=nowrite accepts a parent and keeps none.
+    GET:/issue/*fields=issuetype|GET:/issue/*fields=parent,issuetype|GET:/issue/*fields=parent)
+        K="${P#/issue/}"; K="${K%%\?*}"
+        LV=""; PAR=""
+        for kv in ${WO_TEST_LEVELS:-}; do [ "${kv%%:*}" = "$K" ] && LV="${kv#*:}"; done
+        for kv in ${WO_TEST_PARENT_OF:-}; do [ "${kv%%:*}" = "$K" ] && PAR="${kv#*:}"; done
+        if [ -f "$WO_TEST_WORK/parent.$K" ]; then
+            PAR=$(cat "$WO_TEST_WORK/parent.$K")
+        elif [ "$K" = "PROJ-42" ] && [ -f "$WO_TEST_WORK/created-issue.json" ] && [ "${WO_TEST_PARENT:-}" != "nowrite" ]; then
+            PAR=$(jq -r '.fields.parent.key // empty' "$WO_TEST_WORK/created-issue.json")
+        fi
+        case "$P" in
+            *fields=issuetype)
+                [ -n "$LV" ] || { printf 'HTTP 404\n{"errorMessages":["Issue does not exist or you do not have permission to see it."],"errors":{}}\n' >&2; exit 1; }
+                jq -cn --arg k "$K" --argjson l "$LV" \
+                    '{key: $k, fields: {issuetype: {name: (if $l == 1 then "Epic" else "Task" end), hierarchyLevel: $l}}}' ;;
+            *)
+                jq -cn --arg k "$K" --argjson l "${LV:-0}" --arg p "$PAR" \
+                    '{key: $k, fields: {issuetype: {hierarchyLevel: $l}, parent: (if $p == "" then null else {key: $p} end)}}' ;;
+        esac ;;
     # SYNTHETIC: issue links, kept as {id, inward, outward} so the stub reads
     # them the way Jira does: an entry on the outward issue carries
     # inwardIssue, and one on the inward issue carries outwardIssue.
@@ -210,7 +234,12 @@ case "$M:$P" in
     # SYNTHETIC: the outcome field. WO_TEST_OUTCOME=set seeds it, nowrite makes
     # a PUT accept and store nothing; otherwise a PUT is served back on the GET.
     PUT:/issue/*)
-        [ "${WO_TEST_OUTCOME:-}" = "nowrite" ] || printf '%s' "$B" | jq -c '.fields | to_entries[0].value' > "$WO_TEST_WORK/outcome.json"
+        if printf '%s' "$B" | jq -e '.fields.parent' >/dev/null 2>&1; then
+            [ "${WO_TEST_PARENT:-}" = "nowrite" ] \
+                || printf '%s' "$B" | jq -r '.fields.parent.key' > "$WO_TEST_WORK/parent.${P#/issue/}"
+        else
+            [ "${WO_TEST_OUTCOME:-}" = "nowrite" ] || printf '%s' "$B" | jq -c '.fields | to_entries[0].value' > "$WO_TEST_WORK/outcome.json"
+        fi
         echo '{}' ;;
     GET:/issue/*fields=customfield_10053)
         if [ -f "$WO_TEST_WORK/outcome.json" ]; then V=$(cat "$WO_TEST_WORK/outcome.json")
@@ -249,7 +278,7 @@ LOG=""
 reset_log() {
     LOG="$WORK/log.$1"
     : > "$LOG"
-    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.*
+    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.* "$WORK"/parent.*
 }
 export WO_TEST_FX="$FX"
 export WO_TEST_WORK="$WORK"
@@ -728,6 +757,105 @@ OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --dry-run --http "$STUB" link PROJ-1 --bloc
 eq "link --dry-run exits 0" "0" "$RC"
 contains "  and prints the POST it would make" "WOULD POST /issueLink" "$OUT"
 eq "  the stub never serving a write" "0" "$(grep -c '^POST \|^DELETE ' "$LOG" | tr -d ' ')"
+
+# ---- provider parent, and create writing the epic (WO-103) ---------------
+
+OUT=$("$PROVIDER" --dry-run parent PROJ-2 --epic PROJ-1 2>&1); RC=$?
+eq "parent --dry-run exits 0" "0" "$RC"
+contains "  printing the parent PUT it would make" '{"fields":{"parent":{"key":"PROJ-1"}}}' "$OUT"
+contains "  against the ticket" "/rest/api/3/issue/PROJ-2" "$OUT"
+OUT=$("$PROVIDER" --dry-run parent PROJ-2 2>&1); RC=$?
+eq "parent without --epic is refused" "1" "$RC"
+OUT=$("$PROVIDER" --dry-run parent PROJ-2 --epic PROJ-2 2>&1); RC=$?
+eq "parent refuses an issue as its own epic" "1" "$RC"
+
+reset_log parent-write
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LEVELS="PROJ-1:1 PROJ-2:0" "$PROVIDER" --http "$STUB" parent PROJ-2 --epic PROJ-1 2>&1); RC=$?
+eq "parent writes the epic and exits 0" "0" "$RC"
+contains "  sending fields.parent" 'PUT /issue/PROJ-2 {"fields":{"parent":{"key":"PROJ-1"}}}' "$(cat "$LOG")"
+eq "  then reads the ticket back after the write" "GET /issue/PROJ-2?fields=parent" \
+   "$(sed -n '/^PUT \/issue\/PROJ-2 /,$p' "$LOG" | sed -n '2p')"
+contains "  and says where it now sits" "PROJ-2 is now under epic PROJ-1" "$OUT"
+
+reset_log parent-noop
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LEVELS="PROJ-1:1 PROJ-2:0" WO_TEST_PARENT_OF="PROJ-2:PROJ-1" \
+      "$PROVIDER" --http "$STUB" parent PROJ-2 --epic PROJ-1 2>&1); RC=$?
+eq "parent on a ticket already under the epic exits 0" "0" "$RC"
+eq "  and writes nothing" "0" "$(grep -c '^PUT ' "$LOG" || true)"
+
+reset_log parent-other
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LEVELS="PROJ-1:1 PROJ-5:1 PROJ-2:0" WO_TEST_PARENT_OF="PROJ-2:PROJ-5" \
+      "$PROVIDER" --http "$STUB" parent PROJ-2 --epic PROJ-1 2>&1); RC=$?
+eq "parent refuses to move a ticket out of another epic without --replace" "1" "$RC"
+contains "  naming the epic it is under" "PROJ-5" "$OUT"
+eq "  and writes nothing" "0" "$(grep -c '^PUT ' "$LOG" || true)"
+
+reset_log parent-replace
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LEVELS="PROJ-1:1 PROJ-5:1 PROJ-2:0" WO_TEST_PARENT_OF="PROJ-2:PROJ-5" \
+      "$PROVIDER" --http "$STUB" parent PROJ-2 --epic PROJ-1 --replace 2>&1); RC=$?
+eq "parent --replace moves the ticket to the new epic" "0" "$RC"
+contains "  with one parent PUT" 'PUT /issue/PROJ-2 {"fields":{"parent":{"key":"PROJ-1"}}}' "$(cat "$LOG")"
+
+reset_log parent-not-epic
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LEVELS="PROJ-1:0 PROJ-2:0" "$PROVIDER" --http "$STUB" parent PROJ-2 --epic PROJ-1 2>&1); RC=$?
+eq "parent refuses a target that is not at hierarchyLevel 1" "1" "$RC"
+contains "  citing the requirement" "JIRA-20" "$OUT"
+eq "  and writes nothing" "0" "$(grep -c '^PUT ' "$LOG" || true)"
+
+reset_log parent-missing
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LEVELS="PROJ-2:0" "$PROVIDER" --http "$STUB" parent PROJ-2 --epic PROJ-1 2>&1); RC=$?
+eq "parent refuses an epic that does not exist" "1" "$RC"
+contains "  saying so" "does not exist" "$OUT"
+
+reset_log parent-epic-under-epic
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LEVELS="PROJ-1:1 PROJ-2:1" "$PROVIDER" --http "$STUB" parent PROJ-2 --epic PROJ-1 2>&1); RC=$?
+eq "parent refuses to put an epic under an epic" "1" "$RC"
+eq "  and writes nothing" "0" "$(grep -c '^PUT ' "$LOG" || true)"
+
+reset_log parent-nowrite
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_LEVELS="PROJ-1:1 PROJ-2:0" WO_TEST_PARENT=nowrite \
+      "$PROVIDER" --http "$STUB" parent PROJ-2 --epic PROJ-1 2>&1); RC=$?
+eq "parent exits 1 when the read-back shows no epic" "1" "$RC"
+contains "  and says the parent was not written" "was not written" "$OUT"
+
+jq '.epic = "PROJ-1"' "$FX/ticket-minimal.json" > "$WORK/epic-ticket.json"
+
+reset_log create-epic
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_LEVELS="PROJ-1:1" \
+      "$PROVIDER" --http "$STUB" create ZZPROBE Task "" --ticket "$WORK/epic-ticket.json" 2>&1); RC=$?
+eq "create --ticket with an existing epic exits 0" "0" "$RC"
+contains "  sending the epic as fields.parent in the create body" '"parent":{"key":"PROJ-1"}' "$(grep '^POST /issue ' "$LOG")"
+contains "  and reading the created issue's epic back" "GET /issue/PROJ-42?fields=parent" "$(cat "$LOG")"
+
+reset_log create-epic-missing
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all \
+      "$PROVIDER" --http "$STUB" create ZZPROBE Task "" --ticket "$WORK/epic-ticket.json" 2>&1); RC=$?
+eq "create --ticket still creates when the epic does not exist yet" "0" "$RC"
+contains "  warning with the command that sets it later" "provider.sh parent KEY --epic PROJ-1" "$OUT"
+not_contains "  and sending no parent" '"parent"' "$(grep '^POST /issue ' "$LOG")"
+
+reset_log create-epic-wrong-level
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_LEVELS="PROJ-1:0" \
+      "$PROVIDER" --http "$STUB" create ZZPROBE Task "" --ticket "$WORK/epic-ticket.json" 2>&1); RC=$?
+eq "create --ticket refuses an epic that is not at hierarchyLevel 1" "1" "$RC"
+eq "  having created nothing" "0" "$(grep -c '^POST /issue ' "$LOG" || true)"
+
+reset_log create-epic-nowrite
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_LEVELS="PROJ-1:1" WO_TEST_PARENT=nowrite \
+      "$PROVIDER" --http "$STUB" create ZZPROBE Task "" --ticket "$WORK/epic-ticket.json" 2>&1); RC=$?
+eq "create --ticket exits 1 when the created issue reads back with no epic" "1" "$RC"
+contains "  still printing the issue it created" '"key": "PROJ-42"' "$OUT"
+contains "  and naming the command that repairs it" "provider.sh parent PROJ-42 --epic PROJ-1" "$OUT"
+
+jq '.epic = "golden flows"' "$FX/ticket-minimal.json" > "$WORK/epic-local.json"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/epic-local.json" 2>&1); RC=$?
+eq "create --ticket treats an epic that is not a Jira key as not filed yet" "0" "$RC"
+contains "  and warns that it writes no parent" "is not a Jira issue key" "$OUT"
+
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/epic-ticket.json" 2>&1); RC=$?
+eq "create --ticket --dry-run with an epic exits 0" "0" "$RC"
+contains "  showing the epic lookup" "/rest/api/3/issue/PROJ-1?fields=issuetype" "$OUT"
+contains "  and the parent in the body" '"parent":{"key":"PROJ-1"}' "$OUT"
 
 # ---- provider transition --outcome and create's duplicate check (WO-96) ---
 

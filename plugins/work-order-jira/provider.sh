@@ -1,8 +1,9 @@
 #!/bin/bash
 #
-# provider.sh — the work-order tracker provider for Jira Cloud: the four
-# verbs a ticket set needs against a tracker, plus the two that make the
-# lifecycle mapping in BINDING.md executable rather than documentary.
+# provider.sh — the work-order tracker provider for Jira Cloud: the verbs a
+# ticket set needs against a tracker, including the two (position, transition)
+# that make the lifecycle mapping in BINDING.md executable rather than
+# documentary.
 #
 # Usage:
 #   provider.sh [--dry-run] [--http PATH] fetch KEY
@@ -15,6 +16,7 @@
 #   provider.sh [--dry-run] [--http PATH] link   KEY --blocked-by BLOCKER
 #                                                [--replace]
 #   provider.sh [--dry-run] [--http PATH] unlink KEY --blocked-by BLOCKER
+#   provider.sh [--dry-run] [--http PATH] parent KEY --epic EPIC [--replace]
 #
 #   POSITION       one of triage, open, in-progress, awaiting-deployment,
 #                  deferred, completed, cancelled. Resolved to a transition by
@@ -31,16 +33,27 @@
 #   --allow-duplicate  create only: skip the duplicate check below.
 #   --blocked-by   the issue that blocks KEY, named for the direction so the
 #                  call reads like the ticket's blocked_by field.
-#   --replace      link only: delete a Blocks link in the reversed direction
-#                  first, instead of refusing.
+#   --replace      link: delete a Blocks link in the reversed direction first,
+#                  instead of refusing. parent: move KEY from the epic it
+#                  already has, instead of refusing.
+#   --epic EPIC    the epic KEY belongs to: an issue at hierarchyLevel 1.
 #   --http PATH    a jira-http.sh-shaped client. Default: lib/jira-http.sh.
 #   --dry-run      print the requests and exit 0, reaching no network.
 #
 # create resolves every custom field id by name from GET /field at run time
 # ([JIRA-8]), over the one field table in lib/common.sh that provision.sh
 # creates them from. --dry-run resolves nothing and prints <name> in each
-# id's place. blocked_by and epic are not written — see BINDING.md section 5;
-# `link` writes the Blocks links in a second pass, once both issues exist.
+# id's place. blocked_by is not written — see BINDING.md section 5; `link`
+# writes the Blocks links in a second pass, once both issues exist. A ticket's
+# epic is written as fields.parent when it names an existing issue at
+# hierarchyLevel 1, and the created issue is read back; an epic that does not
+# exist yet is warned about and left to `parent`; one at any other level is
+# refused before any write ([JIRA-20]).
+#
+# parent reads EPIC and refuses unless it is at hierarchyLevel 1, and refuses a
+# KEY that is not a ticket (level 0). A KEY already under EPIC is a no-op, exit
+# 0; a KEY under another epic is refused, exit 1, naming it, unless --replace.
+# It then writes fields.parent and exits 1 unless KEY reads back under EPIC.
 #
 # transition --outcome resolves the transition first, so a refusal writes
 # nothing; then PUTs outcome as an ADF document, reads the field back, takes the
@@ -59,8 +72,8 @@
 # back and exits 1 unless an inward Blocks entry names BLOCKER. unlink deletes
 # the matching link by the id read from KEY and reads back that it is gone.
 #
-# transition, comment, create, link and unlink are live writes with no interactive
-# confirmation, so the provider works unattended; --dry-run or
+# transition, comment, create, link, unlink and parent are live writes with no
+# interactive confirmation, so the provider works unattended; --dry-run or
 # WORK_ORDER_JIRA_DRY_RUN=1 turns every call into a printed request.
 #
 # Exit status:
@@ -113,7 +126,7 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || die "--http needs a path"
             HTTP="$2"; shift 2 ;;
         -h|--help)
-            sed -n '3,78p' "$0" | sed 's/^# \{0,1\}//'
+            awk 'NR >= 3 && /^# bash 3\.2 compatible/ { exit } NR >= 3' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         --) shift; break ;;
         -*) die "unknown flag '$1' — run with --help" ;;
@@ -125,6 +138,11 @@ done
 [ -x "$HTTP" ] || die "--http path is not an executable file: '$HTTP'"
 
 need jq
+trap tmpclean EXIT
+# Created here, in the main shell: a tmpfile called inside $( ) would create
+# the directory in the subshell, where the trap never learns of it.
+# shellcheck disable=SC2034  # read by tmpfile and tmpclean in lib/common.sh
+WO_JIRA_TMPDIR=$(mktemp -d) || die "could not create a scratch directory"
 
 # http METHOD PATH [BODY] — the client, with --dry-run threaded through.
 http() {
@@ -181,6 +199,40 @@ blocks_ids() {
 # read_links KEY — print the issue readback carrying issuelinks.
 read_links() {
     http GET "/issue/$1?fields=issuelinks"
+}
+
+# hierarchy_level ISSUE_JSON — print the issue type's hierarchyLevel; only when
+# the readback omits it does the type name decide ([JIRA-16]).
+hierarchy_level() {
+    printf '%s' "$1" | jq -r '
+        .fields.issuetype as $t
+        | (($t.name // "") | ascii_downcase) as $n
+        | if ($t.hierarchyLevel | type) == "number" then $t.hierarchyLevel
+          elif $n == "epic" then 1
+          elif $n == "sub-task" or $n == "subtask" then -1
+          else 0 end'
+}
+
+# epic_level EPIC — print EPIC's hierarchyLevel. Returns 3 when EPIC does not
+# exist (HTTP 404), and 1 after reporting any other failed read. Call it as
+# `x=$(epic_level E) && rc=0 || rc=$?`: inside $( ) a die exits only the
+# subshell, so the status is the only signal.
+epic_level() {
+    local out err
+    if ! out=$(tmpfile) || ! err=$(tmpfile); then
+        warn "could not create a scratch file"
+        return 1
+    fi
+    if http GET "/issue/$1?fields=issuetype" >"$out" 2>"$err"; then
+        hierarchy_level "$(cat "$out")" || { warn "could not parse the issue type of '$1'"; return 1; }
+        return 0
+    fi
+    if grep -q '^HTTP 404' "$err"; then
+        return 3
+    fi
+    cat "$err" >&2
+    warn "could not read '$1' to check that it is an epic"
+    return 1
 }
 
 # adf_text JSON — print every text node of an ADF document, one per line.
@@ -446,6 +498,28 @@ case "$verb" in
         [ "$NLINKS" = "0" ] \
             || warn "blocked_by carries $NLINKS id(s) that create does not write: a Jira issue link needs its target to exist already, so run 'provider.sh link KEY --blocked-by BLOCKER' for each in a second pass (BINDING.md section 5)"
 
+        TEPIC=$(printf '%s' "$TICKET" | jq -r '.epic | if type == "object" then (.key // "") elif type == "string" then . else "" end') \
+            || die "could not read 'epic' from '$TICKET_PATH'"
+        PARENT=""
+        if [ -n "$TEPIC" ]; then
+            if ! require_issue_key "$TEPIC"; then
+                warn "epic '$TEPIC' is not a Jira issue key, so create writes no parent; once the epic is filed, run 'provider.sh parent KEY --epic EPIC'"
+            elif [ "$DRY_RUN" = "1" ]; then
+                http GET "/issue/$TEPIC?fields=issuetype"
+                printf 'WOULD send fields.parent %s if it reads back at hierarchyLevel 1, leave it out with a warning if it does not exist, and refuse at any other level\n' "$TEPIC"
+                PARENT="$TEPIC"
+            else
+                LEVEL=$(epic_level "$TEPIC") && rc=0 || rc=$?
+                case "$rc" in
+                    0)  [ "$LEVEL" = "1" ] \
+                            || die "the ticket's epic '$TEPIC' is at hierarchyLevel $LEVEL, not an epic (1); nothing written ([JIRA-20])"
+                        PARENT="$TEPIC" ;;
+                    3)  warn "epic '$TEPIC' does not exist yet, so create writes no parent; once it does, run 'provider.sh parent KEY --epic $TEPIC'" ;;
+                    *)  exit 1 ;;
+                esac
+            fi
+        fi
+
         if [ "$DRY_RUN" = "1" ]; then
             FIELD_JSON=""
             http GET "/field"
@@ -477,6 +551,10 @@ case "$verb" in
         if [ "$DESC" != "null" ]; then
             FIELDS=$(printf '%s' "$FIELDS" | jq -c --argjson d "$DESC" '. + {description: $d}') \
                 || die "could not add the description to the create-issue fields"
+        fi
+        if [ -n "$PARENT" ]; then
+            FIELDS=$(printf '%s' "$FIELDS" | jq -c --arg p "$PARENT" '. + {parent: {key: $p}}') \
+                || die "could not add the epic to the create-issue fields"
         fi
 
         i=1
@@ -523,8 +601,21 @@ EOF
             || die "could not build the create-issue request body"
         if [ "$DRY_RUN" = "1" ]; then
             printf 'WOULD resolve each <name> below to the id this site assigns it, by name, from that listing ([JIRA-8])\n'
+            http POST "/issue" "$BODY"
+            [ -z "$PARENT" ] || http GET "/issue/<created key>?fields=parent"
+            exit 0
         fi
-        http POST "/issue" "$BODY"
+        CREATED=$(http POST "/issue" "$BODY") || exit 1
+        printf '%s\n' "$CREATED"
+        if [ -n "$PARENT" ]; then
+            NEWKEY=$(printf '%s' "$CREATED" | jq -r '.key // empty') \
+                || die "could not parse the created issue's key to read its epic back"
+            [ -n "$NEWKEY" ] || die "the create response carried no key, so its epic '$PARENT' could not be read back"
+            BACK=$(http GET "/issue/$NEWKEY?fields=parent") \
+                || die "created '$NEWKEY' but could not read its epic back; run 'provider.sh parent $NEWKEY --epic $PARENT'"
+            [ "$(printf '%s' "$BACK" | jq -r '.fields.parent.key // empty')" = "$PARENT" ] \
+                || die "created '$NEWKEY' but its read-back shows no epic '$PARENT'; run 'provider.sh parent $NEWKEY --epic $PARENT'"
+        fi
         ;;
 
     link|unlink)
@@ -602,10 +693,66 @@ EOF
         printf 'linked %s blocked-by %s\n' "$LKEY" "$BLOCKER"
         ;;
 
+    parent)
+        [ $# -ge 1 ] || die "usage: provider.sh [--dry-run] parent KEY --epic EPIC [--replace]"
+        PKEY="$1"; shift
+        require_issue_key "$PKEY" || die "$WO_JIRA_KEY_ERR"
+        EPIC=""; REPLACE=0
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --epic)
+                    [ $# -ge 2 ] || die "--epic needs an issue key"
+                    EPIC="$2"; shift 2 ;;
+                --replace) REPLACE=1; shift ;;
+                *) die "unexpected argument '$1' after parent's KEY" ;;
+            esac
+        done
+        [ -n "$EPIC" ] || die "parent needs --epic EPIC: the epic is named, never taken from argument order"
+        require_issue_key "$EPIC" || die "$WO_JIRA_KEY_ERR"
+        [ "$EPIC" != "$PKEY" ] || die "an issue cannot be its own epic: '$PKEY'"
+        PBODY=$(jq -cn --arg e "$EPIC" '{fields: {parent: {key: $e}}}') \
+            || die "could not build the parent request body"
+
+        if [ "$DRY_RUN" = "1" ]; then
+            http GET "/issue/$EPIC?fields=issuetype"
+            http GET "/issue/$PKEY?fields=parent,issuetype"
+            printf 'WOULD refuse unless %s is at hierarchyLevel 1 and %s at 0, and unless %s is under no other epic or --replace is given\n' "$EPIC" "$PKEY" "$PKEY"
+            http PUT "/issue/$PKEY" "$PBODY"
+            http GET "/issue/$PKEY?fields=parent"
+            exit 0
+        fi
+
+        LEVEL=$(epic_level "$EPIC") && rc=0 || rc=$?
+        case "$rc" in
+            0) [ "$LEVEL" = "1" ] || die "'$EPIC' is at hierarchyLevel $LEVEL, not an epic (1); nothing written ([JIRA-20])" ;;
+            3) die "epic '$EPIC' does not exist; nothing written" ;;
+            *) exit 1 ;;
+        esac
+        CURRENT=$(http GET "/issue/$PKEY?fields=parent,issuetype") || die "could not read '$PKEY'"
+        LEVEL=$(hierarchy_level "$CURRENT") || die "could not parse the issue type of '$PKEY'"
+        [ "$LEVEL" = "0" ] \
+            || die "'$PKEY' is at hierarchyLevel $LEVEL; only a ticket (0) belongs to an epic ([JIRA-16], [JIRA-20])"
+        HAVE=$(printf '%s' "$CURRENT" | jq -r '.fields.parent.key // empty') \
+            || die "could not parse the parent of '$PKEY'"
+        if [ "$HAVE" = "$EPIC" ]; then
+            printf '%s is already under epic %s\n' "$PKEY" "$EPIC"
+            exit 0
+        fi
+        [ -z "$HAVE" ] || [ "$REPLACE" = "1" ] \
+            || die "'$PKEY' is already under epic '$HAVE'; pass --replace to move it to '$EPIC'"
+        http PUT "/issue/$PKEY" "$PBODY" >/dev/null || die "could not write the epic of '$PKEY'"
+        AFTER=$(http GET "/issue/$PKEY?fields=parent") || die "could not read '$PKEY' back after setting its epic"
+        GOT=$(printf '%s' "$AFTER" | jq -r '.fields.parent.key // empty') \
+            || die "could not parse the parent read-back of '$PKEY'"
+        [ "$GOT" = "$EPIC" ] \
+            || die "read-back of '$PKEY' shows epic '${GOT:-none}', not '$EPIC'; the parent was not written"
+        printf '%s is now under epic %s\n' "$PKEY" "$EPIC"
+        ;;
+
     "")
-        die "usage: provider.sh [--dry-run] VERB [ARG...] (verbs: fetch, position, transition, comment, create, link, unlink)"
+        die "usage: provider.sh [--dry-run] VERB [ARG...] (verbs: fetch, position, transition, comment, create, link, unlink, parent)"
         ;;
     *)
-        die "unknown tracker verb '$verb' (fetch, position, transition, comment, create, link, unlink)"
+        die "unknown tracker verb '$verb' (fetch, position, transition, comment, create, link, unlink, parent)"
         ;;
 esac

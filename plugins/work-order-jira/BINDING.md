@@ -54,7 +54,7 @@ representation it takes here.
 | `appends` | custom field `appends`, `textarea` | one path or glob per line |
 | `human_steps` | custom field `human_steps`, `textarea` | one step per line |
 | `defer_until` | custom field `defer_until`, `datepicker` | `[MUST-39]` meaning |
-| `epic` | `fields.parent`, an issue type at `hierarchyLevel` 1 | `[MUST-39]` meaning |
+| `epic` | `fields.parent`, an issue type at `hierarchyLevel` 1 | `[MUST-39]` meaning, written per `[JIRA-20]` |
 | problem, solution, decisions, out-of-scope — `[MUST-30]`, `[MUST-31]` | `fields.description`, one heading per part | |
 
 `created` and `updated` are RFC 3339 date-times in Jira and RFC 3339 full-dates
@@ -76,6 +76,15 @@ ticket requirement, startability rule or `touches` collision check applies to
 them. The level is read from `fields.issuetype.hierarchyLevel`; only when a
 response omits it does the type name decide (`Epic`, `Sub-task`, `Subtask`).
 Both types run the Grouping workflow, which carries no validators.
+
+[JIRA-20] A ticket's `epic` is written as `fields.parent`, naming an issue at
+`hierarchyLevel` 1, and only on a ticket (level 0). An implementation MUST read
+the target's level before it writes and MUST NOT write a parent at any other
+level, and MUST read the ticket back after writing and fail unless the parent
+took. The epic need not exist when the ticket is written: a ticket filed before
+its epic is written without one, and given it once the epic exists. An epic is
+set apart from a link here because it is a field: a ticket has one, so moving it
+to another epic replaces the old value rather than adding a second.
 
 ## 3. Lifecycle — `[MUST-42]`
 
@@ -467,7 +476,7 @@ checked here too.
 | `provision.sh` | creates or converges a Space on a tier (`--tier managed`, the default, is a conforming Space), `--dry-run` first; its last step runs the two scripts below |
 | `universal-apply.sh` | converges, from `universal-workflows.json`, the shared workflows of section 3.1, their scheme, and both tiers' screens, screen schemes, issue type screen schemes and issue type schemes of section 3.3; takes no project |
 | `universal-switch.sh` | moves one project onto its tier's workflow scheme, issue type scheme, issue type screen scheme and category, mapping its issues' old statuses onto the tier's, then deletes the workflows, schemes and screens it had |
-| `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create`, `link`, `unlink` |
+| `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create`, `link`, `unlink`, `parent` |
 | `lib/jira-http.sh` | the one credentialed HTTP client, and the seam a test stubs |
 | `selftest.sh` | offline; stubs the client and asserts on the decisions the scripts reach |
 
@@ -505,6 +514,7 @@ list holding exactly one — and the whole ticket is written in that one request
 | `touches`, `verify`, `human_steps`, `appends`, `outcome` | the custom field of that name, as an ADF document — a `textarea` rejects a plain string |
 | `executor` | the `executor` field, `{"value": ...}`, checked against the three options |
 | `defer_until` | the `defer_until` field, an RFC 3339 full-date |
+| `epic` | `fields.parent`, when it names an issue that exists at `hierarchyLevel` 1 — see `parent` below |
 
 A field the ticket gives no value is not sent at all.
 
@@ -554,10 +564,26 @@ link by the id read from KEY and reads back that it is gone; when only the
 reversed link exists it warns and leaves it alone. Link types other than
 `Blocks` are not handled.
 
-**What `create` does not write.** `blocked_by` and `epic` both name another
-issue, and a Jira link or parent needs its target to exist already, so a set
-imported in one pass cannot carry them on the way in. `create` warns when a
-ticket carries `blocked_by` and leaves it to a second pass, which
-`provider.sh link KEY --blocked-by BLOCKER` performs (below). `id`, `created` and
-`updated` are Jira's to assign (section 2); a ticket's own `id` survives only if
-the caller puts it in `tags`.
+**`parent`.** `provider.sh parent KEY --epic EPIC [--replace]` sets a ticket's
+epic after the fact: for a ticket filed before its epic, or moved between
+epics. It refuses, before any write, an EPIC that does not exist or is not at
+`hierarchyLevel` 1, and a KEY that is not a ticket. A KEY already under EPIC is a
+no-op, exit 0. A KEY under another epic is refused, exit 1, naming that epic,
+unless `--replace`. It then writes `fields.parent` and exits 1 unless KEY reads
+back under EPIC.
+
+**What `create` does not write.** `blocked_by` names other tickets, and a Jira
+link needs both ends to exist already, so a set imported in one pass cannot
+carry its links on the way in. `create` warns when a ticket carries `blocked_by`
+and leaves it to a second pass, which `provider.sh link KEY --blocked-by
+BLOCKER` performs (below). `id`, `created` and `updated` are Jira's to assign
+(section 2); a ticket's own `id` survives only if the caller puts it in `tags`.
+
+**The epic, at create.** Epics are filed before their tickets, so `create`
+writes a ticket's `epic` in the create request itself, per `[JIRA-20]`: it reads
+the epic first, sends `fields.parent` when the epic exists at `hierarchyLevel`
+1, and reads the created issue back, exiting 1 with the `parent` command to run
+if the parent did not take — after printing the created issue, so the key is
+not lost. An `epic` that is not a Jira key, or names an issue that does not
+exist yet, is warned about and left out; everything else is written. One that
+exists at any other level is refused before any write.
