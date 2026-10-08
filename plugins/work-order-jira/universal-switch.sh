@@ -107,6 +107,7 @@ case "$TIMEOUT_SECONDS" in ''|*[!0-9]*) die "WO_SWITCH_TIMEOUT_SECONDS must be a
 
 need jq
 trap tmpclean EXIT
+tmpinit || die "could not create a scratch directory"
 
 [ -n "$SPEC" ] || SPEC="$DIR/universal-workflows.json"
 [ -f "$SPEC" ] || die "--spec file not found: '$SPEC'"

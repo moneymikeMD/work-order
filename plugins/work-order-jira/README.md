@@ -15,7 +15,9 @@ re-release because an endpoint moved.
   satisfy.
 - **`provision.sh`** — create or converge a Space on a tier; the default,
   `--tier managed`, is a conforming Space.
-- **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`, `link`, `unlink`, `parent`.
+- **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`, `update`, `link`, `unlink`, `parent`.
+- **[GOLDEN-FLOWS.md](GOLDEN-FLOWS.md)** — the closed list of jobs this binding does, each as the commands that do it. Feature-complete means all of them pass live.
+- **`issues-api.sh`** — the read-only wrapper `reference/issues.py --source jira` calls, over `lib/jira-http.sh`.
 - **`universal-apply.sh`** — converge the site-wide Universal workflows, their
   shared workflow scheme, and both tiers' screens, screen schemes, issue type
   screen schemes and issue type schemes towards `universal-workflows.json`,
@@ -89,6 +91,9 @@ gave it. Both workflows create issues at `Triage`, the entry state — see
 ./provider.sh create PROJ Task "" --ticket decision.json   # its epic, when filed, becomes the parent
 ./provider.sh link PROJ-13 --blocked-by PROJ-12
 ./provider.sh parent PROJ-13 --epic PROJ-10             # --replace to move it from another epic
+./provider.sh update PROJ-13 --ticket contract.json      # rewrite fields; an empty value clears one
+printf '{"defer_until":"2026-12-01"}' | ./provider.sh update PROJ-13 --ticket -
+python3 ../../reference/issues.py next --source jira --jira-api ./issues-api.sh --jira-project PROJ
 ```
 
 `transition` takes a lifecycle position, not a Jira transition id, and resolves
@@ -97,7 +102,10 @@ rather than moving the ticket somewhere else. `--outcome` writes the cancelled
 ticket's outcome in its own request first; `create` refuses, exit 3, to file a
 second open issue with the same summary unless given `--allow-duplicate`.
 `parent` sets a ticket's epic and reads it back; `create --ticket` does the
-same in the create request when the decision's `epic` already exists.
+same in the create request when the decision's `epic` already exists. `update`
+rewrites the fields a decision carries, clears the ones it carries empty, and
+reads each back. A transition to the position a ticket already holds is a
+no-op, so a filing sequence can be re-run after a partial failure.
 
 ## Tests
 

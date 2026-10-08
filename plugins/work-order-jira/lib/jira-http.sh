@@ -103,6 +103,7 @@ esac
 BASE_URL="${BASE_URL%/}"
 
 trap tmpclean EXIT
+tmpinit || die "could not create a scratch directory"
 OUT=$(tmpfile) || die "could not create a scratch file for the response body"
 
 URL="$BASE_URL/rest/api/3$PATH_REL"

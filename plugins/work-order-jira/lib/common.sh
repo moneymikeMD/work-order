@@ -62,12 +62,21 @@ need() {
     [ -z "$missing" ] || die "required command(s) not found:$missing"
 }
 
-# tmpfile — print the path of a fresh scratch file inside a per-run directory
-# created on first use. The caller installs the cleanup trap.
+# tmpinit — create the per-run scratch directory in the CURRENT shell. Call it
+# once, beside the `trap tmpclean EXIT`, before any $(tmpfile): a directory
+# created inside $( ) exists only in that subshell's copy of WO_JIRA_TMPDIR,
+# so the trap never removes it.
+tmpinit() {
+    [ -n "$WO_JIRA_TMPDIR" ] && return 0
+    local base="${TMPDIR:-/tmp}"
+    # An explicit template: macOS's `mktemp -d` alone ignores TMPDIR.
+    WO_JIRA_TMPDIR=$(mktemp -d "${base%/}/wo-jira.XXXXXX")
+}
+
+# tmpfile — print the path of a fresh scratch file inside the directory tmpinit
+# created. Fails when tmpinit has not run.
 tmpfile() {
-    if [ -z "$WO_JIRA_TMPDIR" ]; then
-        WO_JIRA_TMPDIR=$(mktemp -d) || return 1
-    fi
+    [ -n "$WO_JIRA_TMPDIR" ] || return 1
     mktemp "$WO_JIRA_TMPDIR/f.XXXXXX"
 }
 

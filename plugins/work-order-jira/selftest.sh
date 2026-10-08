@@ -71,6 +71,8 @@ nonempty() {
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+# provider.sh retries a stale read-back within a settle window; here no wait.
+export WORK_ORDER_JIRA_SETTLE_DELAY=0
 
 # ---- the stub ------------------------------------------------------------
 
@@ -160,7 +162,12 @@ case "$M:$P" in
         else
             echo '{"issues":[],"isLast":true}'
         fi ;;
+    # SYNTHETIC: one complete page, for a reader that pages to the end.
     GET:/search/jql*)
+        if [ "${WO_TEST_SEARCH:-ok}" = "onepage" ]; then
+            echo '{"issues":[{"key":"PROJ-111","fields":{"summary":"Served through issues-api.sh","status":{"name":"Open"},"labels":[],"issuelinks":[],"created":"2026-10-08T09:00:00.000+0000","updated":"2026-10-08T09:00:00.000+0000","issuetype":{"name":"Task","hierarchyLevel":0}}}],"isLast":true}'
+            exit 0
+        fi
         if [ "${WO_TEST_SEARCH:-ok}" = "400-once" ]; then
             SEEN="$WO_TEST_WORK/probe.$(printf '%s' "$P" | cksum | tr -d ' ')"
             if [ ! -f "$SEEN" ]; then
@@ -227,7 +234,12 @@ case "$M:$P" in
     DELETE:/issueLink/*)
         LF="$WO_TEST_WORK/links.json"
         jq -c --arg id "${P#/issueLink/}" 'map(select(.id != $id))' "$LF" > "$LF.new" && mv "$LF.new" "$LF" ;;
-    GET:/issue/*/transitions) fx issue.transitions.json ;;
+    # SYNTHETIC: WO_TEST_STALE_TRANSITIONS=N serves an empty list N times, the
+    # way Jira can answer a read made just after a write from before it.
+    GET:/issue/*/transitions)
+        TN=$(cat "$WO_TEST_WORK/transseq" 2>/dev/null || echo 0); TN=$((TN + 1)); echo "$TN" > "$WO_TEST_WORK/transseq"
+        if [ "$TN" -le "${WO_TEST_STALE_TRANSITIONS:-0}" ]; then echo '{"transitions":[]}'; exit 0; fi
+        fx issue.transitions.json ;;
     # SYNTHETIC: a transition POST is remembered so the status read-back that
     # follows it reports the status that transition leads to.
     POST:/issue/*/transitions) printf '%s' "$B" | jq -r '.transition.id' > "$WO_TEST_WORK/transitioned"; echo '{}' ;;
@@ -239,6 +251,13 @@ case "$M:$P" in
                 || printf '%s' "$B" | jq -r '.fields.parent.key' > "$WO_TEST_WORK/parent.${P#/issue/}"
         else
             [ "${WO_TEST_OUTCOME:-}" = "nowrite" ] || printf '%s' "$B" | jq -c '.fields | to_entries[0].value' > "$WO_TEST_WORK/outcome.json"
+            # SYNTHETIC: every field a PUT writes is kept per key and served back
+            # on a GET naming fields; WO_TEST_UPDATE=nowrite keeps nothing.
+            UF="$WO_TEST_WORK/updated.${P#/issue/}.json"
+            if [ "${WO_TEST_UPDATE:-}" != "nowrite" ]; then
+                [ -f "$UF" ] || echo '{}' > "$UF"
+                jq -c --argjson f "$(printf '%s' "$B" | jq -c '.fields')" '. + $f' "$UF" > "$UF.new" && mv "$UF.new" "$UF"
+            fi
         fi
         echo '{}' ;;
     GET:/issue/*fields=customfield_10053)
@@ -249,12 +268,31 @@ case "$M:$P" in
         jq -cn --argjson v "$V" '{key: "PROJ-1", fields: {customfield_10053: $v}}' ;;
     POST:/issue/*/comment) echo '{}' ;;
     GET:/issue/*fields=status)
+        # SYNTHETIC: WO_TEST_STATUS_FAIL=1 refuses the read, as a 403 would.
+        if [ "${WO_TEST_STATUS_FAIL:-0}" = "1" ]; then
+            printf 'HTTP 403\n{"errorMessages":["You do not have the permission to see the specified issue."]}\n' >&2
+            exit 1
+        fi
+        # SYNTHETIC: WO_TEST_STATUS_SEQ="A|B" serves A, then B, to successive
+        # status reads before the normal answers resume: a stale read.
+        if [ -n "${WO_TEST_STATUS_SEQ:-}" ]; then
+            SN=$(cat "$WO_TEST_WORK/statusseq" 2>/dev/null || echo 0); SN=$((SN + 1)); echo "$SN" > "$WO_TEST_WORK/statusseq"
+            S=$(printf '%s' "$WO_TEST_STATUS_SEQ" | awk -F'|' -v n="$SN" '{ print $n }')
+            if [ -n "$S" ]; then fx issue.status.json | jq -c --arg s "$S" '.fields.status.name = $s'; exit 0; fi
+        fi
         if [ -f "$WO_TEST_WORK/transitioned" ]; then
             fx issue.status.json | jq -c --arg s "$(fx issue.transitions.json | jq -r --arg id "$(cat "$WO_TEST_WORK/transitioned")" '.transitions[] | select(.id == $id) | .to.name')" '.fields.status.name = $s'
         elif [ -n "${WO_TEST_STATUS:-}" ]; then
             fx issue.status.json | jq -c --arg s "$WO_TEST_STATUS" '.fields.status.name = $s'
         else
             fx issue.status.json
+        fi ;;
+    GET:/issue/*fields=*)
+        K="${P#/issue/}"; K="${K%%\?*}"
+        if [ -f "$WO_TEST_WORK/updated.$K.json" ]; then
+            jq -c --arg k "$K" '{key: $k, fields: .}' "$WO_TEST_WORK/updated.$K.json"
+        else
+            jq -cn --arg k "$K" '{key: $k, fields: {}}'
         fi ;;
     GET:/issue/*)
         if [ -f "$WO_TEST_WORK/created-issue.json" ]; then
@@ -278,7 +316,7 @@ LOG=""
 reset_log() {
     LOG="$WORK/log.$1"
     : > "$LOG"
-    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.* "$WORK"/parent.*
+    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.* "$WORK"/parent.* "$WORK"/updated.* "$WORK/transseq" "$WORK/statusseq"
 }
 export WO_TEST_FX="$FX"
 export WO_TEST_WORK="$WORK"
@@ -342,6 +380,29 @@ OUT=$(WORK_ORDER_JIRA_BASE_URL="" WORK_ORDER_JIRA_EMAIL=a@b.c \
 eq "jira-http.sh with no base URL fails before reaching curl" "1" "$RC"
 not_contains "  and never prints the token" "sekrit-token-value" "$OUT"
 not_contains "  and never reached curl" "curl was called" "$OUT"
+
+# A curl that answers 200 with a body, so a call runs to completion, and a
+# fresh TMPDIR, so anything a run leaves behind is visible.
+OKBIN="$WORK/okbin"
+mkdir -p "$OKBIN" "$WORK/tmpdir"
+cat > "$OKBIN/curl" <<'CURLEOF'
+#!/bin/sh
+cat >/dev/null
+while [ $# -gt 0 ]; do
+    case "$1" in -o) printf '{"ok":true}' > "$2"; shift 2 ;; *) shift ;; esac
+done
+printf '200'
+CURLEOF
+chmod +x "$OKBIN/curl"
+OUT=$(TMPDIR="$WORK/tmpdir" WORK_ORDER_JIRA_BASE_URL=https://example.atlassian.net \
+      WORK_ORDER_JIRA_EMAIL=a@b.c WORK_ORDER_JIRA_TOKEN=t PATH="$OKBIN:$PATH" \
+      "$HTTPLIB" GET /myself 2>&1); RC=$?
+eq "jira-http.sh returns a 2xx body" '{"ok":true}' "$OUT"
+eq "  and leaves no scratch directory behind" "" "$(ls -A "$WORK/tmpdir")"
+OUT=$(TMPDIR="$WORK/tmpdir" PATH="$OKBIN:$PATH" WORK_ORDER_JIRA_BASE_URL=https://example.atlassian.net \
+      WORK_ORDER_JIRA_EMAIL=a@b.c WORK_ORDER_JIRA_TOKEN=t \
+      "$PROVIDER" parent PROJ-2 --epic PROJ-1 2>&1) || true
+eq "provider.sh, through the real client, leaves no scratch directory behind either" "" "$(ls -A "$WORK/tmpdir")"
 
 # ---- 3. provider.sh -----------------------------------------------------
 
@@ -520,8 +581,10 @@ for name in ("touches", "appends", "human_steps"):
     same(name, want.get(name) or [], got.get(name) or [])
 # Jira serves labels sorted, so tags round-trip as a set, not a sequence.
 same("tags", sorted(want.get("tags") or []), sorted(got.get("tags") or []))
-for name in ("title", "verify", "executor", "outcome"):
+for name in ("title", "executor", "outcome"):
     same(name, want.get(name) or "", got.get(name) or "")
+# [MUST-10]: the base-state observation travels as verify's last line.
+same("verify", want["verify"] + "\n# " + want["verify_fails_today"], got.get("verify") or "")
 same("defer_until", want.get("defer_until"), got.get("defer_until"))
 
 body = got.get("_body") or ""
@@ -857,6 +920,168 @@ eq "create --ticket --dry-run with an epic exits 0" "0" "$RC"
 contains "  showing the epic lookup" "/rest/api/3/issue/PROJ-1?fields=issuetype" "$OUT"
 contains "  and the parent in the body" '"parent":{"key":"PROJ-1"}' "$OUT"
 
+# ---- update, stdin decisions, verify's observation, a transition already
+# taken, and issues-api.sh (WO-104) -------------------------------------------
+
+OUT=$(printf '{"defer_until":"2026-12-01"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update --ticket - --dry-run exits 0" "0" "$RC"
+contains "  printing the PUT, the field named for the site to resolve" '{"fields":{"<defer_until>":"2026-12-01"}}' "$OUT"
+
+reset_log update-write
+OUT=$(printf '%s' '{"verify":"make check","verify_fails_today":"make check exits 2 today","touches":["a.txt","b.txt"],"executor":"mixed","defer_until":null,"tags":[]}' \
+      | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update writes the fields the decision carries and exits 0" "0" "$RC"
+PUT=$(grep '^PUT /issue/PROJ-1 ' "$LOG" | sed 's/^PUT \/issue\/PROJ-1 //')
+eq "  verify carrying the observation as its last line" "make check
+# make check exits 2 today" "$(printf '%s' "$PUT" | jq -r '[.fields.customfield_10044 | .. | objects | select(.type == "text") | .text] | join("\n")')"
+eq "  clearing defer_until, given empty, with an explicit null" "null" "$(printf '%s' "$PUT" | jq -c '.fields.customfield_10052')"
+eq "  clearing the labels" "[]" "$(printf '%s' "$PUT" | jq -c '.fields.labels')"
+eq "  and sending no key the decision does not carry" "customfield_10043,customfield_10044,customfield_10047,customfield_10052,labels" \
+   "$(printf '%s' "$PUT" | jq -r '.fields | keys | join(",")')"
+contains "  then reading it back and naming what it wrote" "PROJ-1 updated: tags touches executor verify defer_until" "$OUT"
+
+reset_log update-nowrite
+OUT=$(printf '{"verify":"make check"}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_UPDATE=nowrite \
+      "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update exits 1 when the read-back does not show the write" "1" "$RC"
+contains "  naming the field by its name" "does not show what was written for: verify" "$OUT"
+
+reset_log update-far-date
+OUT=$(printf '{"defer_until":"2099-01-01"}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all \
+      "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a date Jira's two-digit-year pivot would store a century early" "1" "$RC"
+contains "  naming what Jira would store" "would store it as 1999" "$OUT"
+eq "  and writes nothing" "0" "$(grep -c '^PUT ' "$LOG" || true)"
+OUT=$(printf '{"defer_until":"next week"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a defer_until that is not a full-date" "1" "$RC"
+
+OUT=$(printf '{"problem":"only this"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a description given in part" "1" "$RC"
+contains "  because it rewrites the description whole" "rewrites the description whole" "$OUT"
+OUT=$(jq -c '.decisions[0] | {problem, solution, rationale, out_of_scope}' "$FX/ticket-full.json" \
+      | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update rewrites a description given whole" "0" "$RC"
+contains "  under the same headings create writes" '"text":"Out of scope"' "$OUT"
+OUT=$(printf '{"title":"  "}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses an empty title" "1" "$RC"
+OUT=$(printf '{"verify_fails_today":"x"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses verify_fails_today without verify" "1" "$RC"
+OUT=$(printf '{"id":"X-1"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a decision carrying nothing it writes" "1" "$RC"
+OUT=$(printf '{"epic":"PROJ-9","blocked_by":["PROJ-3"],"verify":"x"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update writes the rest of a decision that carries epic and blocked_by" "0" "$RC"
+contains "  pointing the epic at parent" "provider.sh parent PROJ-1 --epic EPIC" "$OUT"
+contains "  and blocked_by at link" "provider.sh link PROJ-1 --blocked-by BLOCKER" "$OUT"
+
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket - < "$FX/ticket-minimal.json" 2>&1); RC=$?
+eq "create --ticket - reads the decision from stdin" "0" "$RC"
+contains "  taking its title" '"summary":"The smallest decision create will write"' "$OUT"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$FX/ticket-full.json" 2>&1)
+contains "create writes verify_fails_today as verify's last line ([MUST-10])" \
+    '"text":"# create takes a summary and nothing else, so the dry-run body carries no description."' "$OUT"
+
+reset_log transition-noop
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Open" "$PROVIDER" --http "$STUB" transition PROJ-1 open 2>&1); RC=$?
+eq "transition to the position the issue already holds exits 0" "0" "$RC"
+contains "  saying so" "PROJ-1 is already Open" "$OUT"
+eq "  and posts nothing" "0" "$(grep -c '^POST \|^PUT ' "$LOG" || true)"
+
+reset_log stale-transitions
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STALE_TRANSITIONS=2 "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "a transition list read stale just after a write is read again, and the move goes through" "0" "$RC"
+eq "  on the third read of the list" "3" "$(grep -c '^GET /issue/PROJ-1/transitions' "$LOG")"
+reset_log stale-transitions-out
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STALE_TRANSITIONS=9 WORK_ORDER_JIRA_SETTLE_TRIES=3 \
+      "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "  and refused once the settle window runs out" "1" "$RC"
+eq "  after exactly WORK_ORDER_JIRA_SETTLE_TRIES reads" "3" "$(grep -c '^GET /issue/PROJ-1/transitions' "$LOG")"
+eq "  having posted nothing" "0" "$(grep -c '^POST ' "$LOG" || true)"
+
+reset_log stale-status
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS_SEQ="To Do|To Do" "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "a status read-back that is stale is read again rather than reported as a failed move" "0" "$RC"
+contains "  and the move is reported once it reads back" "PROJ-1 is now Completed" "$OUT"
+
+reset_log stale-noop
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS_SEQ="Completed|To Do" "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "a no-op needs two reads: one stale read showing the target does not skip the move" "0" "$RC"
+contains "  so the transition is posted" '{"transition":{"id":"81"}}' "$(cat "$LOG")"
+
+# ---- review fixes (WO-104): failed reads, tags, the observation, the
+# description, outcomes on a no-op, transition ids --------------------------
+
+reset_log read-refused
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS_FAIL=1 "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "a refused read is not retried as if it were stale" "1" "$RC"
+eq "  one status read, not a settle window of them" "1" "$(grep -c '^GET /issue/PROJ-1?fields=status' "$LOG")"
+contains "  and says the read failed" "could not read the status of 'PROJ-1'" "$OUT"
+
+OUT=$(WORK_ORDER_JIRA_SETTLE_TRIES=5.5 "$PROVIDER" --dry-run fetch PROJ-1 2>&1); RC=$?
+eq "a settle tries count that is not a whole number is refused" "1" "$RC"
+OUT=$(WORK_ORDER_JIRA_SETTLE_DELAY=1.2.3 "$PROVIDER" --dry-run fetch PROJ-1 2>&1); RC=$?
+eq "a settle delay that is not a number is refused" "1" "$RC"
+
+OUT=$("$PROVIDER" --dry-run transition PROJ-1 81 2>&1); RC=$?
+eq "transition refuses a Jira transition id" "1" "$RC"
+contains "  saying why" "a Jira transition id is not taken" "$OUT"
+
+printf '{"decisions":{"a":1}}' > "$WORK/odd-list.json"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/odd-list.json" 2>&1); RC=$?
+eq "create refuses a decisions key that is not a list, with a message" "1 1" "$RC $(printf '%s' "$OUT" | grep -c 'not a list of decision objects')"
+
+reset_log update-blank-tags
+OUT=$(printf '{"tags":""}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update reads blank tags as no labels" "0 []" "$RC $(grep '^PUT /issue/PROJ-1 ' "$LOG" | sed 's/^PUT \/issue\/PROJ-1 //' | jq -c '.fields.labels')"
+OUT=$(printf '{"tags":"one"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "  and refuses tags that are a word, not a list" "1" "$RC"
+
+reset_log update-keep-observation
+printf '%s' '{"verify":"old cmd","verify_fails_today":"old cmd exits 1 today"}' \
+    | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - >/dev/null 2>&1
+OUT=$(printf '{"verify":"new cmd"}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update of verify alone keeps the stored observation as its last line" "0 new cmd
+# old cmd exits 1 today" "$RC $(grep '^PUT /issue/PROJ-1 ' "$LOG" | tail -1 | sed 's/^PUT \/issue\/PROJ-1 //' | jq -r '[.fields.customfield_10044 | .. | objects | select(.type == "text") | .text] | join("\n")')"
+OUT=$(printf '{"verify":"newer cmd","verify_fails_today":null}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "  and an explicitly empty verify_fails_today drops it" "0 newer cmd" "$RC $(grep '^PUT /issue/PROJ-1 ' "$LOG" | tail -1 | sed 's/^PUT \/issue\/PROJ-1 //' | jq -r '[.fields.customfield_10044 | .. | objects | select(.type == "text") | .text] | join("\n")')"
+
+jq '{problem, solution, out_of_scope} | .problem = "p"' "$FX/ticket-minimal.json" > /dev/null
+OUT=$(printf '{"problem":"p","solution":"s","out_of_scope":"o"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a description with no rationale, which would drop the stored Decisions" "1" "$RC"
+OUT=$(printf '{"problem":"p","solution":"s","out_of_scope":"o","rationale":[]}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "  and takes one whose rationale is an empty list" "0" "$RC"
+OUT=$(printf '{"rationale":[]}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "  and refuses rationale alone, a part of the description" "1" "$RC"
+
+printf '{"title":"t","verify_fails_today":"x","executor":"agent"}' > "$WORK/obs-only.json"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/obs-only.json" 2>&1); RC=$?
+eq "create refuses verify_fails_today with no verify to carry it" "1" "$RC"
+
+reset_log noop-same-outcome
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_STATUS=Cancelled WO_TEST_OUTCOME=set \
+      "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome "prior reason" 2>&1); RC=$?
+eq "cancelling a cancelled ticket with the outcome it holds is a no-op" "0" "$RC"
+eq "  writing nothing" "0" "$(grep -c '^POST \|^PUT ' "$LOG" || true)"
+reset_log noop-other-outcome
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_STATUS=Cancelled WO_TEST_OUTCOME=set \
+      "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome "a new reason" 2>&1); RC=$?
+eq "  but with another outcome it is refused, not reported done" "1" "$RC"
+contains "  pointing at update" "provider.sh update PROJ-1" "$OUT"
+eq "  and writing nothing" "0" "$(grep -c '^POST \|^PUT ' "$LOG" || true)"
+
+ISSUESAPI="$HERE/issues-api.sh"
+reset_log issues-api
+OUT=$(WO_TEST_LOG="$LOG" ISSUES_API_HTTP="$STUB" "$ISSUESAPI" --show-secrets raw GET /field 2>&1); RC=$?
+eq "issues-api.sh forwards a GET to the client" "0" "$RC"
+eq "  as the client's own GET" "GET /field" "$(cat "$LOG")"
+OUT=$(ISSUES_API_HTTP="$STUB" "$ISSUESAPI" raw POST /issue '{}' 2>&1); RC=$?
+eq "issues-api.sh forwards nothing but GET" "1" "$RC"
+reset_log issues-api-board
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_SEARCH=onepage ISSUES_API_HTTP="$STUB" python3 "$HERE/../../reference/issues.py" board \
+      --source jira --jira-api "$ISSUESAPI" --jira-project PROJ 2>&1); RC=$?
+eq "reference/issues.py reads a Space through issues-api.sh" "0" "$RC"
+contains "  listing the issue the search returned" "PROJ-111" "$OUT"
+eq "  having resolved the field ids by name first" "GET /field" "$(head -1 "$LOG")"
+
 # ---- provider transition --outcome and create's duplicate check (WO-96) ---
 
 MUTANT="$WORK/provider-outcome-in-body.sh"
@@ -884,7 +1109,7 @@ printf 'from stdin\n' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http
 contains "transition --outcome - reads the outcome from stdin" '"text":"from stdin"' "$(cat "$LOG")"
 
 sed -e 's/http PUT "\/issue\/\$TKEY" "\$OBODY" >\/dev\/null || die/true || die/' \
-    -e 's/^\( *\)\[ "\$GOT" = .*/\1true \\/' \
+    -e 's/settled outcome_is "\$TKEY" "\$OFID" \&\& rc=0 || rc=\$?/rc=0/' \
     -e "s#--arg id \"\$TRANSITION_ID\" '{transition: {id: \$id}}'#--arg id \"\$TRANSITION_ID\" --argjson o \"\$ODOC\" '{transition: {id: \$id}, fields: {customfield_10053: \$o}}'#" \
     "$PROVIDER" > "$MUTANT"
 chmod +x "$MUTANT"

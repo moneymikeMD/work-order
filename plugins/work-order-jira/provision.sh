@@ -128,6 +128,7 @@ require_project_key "$PROJECT_KEY" || die "$WO_JIRA_KEY_ERR"
 
 need jq
 trap tmpclean EXIT
+tmpinit || die "could not create a scratch directory"
 
 field_triples() {
     paste <(printf '%s\n' "$FIELD_NAMES") <(printf '%s\n' "$FIELD_TYPE_KEYS") <(printf '%s\n' "$FIELD_SEARCHER_KEYS")
