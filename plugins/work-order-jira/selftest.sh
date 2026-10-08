@@ -71,6 +71,8 @@ nonempty() {
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+# provider.sh retries a stale read-back within a settle window; here no wait.
+export WORK_ORDER_JIRA_SETTLE_DELAY=0
 
 # ---- the stub ------------------------------------------------------------
 
@@ -232,7 +234,12 @@ case "$M:$P" in
     DELETE:/issueLink/*)
         LF="$WO_TEST_WORK/links.json"
         jq -c --arg id "${P#/issueLink/}" 'map(select(.id != $id))' "$LF" > "$LF.new" && mv "$LF.new" "$LF" ;;
-    GET:/issue/*/transitions) fx issue.transitions.json ;;
+    # SYNTHETIC: WO_TEST_STALE_TRANSITIONS=N serves an empty list N times, the
+    # way Jira can answer a read made just after a write from before it.
+    GET:/issue/*/transitions)
+        TN=$(cat "$WO_TEST_WORK/transseq" 2>/dev/null || echo 0); TN=$((TN + 1)); echo "$TN" > "$WO_TEST_WORK/transseq"
+        if [ "$TN" -le "${WO_TEST_STALE_TRANSITIONS:-0}" ]; then echo '{"transitions":[]}'; exit 0; fi
+        fx issue.transitions.json ;;
     # SYNTHETIC: a transition POST is remembered so the status read-back that
     # follows it reports the status that transition leads to.
     POST:/issue/*/transitions) printf '%s' "$B" | jq -r '.transition.id' > "$WO_TEST_WORK/transitioned"; echo '{}' ;;
@@ -261,6 +268,13 @@ case "$M:$P" in
         jq -cn --argjson v "$V" '{key: "PROJ-1", fields: {customfield_10053: $v}}' ;;
     POST:/issue/*/comment) echo '{}' ;;
     GET:/issue/*fields=status)
+        # SYNTHETIC: WO_TEST_STATUS_SEQ="A|B" serves A, then B, to successive
+        # status reads before the normal answers resume: a stale read.
+        if [ -n "${WO_TEST_STATUS_SEQ:-}" ]; then
+            SN=$(cat "$WO_TEST_WORK/statusseq" 2>/dev/null || echo 0); SN=$((SN + 1)); echo "$SN" > "$WO_TEST_WORK/statusseq"
+            S=$(printf '%s' "$WO_TEST_STATUS_SEQ" | awk -F'|' -v n="$SN" '{ print $n }')
+            if [ -n "$S" ]; then fx issue.status.json | jq -c --arg s "$S" '.fields.status.name = $s'; exit 0; fi
+        fi
         if [ -f "$WO_TEST_WORK/transitioned" ]; then
             fx issue.status.json | jq -c --arg s "$(fx issue.transitions.json | jq -r --arg id "$(cat "$WO_TEST_WORK/transitioned")" '.transitions[] | select(.id == $id) | .to.name')" '.fields.status.name = $s'
         elif [ -n "${WO_TEST_STATUS:-}" ]; then
@@ -297,7 +311,7 @@ LOG=""
 reset_log() {
     LOG="$WORK/log.$1"
     : > "$LOG"
-    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.* "$WORK"/parent.* "$WORK"/updated.*
+    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.* "$WORK"/parent.* "$WORK"/updated.* "$WORK/transseq" "$WORK/statusseq"
 }
 export WO_TEST_FX="$FX"
 export WO_TEST_WORK="$WORK"
@@ -967,6 +981,27 @@ eq "transition to the position the issue already holds exits 0" "0" "$RC"
 contains "  saying so" "PROJ-1 is already Open" "$OUT"
 eq "  and posts nothing" "0" "$(grep -c '^POST \|^PUT ' "$LOG" || true)"
 
+reset_log stale-transitions
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STALE_TRANSITIONS=2 "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "a transition list read stale just after a write is read again, and the move goes through" "0" "$RC"
+eq "  on the third read of the list" "3" "$(grep -c '^GET /issue/PROJ-1/transitions' "$LOG")"
+reset_log stale-transitions-out
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STALE_TRANSITIONS=9 WORK_ORDER_JIRA_SETTLE_TRIES=3 \
+      "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "  and refused once the settle window runs out" "1" "$RC"
+eq "  after exactly WORK_ORDER_JIRA_SETTLE_TRIES reads" "3" "$(grep -c '^GET /issue/PROJ-1/transitions' "$LOG")"
+eq "  having posted nothing" "0" "$(grep -c '^POST ' "$LOG" || true)"
+
+reset_log stale-status
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS_SEQ="To Do|To Do" "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "a status read-back that is stale is read again rather than reported as a failed move" "0" "$RC"
+contains "  and the move is reported once it reads back" "PROJ-1 is now Completed" "$OUT"
+
+reset_log stale-noop
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS_SEQ="Completed|To Do" "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "a no-op needs two reads: one stale read showing the target does not skip the move" "0" "$RC"
+contains "  so the transition is posted" '{"transition":{"id":"81"}}' "$(cat "$LOG")"
+
 ISSUESAPI="$HERE/issues-api.sh"
 reset_log issues-api
 OUT=$(WO_TEST_LOG="$LOG" ISSUES_API_HTTP="$STUB" "$ISSUESAPI" --show-secrets raw GET /field 2>&1); RC=$?
@@ -1008,7 +1043,7 @@ printf 'from stdin\n' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http
 contains "transition --outcome - reads the outcome from stdin" '"text":"from stdin"' "$(cat "$LOG")"
 
 sed -e 's/http PUT "\/issue\/\$TKEY" "\$OBODY" >\/dev\/null || die/true || die/' \
-    -e 's/^\( *\)\[ "\$GOT" = .*/\1true \\/' \
+    -e 's/settled outcome_is "\$TKEY" "\$OFID" \\/true \\/' \
     -e "s#--arg id \"\$TRANSITION_ID\" '{transition: {id: \$id}}'#--arg id \"\$TRANSITION_ID\" --argjson o \"\$ODOC\" '{transition: {id: \$id}, fields: {customfield_10053: \$o}}'#" \
     "$PROVIDER" > "$MUTANT"
 chmod +x "$MUTANT"

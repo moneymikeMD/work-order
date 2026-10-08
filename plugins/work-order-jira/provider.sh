@@ -81,6 +81,12 @@
 # back and exits 1 unless an inward Blocks entry names BLOCKER. unlink deletes
 # the matching link by the id read from KEY and reads back that it is gone.
 #
+# Every read-back, and the lookup of a transition, is retried before it is
+# reported as a failure: Jira Cloud can answer a read made just after a write
+# from before it. WORK_ORDER_JIRA_SETTLE_TRIES (default 5) and
+# WORK_ORDER_JIRA_SETTLE_DELAY (seconds, default 1) bound the wait, and a
+# transition reported as a no-op has read the target twice, that delay apart.
+#
 # transition, comment, create, update, link, unlink and parent are live writes
 # with no interactive confirmation, so the provider works unattended; --dry-run or
 # WORK_ORDER_JIRA_DRY_RUN=1 turns every call into a printed request.
@@ -157,6 +163,90 @@ http() {
     else
         "$HTTP" "$@"
     fi
+}
+
+# Jira Cloud can answer a read made just after a write from before the write:
+# measured live, a transition list read right after `open` still offered
+# Triage's transitions. Every read-back and transition lookup is retried
+# within this window before it is reported as a failure.
+SETTLE_TRIES="${WORK_ORDER_JIRA_SETTLE_TRIES:-5}"
+SETTLE_DELAY="${WORK_ORDER_JIRA_SETTLE_DELAY:-1}"
+case "$SETTLE_TRIES$SETTLE_DELAY" in
+    *[!0-9.]*|"") die "WORK_ORDER_JIRA_SETTLE_TRIES and _DELAY must be numbers" ;;
+esac
+
+# settled CHECK [ARG...] — run CHECK until it succeeds, at most SETTLE_TRIES
+# times, SETTLE_DELAY seconds apart. CHECK sets globals; never call it in $( ).
+settled() {
+    local n=1
+    while :; do
+        "$@" && return 0
+        [ "$n" -lt "$SETTLE_TRIES" ] || return 1
+        n=$((n + 1))
+        sleep "$SETTLE_DELAY"
+    done
+}
+
+# transition_into KEY STATUS — read KEY's available transitions into AVAILABLE;
+# true, with TRANSITION_ID set, when one leads into STATUS.
+transition_into() {
+    TRANSITION_ID=""
+    AVAILABLE=$(http GET "/issue/$1/transitions") || { AVAILABLE=""; return 1; }
+    TRANSITION_ID=$(printf '%s' "$AVAILABLE" | jq -r --arg n "$2" \
+        '[.transitions[]? | select(.to.name == $n)][0].id // empty') || return 1
+    [ -n "$TRANSITION_ID" ]
+}
+
+# status_is KEY STATUS — read KEY's status into NOW; true when it is STATUS.
+status_is() {
+    NOW=""
+    local back
+    back=$(http GET "/issue/$1?fields=status") || return 1
+    NOW=$(printf '%s' "$back" | jq -r '.fields.status.name // empty') || return 1
+    [ "$NOW" = "$2" ]
+}
+
+# update_took KEY — true when every field in FIELDS reads back as written;
+# otherwise BAD names the ones that do not.
+update_took() {
+    local back k sent got
+    back=$(http GET "/issue/$1?fields=$(printf '%s' "$FIELDS" | jq -r 'keys | join(",")')") || return 1
+    BAD=""
+    for k in $(printf '%s' "$FIELDS" | jq -r 'keys[]'); do
+        sent=$(printf '%s' "$FIELDS" | jq -c --arg k "$k" '.[$k]')
+        got=$(printf '%s' "$back" | jq -c --arg k "$k" '.fields[$k] // null')
+        [ "$(comparable "$sent")" = "$(comparable "$got")" ] \
+            || BAD="$BAD $(printf '%s' "$FIELD_JSON" | jq -r --arg k "$k" '[.[] | select(.id == $k)][0].name // $k')"
+    done
+    [ -z "$BAD" ]
+}
+
+# outcome_is KEY FIELD_ID — true when KEY's outcome reads back as WANT_OUTCOME.
+outcome_is() {
+    local back
+    back=$(http GET "/issue/$1?fields=$2") || return 1
+    [ "$(adf_text "$(printf '%s' "$back" | jq -c --arg f "$2" '.fields[$f] // {}')")" = "$WANT_OUTCOME" ]
+}
+
+# link_count_is KEY BLOCKER 0|some — true when KEY reads back with no, or at
+# least one, inward Blocks link naming BLOCKER.
+link_count_is() {
+    local back ids
+    back=$(read_links "$1") || return 1
+    ids=$(blocks_ids "$back" inward "$2") || return 1
+    case "$3" in
+        0) [ -z "$ids" ] ;;
+        *) [ -n "$ids" ] ;;
+    esac
+}
+
+# parent_is KEY EPIC — read KEY's parent into GOT; true when it is EPIC.
+parent_is() {
+    GOT=""
+    local back
+    back=$(http GET "/issue/$1?fields=parent") || return 1
+    GOT=$(printf '%s' "$back" | jq -r '.fields.parent.key // empty') || return 1
+    [ "$GOT" = "$2" ]
 }
 
 # status_for_position POSITION — print the Jira status name BINDING.md binds
@@ -527,18 +617,17 @@ case "$verb" in
                     printf 'WOULD then POST the transition whose .to.name is %s\n' "$WANT_STATUS"
                     TRANSITION_ID="<id>"
                 else
-                    BEFORE=$(http GET "/issue/$TKEY?fields=status") || die "could not read the status of '$TKEY'"
-                    if [ "$(printf '%s' "$BEFORE" | jq -r '.fields.status.name // empty')" = "$WANT_STATUS" ]; then
+                    # A no-op is read twice, a settle delay apart: a stale first
+                    # read must not report a move that has not happened.
+                    if status_is "$TKEY" "$WANT_STATUS" && sleep "$SETTLE_DELAY" && status_is "$TKEY" "$WANT_STATUS"; then
                         printf '%s is already %s\n' "$TKEY" "$WANT_STATUS"
                         exit 0
                     fi
-                    AVAILABLE=$(http GET "/issue/$TKEY/transitions") \
-                        || die "could not read the available transitions for '$TKEY'"
-                    TRANSITION_ID=$(printf '%s' "$AVAILABLE" | jq -r --arg n "$WANT_STATUS" \
-                        '[.transitions[]? | select(.to.name == $n)][0].id // empty') \
-                        || die "could not parse the transitions response for '$TKEY'"
-                    [ -n "$TRANSITION_ID" ] \
-                        || die "no transition into '$WANT_STATUS' is available on '$TKEY' right now — a workflow validator may be blocking it, or the status is not on this project's workflow (run provision.sh)"
+                    AVAILABLE=""
+                    settled transition_into "$TKEY" "$WANT_STATUS" || {
+                        [ -n "$AVAILABLE" ] || die "could not read the available transitions for '$TKEY'"
+                        die "no transition into '$WANT_STATUS' is available on '$TKEY' right now — a workflow validator may be blocking it, or the status is not on this project's workflow (run provision.sh)"
+                    }
                 fi
                 ;;
             *)
@@ -573,10 +662,8 @@ case "$verb" in
                 http GET "/issue/$TKEY?fields=$OFID"
             else
                 http PUT "/issue/$TKEY" "$OBODY" >/dev/null || die "could not write the outcome of '$TKEY'; no transition was taken"
-                BACK=$(http GET "/issue/$TKEY?fields=$OFID") || die "could not read the outcome of '$TKEY' back; no transition was taken"
-                GOT=$(adf_text "$(printf '%s' "$BACK" | jq -c --arg f "$OFID" '.fields[$f] // {}')") \
-                    || die "could not parse the outcome read-back of '$TKEY'"
-                [ "$GOT" = "$(adf_text "$ODOC")" ] \
+                WANT_OUTCOME=$(adf_text "$ODOC")
+                settled outcome_is "$TKEY" "$OFID" \
                     || die "read-back of '$TKEY' does not show the outcome that was written; no transition was taken"
             fi
         fi
@@ -587,11 +674,11 @@ case "$verb" in
         if [ "$DRY_RUN" = "1" ]; then
             http GET "/issue/$TKEY?fields=status"
         else
-            AFTER=$(http GET "/issue/$TKEY?fields=status") || die "could not read '$TKEY' back after the transition"
-            NOW=$(printf '%s' "$AFTER" | jq -r '.fields.status.name // empty') \
-                || die "could not parse the status read-back of '$TKEY'"
-            if [ -n "$WANT_STATUS" ] && [ "$NOW" != "$WANT_STATUS" ]; then
-                die "read-back of '$TKEY' shows status '$NOW', not '$WANT_STATUS'; the transition did not take"
+            if [ -n "$WANT_STATUS" ]; then
+                settled status_is "$TKEY" "$WANT_STATUS" \
+                    || die "read-back of '$TKEY' shows status '${NOW:-unreadable}', not '$WANT_STATUS'; the transition did not take"
+            else
+                status_is "$TKEY" "" || [ -n "$NOW" ] || die "could not read '$TKEY' back after the transition"
             fi
             printf '%s is now %s\n' "$TKEY" "$NOW"
         fi
@@ -705,9 +792,7 @@ case "$verb" in
             NEWKEY=$(printf '%s' "$CREATED" | jq -r '.key // empty') \
                 || die "could not parse the created issue's key to read its epic back"
             [ -n "$NEWKEY" ] || die "the create response carried no key, so its epic '$PARENT' could not be read back"
-            BACK=$(http GET "/issue/$NEWKEY?fields=parent") \
-                || die "created '$NEWKEY' but could not read its epic back; run 'provider.sh parent $NEWKEY --epic $PARENT'"
-            [ "$(printf '%s' "$BACK" | jq -r '.fields.parent.key // empty')" = "$PARENT" ] \
+            settled parent_is "$NEWKEY" "$PARENT" \
                 || die "created '$NEWKEY' but its read-back shows no epic '$PARENT'; run 'provider.sh parent $NEWKEY --epic $PARENT'"
         fi
         ;;
@@ -778,16 +863,8 @@ case "$verb" in
             exit 0
         fi
         http PUT "/issue/$UKEY" "$BODY" >/dev/null || die "could not update '$UKEY'"
-        BACK=$(http GET "/issue/$UKEY?fields=$(printf '%s' "$FIELDS" | jq -r 'keys | join(",")')") \
-            || die "updated '$UKEY' but could not read it back"
-        BAD=""
-        for k in $(printf '%s' "$FIELDS" | jq -r 'keys[]'); do
-            SENT=$(printf '%s' "$FIELDS" | jq -c --arg k "$k" '.[$k]')
-            GOT=$(printf '%s' "$BACK" | jq -c --arg k "$k" '.fields[$k] // null')
-            [ "$(comparable "$SENT")" = "$(comparable "$GOT")" ] \
-                || BAD="$BAD $(printf '%s' "$FIELD_JSON" | jq -r --arg k "$k" '[.[] | select(.id == $k)][0].name // $k')"
-        done
-        [ -z "$BAD" ] || die "read-back of '$UKEY' does not show what was written for:$BAD"
+        BAD=" (unreadable)"
+        settled update_took "$UKEY" || die "read-back of '$UKEY' does not show what was written for:$BAD"
         printf '%s updated:%s\n' "$UKEY" "$WROTE"
         ;;
 
@@ -841,8 +918,7 @@ case "$verb" in
             for LID in $SAME; do
                 http DELETE "/issueLink/$LID" >/dev/null || die "could not delete issue link $LID"
             done
-            AFTER=$(read_links "$LKEY") || die "could not read '$LKEY' back after unlinking"
-            [ -z "$(blocks_ids "$AFTER" inward "$BLOCKER")" ] \
+            settled link_count_is "$LKEY" "$BLOCKER" 0 \
                 || die "read-back of '$LKEY' still shows a Blocks link from '$BLOCKER' after the delete"
             printf 'unlinked %s from blocked-by %s\n' "$LKEY" "$BLOCKER"
             exit 0
@@ -860,8 +936,7 @@ case "$verb" in
             done
         fi
         http POST "/issueLink" "$LBODY" >/dev/null || die "could not create the Blocks link"
-        AFTER=$(read_links "$LKEY") || die "could not read '$LKEY' back after linking"
-        [ -n "$(blocks_ids "$AFTER" inward "$BLOCKER")" ] \
+        settled link_count_is "$LKEY" "$BLOCKER" some \
             || die "read-back of '$LKEY' shows no inward Blocks link naming '$BLOCKER'; the link was not written"
         printf 'linked %s blocked-by %s\n' "$LKEY" "$BLOCKER"
         ;;
@@ -914,10 +989,7 @@ case "$verb" in
         [ -z "$HAVE" ] || [ "$REPLACE" = "1" ] \
             || die "'$PKEY' is already under epic '$HAVE'; pass --replace to move it to '$EPIC'"
         http PUT "/issue/$PKEY" "$PBODY" >/dev/null || die "could not write the epic of '$PKEY'"
-        AFTER=$(http GET "/issue/$PKEY?fields=parent") || die "could not read '$PKEY' back after setting its epic"
-        GOT=$(printf '%s' "$AFTER" | jq -r '.fields.parent.key // empty') \
-            || die "could not parse the parent read-back of '$PKEY'"
-        [ "$GOT" = "$EPIC" ] \
+        settled parent_is "$PKEY" "$EPIC" \
             || die "read-back of '$PKEY' shows epic '${GOT:-none}', not '$EPIC'; the parent was not written"
         printf '%s is now under epic %s\n' "$PKEY" "$EPIC"
         ;;

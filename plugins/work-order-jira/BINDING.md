@@ -490,6 +490,16 @@ into fails the same way. A position the issue already holds is a no-op, exit 0,
 so a command sequence that files and opens a set can be run again after a
 partial failure.
 
+Jira Cloud can answer a read made just after a write from before the write:
+measured on the acceptance run of 2026-10-08, the transition list read right
+after `open` still offered `Triage`'s transitions, so the next move was
+refused. Every read-back in `provider.sh`, and its lookup of a transition, is
+therefore retried within a short window (`WORK_ORDER_JIRA_SETTLE_TRIES`,
+default 5, `WORK_ORDER_JIRA_SETTLE_DELAY`, default 1 second) before it reports
+a failure, and a no-op is believed only when two reads that delay apart agree.
+The same lag applies to search: an issue created a moment ago may not yet be
+found by `create`'s duplicate check.
+
 On the managed tier, `universal-switch.sh` first moves every `To Do` issue that
 already carries `verify` to `Open`, then maps what remains: `To Do` to `Triage`
 for tickets and to `Open` for `Epic` and `Sub-task`, and `Done` to `Completed`.

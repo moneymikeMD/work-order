@@ -131,3 +131,4 @@ each gap live in a scratch project before fixing it.
 | 5 | `issues.py` read custom fields under placeholder ids; on the live site `blocked_by_external` has another id, so `next` offered tickets waiting on external work | ids resolved by name from `GET /field` ([JIRA-8]) |
 | 5 | `issues.py --source jira` needs a `jira-api.sh`-shaped wrapper and this binding shipped none | `issues-api.sh` |
 | all | Every `lib/jira-http.sh` call left a temporary directory holding the response body: `$(tmpfile)` created it in a subshell the cleanup trap never saw | `tmpinit` creates it in the main shell |
+| 4 | A read made just after a write can come back from before it: the acceptance suite's first live run had `in-progress` refused straight after `open`, because the transition list still showed `Triage`'s | every read-back and transition lookup retries within a settle window; a no-op takes two agreeing reads |
