@@ -7,6 +7,16 @@ night-watchman. The specification text, the conformance validator, the file
 binding and the Jira binding land as separate pieces of work; this file records
 how the repository itself is worked.
 
+## Standing rules
+
+- **A workaround gets a ticket.** A session that routes around a tool — a
+  missing verb, a refused call, a write made by hand in place of a script —
+  files a ticket in the repository that owns the tool, in the same session. A
+  memory alone does not count: it is recalled only by a session that happens
+  to search for it, and it never puts the gap in front of the repository that
+  can fix it. For this repository's tools that ticket goes to the WO Jira
+  project. Owner rule, 2026-10-08.
+
 ## Workflow
 
 - `main` is protected by a ruleset named `main`: every change lands through a
