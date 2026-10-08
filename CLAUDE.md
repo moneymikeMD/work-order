@@ -75,6 +75,15 @@ The `work-order` plugin is versioned by the repository's own release, because
 the repository is the plugin. `work-order-jira` carries a separate
 `work-order-jira--vX.Y.Z` tag line.
 
+**A `work-order-jira` release PR merges only after the live acceptance suite
+passes against its head.** Check out the release PR's branch and run
+`plugins/work-order-jira/acceptance.sh --project WOACC` with the three
+`WORK_ORDER_JIRA_*` variables set; it runs every flow in
+`plugins/work-order-jira/GOLDEN-FLOWS.md` against the scratch project WOACC and
+closes what it files. Paste its summary lines into the release PR as a comment,
+then merge. A red flow blocks the release: fix it, or revert what broke it. CI
+cannot run the suite, because it needs a credential, so this step is the gate.
+
 The plugin's dependents pin it with a semver range, and Claude Code resolves that
 against `work-order--vX.Y.Z` tags on this repository, not against release-please's
 `vX.Y.Z`. The `release-please` workflow therefore adds a `work-order--v` tag on the
