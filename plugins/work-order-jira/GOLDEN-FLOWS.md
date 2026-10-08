@@ -6,9 +6,10 @@ feature-complete: every flow below runs, end to end, against a live Space, and
 that serves no flow here is not added; a flow that fails is a defect.
 
 Each flow is written as the commands that do it and the read-back that proves
-it. `PROJ`, `EPIC`, `A`, `B` and `KEY` stand for a project key and issue keys;
-every `provider.sh` call reads its own write back and exits non-zero when the
-write did not take.
+it. `PROJ`, `EPIC`, `A`, `B` and `KEY` stand for a project key and issue keys.
+`transition`, `update`, `link`, `unlink` and `parent` read their own write back
+and exit non-zero when it did not take; `create` reads back the epic it writes,
+and the suite reads back the rest.
 
 ## 1. File a set of tickets under an epic
 
@@ -30,7 +31,10 @@ is clean.
 The sequence is safe to run again after a partial failure, and a second run
 writes nothing: `create` finds the open issue with that summary and exits 3
 with its key, `link` and `parent` are no-ops when already true, and a
-transition to the position a ticket already holds exits 0.
+transition to the position a ticket already holds exits 0. One limit: Jira's
+search index can lag a fresh issue by a few seconds, and inside that window
+`create`'s duplicate check cannot see it, so a re-run seconds after the first
+can still file a second copy.
 
 A ticket filed before its epic is given it afterwards with `provider.sh parent
 KEY --epic EPIC`; moving it to another epic takes `--replace`.

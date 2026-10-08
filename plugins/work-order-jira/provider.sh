@@ -8,8 +8,7 @@
 # Usage:
 #   provider.sh [--dry-run] [--http PATH] fetch KEY
 #   provider.sh [--dry-run] [--http PATH] position KEY
-#   provider.sh [--dry-run] [--http PATH] transition KEY POSITION|TRANSITION_ID
-#                                                [--outcome TEXT]
+#   provider.sh [--dry-run] [--http PATH] transition KEY POSITION [--outcome TEXT]
 #   provider.sh [--dry-run] [--http PATH] comment KEY TEXT
 #   provider.sh [--dry-run] [--http PATH] create PROJECT ISSUETYPE SUMMARY
 #                                                [--ticket PATH|-] [--allow-duplicate]
@@ -66,8 +65,10 @@
 #
 # update writes each key the decision carries, clears (explicit null) each it
 # carries empty, and leaves the rest alone; the description is rewritten only
-# from problem, solution and out_of_scope together. epic and blocked_by are not
-# written (parent, link). Every written field is read back and compared.
+# from problem, solution, rationale and out_of_scope together, and verify
+# rewritten without verify_fails_today keeps the observation it already
+# records. epic and blocked_by are not written (parent, link). Every written
+# field is read back and compared.
 #
 # create first searches PROJECT for an open issue (statusCategory not Done)
 # whose summary equals SUMMARY exactly. JQL summary matching is fuzzy, so the
@@ -171,16 +172,22 @@ http() {
 # within this window before it is reported as a failure.
 SETTLE_TRIES="${WORK_ORDER_JIRA_SETTLE_TRIES:-5}"
 SETTLE_DELAY="${WORK_ORDER_JIRA_SETTLE_DELAY:-1}"
-case "$SETTLE_TRIES$SETTLE_DELAY" in
-    *[!0-9.]*|"") die "WORK_ORDER_JIRA_SETTLE_TRIES and _DELAY must be numbers" ;;
+case "$SETTLE_TRIES" in
+    ""|0|*[!0-9]*) die "WORK_ORDER_JIRA_SETTLE_TRIES must be a whole number of at least 1, got '$SETTLE_TRIES'" ;;
+esac
+case "$SETTLE_DELAY" in
+    ""|.*|*.|*.*.*|*[!0-9.]*) die "WORK_ORDER_JIRA_SETTLE_DELAY must be a number of seconds, got '$SETTLE_DELAY'" ;;
 esac
 
-# settled CHECK [ARG...] — run CHECK until it succeeds, at most SETTLE_TRIES
-# times, SETTLE_DELAY seconds apart. CHECK sets globals; never call it in $( ).
+# settled CHECK [ARG...] — run CHECK until it returns 0, at most SETTLE_TRIES
+# times, SETTLE_DELAY seconds apart. CHECK returns 1 for "not yet" and 2 for a
+# read that failed, which ends the wait at once: a refused read is not stale.
+# CHECK sets globals; never call it in $( ).
 settled() {
-    local n=1
+    local n=1 rc
     while :; do
-        "$@" && return 0
+        if "$@"; then return 0; else rc=$?; fi
+        if [ "$rc" = 2 ]; then return 2; fi
         [ "$n" -lt "$SETTLE_TRIES" ] || return 1
         n=$((n + 1))
         sleep "$SETTLE_DELAY"
@@ -191,9 +198,9 @@ settled() {
 # true, with TRANSITION_ID set, when one leads into STATUS.
 transition_into() {
     TRANSITION_ID=""
-    AVAILABLE=$(http GET "/issue/$1/transitions") || { AVAILABLE=""; return 1; }
+    AVAILABLE=$(http GET "/issue/$1/transitions") || return 2
     TRANSITION_ID=$(printf '%s' "$AVAILABLE" | jq -r --arg n "$2" \
-        '[.transitions[]? | select(.to.name == $n)][0].id // empty') || return 1
+        '[.transitions[]? | select(.to.name == $n)][0].id // empty') || return 2
     [ -n "$TRANSITION_ID" ]
 }
 
@@ -201,8 +208,8 @@ transition_into() {
 status_is() {
     NOW=""
     local back
-    back=$(http GET "/issue/$1?fields=status") || return 1
-    NOW=$(printf '%s' "$back" | jq -r '.fields.status.name // empty') || return 1
+    back=$(http GET "/issue/$1?fields=status") || return 2
+    NOW=$(printf '%s' "$back" | jq -r '.fields.status.name // empty') || return 2
     [ "$NOW" = "$2" ]
 }
 
@@ -210,7 +217,7 @@ status_is() {
 # otherwise BAD names the ones that do not.
 update_took() {
     local back k sent got
-    back=$(http GET "/issue/$1?fields=$(printf '%s' "$FIELDS" | jq -r 'keys | join(",")')") || return 1
+    back=$(http GET "/issue/$1?fields=$(printf '%s' "$FIELDS" | jq -r 'keys | join(",")')") || return 2
     BAD=""
     for k in $(printf '%s' "$FIELDS" | jq -r 'keys[]'); do
         sent=$(printf '%s' "$FIELDS" | jq -c --arg k "$k" '.[$k]')
@@ -224,16 +231,17 @@ update_took() {
 # outcome_is KEY FIELD_ID — true when KEY's outcome reads back as WANT_OUTCOME.
 outcome_is() {
     local back
-    back=$(http GET "/issue/$1?fields=$2") || return 1
-    [ "$(adf_text "$(printf '%s' "$back" | jq -c --arg f "$2" '.fields[$f] // {}')")" = "$WANT_OUTCOME" ]
+    back=$(http GET "/issue/$1?fields=$2") || return 2
+    HAD_OUTCOME=$(adf_text "$(printf '%s' "$back" | jq -c --arg f "$2" '.fields[$f] // {}')") || return 2
+    [ "$HAD_OUTCOME" = "$WANT_OUTCOME" ]
 }
 
 # link_count_is KEY BLOCKER 0|some — true when KEY reads back with no, or at
 # least one, inward Blocks link naming BLOCKER.
 link_count_is() {
     local back ids
-    back=$(read_links "$1") || return 1
-    ids=$(blocks_ids "$back" inward "$2") || return 1
+    back=$(read_links "$1") || return 2
+    ids=$(blocks_ids "$back" inward "$2") || return 2
     case "$3" in
         0) [ -z "$ids" ] ;;
         *) [ -n "$ids" ] ;;
@@ -244,8 +252,8 @@ link_count_is() {
 parent_is() {
     GOT=""
     local back
-    back=$(http GET "/issue/$1?fields=parent") || return 1
-    GOT=$(printf '%s' "$back" | jq -r '.fields.parent.key // empty') || return 1
+    back=$(http GET "/issue/$1?fields=parent") || return 2
+    GOT=$(printf '%s' "$back" | jq -r '.fields.parent.key // empty') || return 2
     [ "$GOT" = "$2" ]
 }
 
@@ -405,25 +413,35 @@ read_ticket() {
     count=$(printf '%s' "$raw" | jq -r 'if (type == "object" and has("decisions")) then (.decisions | length) else -1 end') \
         || die "could not read '$path' as a decision list"
     case "$count" in
-        -1) TICKET=$(printf '%s' "$raw" | jq -c .) ;;
-        1)  TICKET=$(printf '%s' "$raw" | jq -c '.decisions[0]') ;;
+        -1) TICKET=$(printf '%s' "$raw" | jq -c .) || die "could not read the decision in '$path'" ;;
+        1)  TICKET=$(printf '%s' "$raw" | jq -c '.decisions[0]') \
+                || die "'$path' carries 'decisions' that is not a list of decision objects" ;;
         *)  die "'$path' is a decision list of $count decisions; $verb writes one issue, so pass one decision object or a one-entry list" ;;
     esac
     [ "$(printf '%s' "$TICKET" | jq -r 'type')" = "object" ] || die "'$path' does not hold a decision object"
 }
 
-# check_ticket_values — die on a TICKET value Jira cannot hold: a tag with
-# whitespace, an executor outside the three options.
+# check_ticket_values — die on a TICKET value Jira cannot hold or the contract
+# forbids: tags that are not a list, a tag with whitespace, an executor outside
+# the three options, a verify_fails_today with no verify to carry it.
 check_ticket_values() {
     local badtag executor
-    badtag=$(printf '%s' "$TICKET" | jq -r '[(.tags // [])[] | select(test("[[:space:]]"))][0] // empty') \
-        || die "could not read 'tags' from the decision"
+    badtag=$(printf '%s' "$TICKET" | jq -r "$TAGS_JQ"' | [.[] | select(tostring | test("[[:space:]]"))][0] // empty') \
+        || die "'tags' must be a list of labels"
     [ -z "$badtag" ] || die "tag '$badtag' contains whitespace and a Jira label cannot — see BINDING.md section 2"
+    if [ "$(field_state verify_fails_today)" = "set" ] && [ "$(field_state verify)" != "set" ]; then
+        die "verify_fails_today is written as verify's last line, so it needs verify beside it; nothing written"
+    fi
     executor=$(printf '%s' "$TICKET" | jq -r '.executor // ""') || die "could not read 'executor' from the decision"
     if [ -n "$executor" ] && ! in_list "$executor" "$WO_JIRA_EXECUTOR_OPTIONS"; then
         die "executor '$executor' is not one of: $(printf '%s' "$WO_JIRA_EXECUTOR_OPTIONS" | tr '\n' ' ')"
     fi
 }
+
+# TAGS_JQ — TICKET's tags as a list: absent, null or blank is the empty list,
+# and anything but a list or those is an error.
+TAGS_JQ='.tags | if . == null then [] elif type == "array" then .
+    elif type == "string" and (gsub("[[:space:]]"; "") == "") then [] else error("tags") end'
 
 # field_state NAME — absent (TICKET has no such key), empty (null, blank, or an
 # empty list) or set.
@@ -466,6 +484,26 @@ field_value() {
             fi
             printf '"%s"' "$d" ;;
         *) return 1 ;;
+    esac
+}
+
+# keep_observation KEY — when update rewrites verify without verify_fails_today,
+# carry the observation KEY's verify already records ('# ...' as its last line)
+# into TICKET, so a key the decision leaves out is left alone.
+keep_observation() {
+    local vid back last
+    if [ "$DRY_RUN" = "1" ]; then
+        http GET "/issue/$1?fields=<verify>"
+        printf 'WOULD keep the "# " last line of the stored verify as the observation\n'
+        return 0
+    fi
+    vid=$(custom_field_id verify) || exit 1
+    back=$(http GET "/issue/$1?fields=$vid") || die "could not read the stored verify of '$1' to keep its observation; nothing written"
+    last=$(adf_text "$(printf '%s' "$back" | jq -c --arg f "$vid" '.fields[$f] // {}')" | tail -n 1) \
+        || die "could not read the stored verify of '$1'"
+    case "$last" in
+        "# "?*) TICKET=$(printf '%s' "$TICKET" | jq -c --arg o "${last#\# }" '. + {verify_fails_today: $o}') \
+                    || die "could not carry the stored observation of '$1'" ;;
     esac
 }
 
@@ -587,7 +625,7 @@ case "$verb" in
         ;;
 
     transition)
-        [ $# -ge 2 ] || die "usage: provider.sh [--dry-run] transition KEY POSITION|TRANSITION_ID [--outcome TEXT]"
+        [ $# -ge 2 ] || die "usage: provider.sh [--dry-run] transition KEY POSITION [--outcome TEXT]"
         require_issue_key "$1" || die "$WO_JIRA_KEY_ERR"
         TKEY="$1"; TARGET="$2"; shift 2
         OUTCOME=""; HAVE_OUTCOME=0
@@ -605,39 +643,49 @@ case "$verb" in
             fi
             [ -n "$OUTCOME" ] || die "refusing an empty --outcome for '$TKEY'"
         fi
-        WANT_STATUS=""
-        case "$TARGET" in
-            *[!0-9]*)
-                WANT_STATUS=$(status_for_position "$TARGET") \
-                    || die "'$TARGET' is not a lifecycle position (triage, open, in-progress, awaiting-deployment, deferred, completed, cancelled) and is not a numeric transition id"
-                if [ "$DRY_RUN" = "1" ]; then
-                    http GET "/issue/$TKEY?fields=status"
-                    printf 'WOULD stop there, exit 0, if %s is already %s\n' "$TKEY" "$WANT_STATUS"
-                    http GET "/issue/$TKEY/transitions"
-                    printf 'WOULD then POST the transition whose .to.name is %s\n' "$WANT_STATUS"
-                    TRANSITION_ID="<id>"
-                else
-                    # A no-op is read twice, a settle delay apart: a stale first
-                    # read must not report a move that has not happened.
-                    if status_is "$TKEY" "$WANT_STATUS" && sleep "$SETTLE_DELAY" && status_is "$TKEY" "$WANT_STATUS"; then
-                        printf '%s is already %s\n' "$TKEY" "$WANT_STATUS"
-                        exit 0
-                    fi
-                    AVAILABLE=""
-                    settled transition_into "$TKEY" "$WANT_STATUS" || {
-                        [ -n "$AVAILABLE" ] || die "could not read the available transitions for '$TKEY'"
-                        die "no transition into '$WANT_STATUS' is available on '$TKEY' right now — a workflow validator may be blocking it, or the status is not on this project's workflow (run provision.sh)"
-                    }
-                fi
-                ;;
-            *)
-                TRANSITION_ID="$TARGET"
-                ;;
-        esac
+        WANT_STATUS=$(status_for_position "$TARGET") \
+            || die "'$TARGET' is not a lifecycle position (triage, open, in-progress, awaiting-deployment, deferred, completed, cancelled); a Jira transition id is not taken, since it would skip the [JIRA-7] outcome check and the status read-back"
 
         OFID=""
         if [ "$HAVE_OUTCOME" = "1" ] || [ "$WANT_STATUS" = "Cancelled" ]; then
             OFID=$(outcome_field_id) || exit 1
+        fi
+        if [ "$HAVE_OUTCOME" = "1" ]; then
+            ODOC=$(jira_adf_doc "$OUTCOME") || die "could not build the outcome ADF document"
+            WANT_OUTCOME=$(adf_text "$ODOC") || die "could not read the outcome back out of its ADF document"
+        fi
+
+        if [ "$DRY_RUN" = "1" ]; then
+            http GET "/issue/$TKEY?fields=status"
+            printf 'WOULD stop there, exit 0, if %s is already %s (and, given --outcome, holds that outcome)\n' "$TKEY" "$WANT_STATUS"
+            http GET "/issue/$TKEY/transitions"
+            printf 'WOULD then POST the transition whose .to.name is %s\n' "$WANT_STATUS"
+            TRANSITION_ID="<id>"
+        else
+            # A no-op takes two reads that agree, a settle delay apart: a stale
+            # first read must not report a move that has not happened.
+            status_is "$TKEY" "$WANT_STATUS" && rc=0 || rc=$?
+            if [ "$rc" = 0 ]; then
+                sleep "$SETTLE_DELAY"
+                status_is "$TKEY" "$WANT_STATUS" && rc=0 || rc=$?
+            fi
+            [ "$rc" != 2 ] || die "could not read the status of '$TKEY'"
+            if [ "$rc" = 0 ]; then
+                if [ "$HAVE_OUTCOME" = "1" ]; then
+                    outcome_is "$TKEY" "$OFID" && rc=0 || rc=$?
+                    [ "$rc" != 2 ] || die "could not read the outcome of '$TKEY'"
+                    [ "$rc" = 0 ] \
+                        || die "'$TKEY' is already $WANT_STATUS with another outcome; nothing written. To change the outcome: provider.sh update $TKEY --ticket PATH|- carrying \"outcome\""
+                fi
+                printf '%s is already %s\n' "$TKEY" "$WANT_STATUS"
+                exit 0
+            fi
+            settled transition_into "$TKEY" "$WANT_STATUS" && rc=0 || rc=$?
+            case "$rc" in
+                0) ;;
+                2) die "could not read the available transitions for '$TKEY'" ;;
+                *) die "no transition into '$WANT_STATUS' is available on '$TKEY' right now — a workflow validator may be blocking it, or the status is not on this project's workflow (run provision.sh)" ;;
+            esac
         fi
 
         if [ "$HAVE_OUTCOME" = "0" ] && [ "$WANT_STATUS" = "Cancelled" ]; then
@@ -654,7 +702,6 @@ case "$verb" in
         fi
 
         if [ "$HAVE_OUTCOME" = "1" ]; then
-            ODOC=$(jira_adf_doc "$OUTCOME") || die "could not build the outcome ADF document"
             OBODY=$(jq -cn --arg f "$OFID" --argjson d "$ODOC" '{fields: {($f): $d}}') \
                 || die "could not build the outcome request body"
             if [ "$DRY_RUN" = "1" ]; then
@@ -662,9 +709,12 @@ case "$verb" in
                 http GET "/issue/$TKEY?fields=$OFID"
             else
                 http PUT "/issue/$TKEY" "$OBODY" >/dev/null || die "could not write the outcome of '$TKEY'; no transition was taken"
-                WANT_OUTCOME=$(adf_text "$ODOC")
-                settled outcome_is "$TKEY" "$OFID" \
-                    || die "read-back of '$TKEY' does not show the outcome that was written; no transition was taken"
+                settled outcome_is "$TKEY" "$OFID" && rc=0 || rc=$?
+                case "$rc" in
+                    0) ;;
+                    2) die "could not read the outcome of '$TKEY' back; no transition was taken" ;;
+                    *) die "read-back of '$TKEY' does not show the outcome that was written; no transition was taken" ;;
+                esac
             fi
         fi
 
@@ -674,13 +724,12 @@ case "$verb" in
         if [ "$DRY_RUN" = "1" ]; then
             http GET "/issue/$TKEY?fields=status"
         else
-            if [ -n "$WANT_STATUS" ]; then
-                settled status_is "$TKEY" "$WANT_STATUS" \
-                    || die "read-back of '$TKEY' shows status '${NOW:-unreadable}', not '$WANT_STATUS'; the transition did not take"
-            else
-                status_is "$TKEY" "" || [ -n "$NOW" ] || die "could not read '$TKEY' back after the transition"
-            fi
-            printf '%s is now %s\n' "$TKEY" "$NOW"
+            settled status_is "$TKEY" "$WANT_STATUS" && rc=0 || rc=$?
+            case "$rc" in
+                0) printf '%s is now %s\n' "$TKEY" "$NOW" ;;
+                2) die "could not read '$TKEY' back after the transition" ;;
+                *) die "read-back of '$TKEY' shows status '$NOW', not '$WANT_STATUS'; the transition did not take" ;;
+            esac
         fi
         ;;
 
@@ -765,7 +814,7 @@ case "$verb" in
 
         DESC=$(ticket_description) || die "could not build the description document"
         FIELDS=$(printf '%s' "$TICKET" | jq -c --arg proj "$PROJ" --arg type "$ISSUETYPE" --arg summary "$SUMMARY" \
-            '{project: {key: $proj}, issuetype: {name: $type}, summary: $summary, labels: (.tags // [])}') \
+            '{project: {key: $proj}, issuetype: {name: $type}, summary: $summary, labels: ('"$TAGS_JQ"')}') \
             || die "could not build the create-issue fields"
         if [ "$DESC" != "null" ]; then
             FIELDS=$(printf '%s' "$FIELDS" | jq -c --argjson d "$DESC" '. + {description: $d}') \
@@ -792,8 +841,12 @@ case "$verb" in
             NEWKEY=$(printf '%s' "$CREATED" | jq -r '.key // empty') \
                 || die "could not parse the created issue's key to read its epic back"
             [ -n "$NEWKEY" ] || die "the create response carried no key, so its epic '$PARENT' could not be read back"
-            settled parent_is "$NEWKEY" "$PARENT" \
-                || die "created '$NEWKEY' but its read-back shows no epic '$PARENT'; run 'provider.sh parent $NEWKEY --epic $PARENT'"
+            settled parent_is "$NEWKEY" "$PARENT" && rc=0 || rc=$?
+            case "$rc" in
+                0) ;;
+                2) die "created '$NEWKEY' but could not read its epic back; run 'provider.sh parent $NEWKEY --epic $PARENT'" ;;
+                *) die "created '$NEWKEY' but its read-back shows no epic '$PARENT'; run 'provider.sh parent $NEWKEY --epic $PARENT'" ;;
+            esac
         fi
         ;;
 
@@ -822,8 +875,9 @@ case "$verb" in
                 esac
             fi
         done
-        [ "$(field_state verify_fails_today)" = "absent" ] || [ "$(field_state verify)" = "set" ] \
-            || die "verify_fails_today is written as verify's last line, so it needs verify beside it; nothing written"
+        if [ "$(field_state verify_fails_today)" = "empty" ] && [ "$(field_state verify)" != "set" ]; then
+            die "verify_fails_today is written as verify's last line, so it needs verify beside it; nothing written"
+        fi
 
         FIELDS='{}'
         WROTE=""
@@ -833,7 +887,7 @@ case "$verb" in
             empty) die "a ticket needs a title — 'title' is empty (work-order MUST-3); nothing written" ;;
         esac
         if [ "$(field_state tags)" != "absent" ]; then
-            FIELDS=$(printf '%s' "$FIELDS" | jq -c --argjson t "$TICKET" '. + {labels: ($t.tags // [])}') \
+            FIELDS=$(printf '%s' "$FIELDS" | jq -c --argjson t "$TICKET" '. + {labels: ($t | '"$TAGS_JQ"')}') \
                 || die "could not encode 'tags'"
             WROTE="$WROTE tags"
         fi
@@ -842,8 +896,10 @@ case "$verb" in
         if [ -n "$DPARTS" ]; then
             for k in problem solution out_of_scope; do
                 [ "$(field_state "$k")" = "set" ] \
-                    || die "update rewrites the description whole, so it needs problem, solution and out_of_scope together; '$k' is missing or empty; nothing written"
+                    || die "update rewrites the description whole, so a decision carrying any part of it needs problem, solution, rationale and out_of_scope; '$k' is missing or empty; nothing written"
             done
+            [ "$(printf '%s' "$TICKET" | jq -r '.rationale | type')" = "array" ] \
+                || die "update rewrites the description whole, so it needs rationale too, as a list ([] for none), or the stored Decisions are lost; nothing written"
             DESC=$(ticket_description) || die "could not build the description document"
             FIELDS=$(printf '%s' "$FIELDS" | jq -c --argjson d "$DESC" '. + {description: $d}') \
                 || die "could not add the description"
@@ -851,6 +907,9 @@ case "$verb" in
         fi
 
         read_field_list
+        if [ "$(field_state verify)" = "set" ] && [ "$(field_state verify_fails_today)" = "absent" ]; then
+            keep_observation "$UKEY"
+        fi
         add_contract_fields update
         [ "$FIELDS" != '{}' ] \
             || die "the decision carries no field update writes (title, tags, the description parts, or a field of lib/common.sh's table); nothing written"
@@ -863,8 +922,12 @@ case "$verb" in
             exit 0
         fi
         http PUT "/issue/$UKEY" "$BODY" >/dev/null || die "could not update '$UKEY'"
-        BAD=" (unreadable)"
-        settled update_took "$UKEY" || die "read-back of '$UKEY' does not show what was written for:$BAD"
+        settled update_took "$UKEY" && rc=0 || rc=$?
+        case "$rc" in
+            0) ;;
+            2) die "updated '$UKEY' but could not read it back" ;;
+            *) die "read-back of '$UKEY' does not show what was written for:$BAD" ;;
+        esac
         printf '%s updated:%s\n' "$UKEY" "$WROTE"
         ;;
 
@@ -918,8 +981,12 @@ case "$verb" in
             for LID in $SAME; do
                 http DELETE "/issueLink/$LID" >/dev/null || die "could not delete issue link $LID"
             done
-            settled link_count_is "$LKEY" "$BLOCKER" 0 \
-                || die "read-back of '$LKEY' still shows a Blocks link from '$BLOCKER' after the delete"
+            settled link_count_is "$LKEY" "$BLOCKER" 0 && rc=0 || rc=$?
+            case "$rc" in
+                0) ;;
+                2) die "could not read '$LKEY' back after unlinking" ;;
+                *) die "read-back of '$LKEY' still shows a Blocks link from '$BLOCKER' after the delete" ;;
+            esac
             printf 'unlinked %s from blocked-by %s\n' "$LKEY" "$BLOCKER"
             exit 0
         fi
@@ -936,8 +1003,12 @@ case "$verb" in
             done
         fi
         http POST "/issueLink" "$LBODY" >/dev/null || die "could not create the Blocks link"
-        settled link_count_is "$LKEY" "$BLOCKER" some \
-            || die "read-back of '$LKEY' shows no inward Blocks link naming '$BLOCKER'; the link was not written"
+        settled link_count_is "$LKEY" "$BLOCKER" some && rc=0 || rc=$?
+        case "$rc" in
+            0) ;;
+            2) die "could not read '$LKEY' back after linking" ;;
+            *) die "read-back of '$LKEY' shows no inward Blocks link naming '$BLOCKER'; the link was not written" ;;
+        esac
         printf 'linked %s blocked-by %s\n' "$LKEY" "$BLOCKER"
         ;;
 
@@ -989,8 +1060,12 @@ case "$verb" in
         [ -z "$HAVE" ] || [ "$REPLACE" = "1" ] \
             || die "'$PKEY' is already under epic '$HAVE'; pass --replace to move it to '$EPIC'"
         http PUT "/issue/$PKEY" "$PBODY" >/dev/null || die "could not write the epic of '$PKEY'"
-        settled parent_is "$PKEY" "$EPIC" \
-            || die "read-back of '$PKEY' shows epic '${GOT:-none}', not '$EPIC'; the parent was not written"
+        settled parent_is "$PKEY" "$EPIC" && rc=0 || rc=$?
+        case "$rc" in
+            0) ;;
+            2) die "could not read '$PKEY' back after setting its epic" ;;
+            *) die "read-back of '$PKEY' shows epic '${GOT:-none}', not '$EPIC'; the parent was not written" ;;
+        esac
         printf '%s is now under epic %s\n' "$PKEY" "$EPIC"
         ;;
 

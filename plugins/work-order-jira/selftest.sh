@@ -268,6 +268,11 @@ case "$M:$P" in
         jq -cn --argjson v "$V" '{key: "PROJ-1", fields: {customfield_10053: $v}}' ;;
     POST:/issue/*/comment) echo '{}' ;;
     GET:/issue/*fields=status)
+        # SYNTHETIC: WO_TEST_STATUS_FAIL=1 refuses the read, as a 403 would.
+        if [ "${WO_TEST_STATUS_FAIL:-0}" = "1" ]; then
+            printf 'HTTP 403\n{"errorMessages":["You do not have the permission to see the specified issue."]}\n' >&2
+            exit 1
+        fi
         # SYNTHETIC: WO_TEST_STATUS_SEQ="A|B" serves A, then B, to successive
         # status reads before the normal answers resume: a stale read.
         if [ -n "${WO_TEST_STATUS_SEQ:-}" ]; then
@@ -1002,6 +1007,67 @@ OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS_SEQ="Completed|To Do" "$PROVIDER" --http
 eq "a no-op needs two reads: one stale read showing the target does not skip the move" "0" "$RC"
 contains "  so the transition is posted" '{"transition":{"id":"81"}}' "$(cat "$LOG")"
 
+# ---- review fixes (WO-104): failed reads, tags, the observation, the
+# description, outcomes on a no-op, transition ids --------------------------
+
+reset_log read-refused
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS_FAIL=1 "$PROVIDER" --http "$STUB" transition PROJ-1 completed 2>&1); RC=$?
+eq "a refused read is not retried as if it were stale" "1" "$RC"
+eq "  one status read, not a settle window of them" "1" "$(grep -c '^GET /issue/PROJ-1?fields=status' "$LOG")"
+contains "  and says the read failed" "could not read the status of 'PROJ-1'" "$OUT"
+
+OUT=$(WORK_ORDER_JIRA_SETTLE_TRIES=5.5 "$PROVIDER" --dry-run fetch PROJ-1 2>&1); RC=$?
+eq "a settle tries count that is not a whole number is refused" "1" "$RC"
+OUT=$(WORK_ORDER_JIRA_SETTLE_DELAY=1.2.3 "$PROVIDER" --dry-run fetch PROJ-1 2>&1); RC=$?
+eq "a settle delay that is not a number is refused" "1" "$RC"
+
+OUT=$("$PROVIDER" --dry-run transition PROJ-1 81 2>&1); RC=$?
+eq "transition refuses a Jira transition id" "1" "$RC"
+contains "  saying why" "a Jira transition id is not taken" "$OUT"
+
+printf '{"decisions":{"a":1}}' > "$WORK/odd-list.json"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/odd-list.json" 2>&1); RC=$?
+eq "create refuses a decisions key that is not a list, with a message" "1 1" "$RC $(printf '%s' "$OUT" | grep -c 'not a list of decision objects')"
+
+reset_log update-blank-tags
+OUT=$(printf '{"tags":""}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update reads blank tags as no labels" "0 []" "$RC $(grep '^PUT /issue/PROJ-1 ' "$LOG" | sed 's/^PUT \/issue\/PROJ-1 //' | jq -c '.fields.labels')"
+OUT=$(printf '{"tags":"one"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "  and refuses tags that are a word, not a list" "1" "$RC"
+
+reset_log update-keep-observation
+printf '%s' '{"verify":"old cmd","verify_fails_today":"old cmd exits 1 today"}' \
+    | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - >/dev/null 2>&1
+OUT=$(printf '{"verify":"new cmd"}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update of verify alone keeps the stored observation as its last line" "0 new cmd
+# old cmd exits 1 today" "$RC $(grep '^PUT /issue/PROJ-1 ' "$LOG" | tail -1 | sed 's/^PUT \/issue\/PROJ-1 //' | jq -r '[.fields.customfield_10044 | .. | objects | select(.type == "text") | .text] | join("\n")')"
+OUT=$(printf '{"verify":"newer cmd","verify_fails_today":null}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "  and an explicitly empty verify_fails_today drops it" "0 newer cmd" "$RC $(grep '^PUT /issue/PROJ-1 ' "$LOG" | tail -1 | sed 's/^PUT \/issue\/PROJ-1 //' | jq -r '[.fields.customfield_10044 | .. | objects | select(.type == "text") | .text] | join("\n")')"
+
+jq '{problem, solution, out_of_scope} | .problem = "p"' "$FX/ticket-minimal.json" > /dev/null
+OUT=$(printf '{"problem":"p","solution":"s","out_of_scope":"o"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a description with no rationale, which would drop the stored Decisions" "1" "$RC"
+OUT=$(printf '{"problem":"p","solution":"s","out_of_scope":"o","rationale":[]}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "  and takes one whose rationale is an empty list" "0" "$RC"
+OUT=$(printf '{"rationale":[]}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "  and refuses rationale alone, a part of the description" "1" "$RC"
+
+printf '{"title":"t","verify_fails_today":"x","executor":"agent"}' > "$WORK/obs-only.json"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/obs-only.json" 2>&1); RC=$?
+eq "create refuses verify_fails_today with no verify to carry it" "1" "$RC"
+
+reset_log noop-same-outcome
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_STATUS=Cancelled WO_TEST_OUTCOME=set \
+      "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome "prior reason" 2>&1); RC=$?
+eq "cancelling a cancelled ticket with the outcome it holds is a no-op" "0" "$RC"
+eq "  writing nothing" "0" "$(grep -c '^POST \|^PUT ' "$LOG" || true)"
+reset_log noop-other-outcome
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_STATUS=Cancelled WO_TEST_OUTCOME=set \
+      "$PROVIDER" --http "$STUB" transition PROJ-1 cancelled --outcome "a new reason" 2>&1); RC=$?
+eq "  but with another outcome it is refused, not reported done" "1" "$RC"
+contains "  pointing at update" "provider.sh update PROJ-1" "$OUT"
+eq "  and writing nothing" "0" "$(grep -c '^POST \|^PUT ' "$LOG" || true)"
+
 ISSUESAPI="$HERE/issues-api.sh"
 reset_log issues-api
 OUT=$(WO_TEST_LOG="$LOG" ISSUES_API_HTTP="$STUB" "$ISSUESAPI" --show-secrets raw GET /field 2>&1); RC=$?
@@ -1043,7 +1109,7 @@ printf 'from stdin\n' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http
 contains "transition --outcome - reads the outcome from stdin" '"text":"from stdin"' "$(cat "$LOG")"
 
 sed -e 's/http PUT "\/issue\/\$TKEY" "\$OBODY" >\/dev\/null || die/true || die/' \
-    -e 's/settled outcome_is "\$TKEY" "\$OFID" \\/true \\/' \
+    -e 's/settled outcome_is "\$TKEY" "\$OFID" \&\& rc=0 || rc=\$?/rc=0/' \
     -e "s#--arg id \"\$TRANSITION_ID\" '{transition: {id: \$id}}'#--arg id \"\$TRANSITION_ID\" --argjson o \"\$ODOC\" '{transition: {id: \$id}, fields: {customfield_10053: \$o}}'#" \
     "$PROVIDER" > "$MUTANT"
 chmod +x "$MUTANT"

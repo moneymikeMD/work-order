@@ -481,14 +481,17 @@ checked here too.
 | `lib/jira-http.sh` | the one credentialed HTTP client, and the seam a test stubs |
 | `selftest.sh` | offline; stubs the client and asserts on the decisions the scripts reach |
 
-`provider.sh transition KEY <position>` takes a lifecycle position, not a
-transition id, and resolves it against the live issue. That is the lifecycle
+`provider.sh transition KEY <position>` takes a lifecycle position, and
+refuses a Jira transition id, which would skip the `[JIRA-7]` outcome check and
+the status read-back; it resolves the position against the live issue. That is the lifecycle
 table in section 3 made executable: if the table and the Space disagree, the
 call fails instead of moving the ticket somewhere else. Since transitions are
 directed (`[JIRA-18]`), a position the issue's current status has no transition
 into fails the same way. A position the issue already holds is a no-op, exit 0,
 so a command sequence that files and opens a set can be run again after a
-partial failure.
+partial failure. With `--outcome`, the no-op holds only when the stored outcome
+is that text; another outcome is refused and pointed at `update`, rather than
+reported done with nothing written.
 
 Jira Cloud can answer a read made just after a write from before the write:
 measured on the acceptance run of 2026-10-08, the transition list read right
@@ -588,13 +591,19 @@ a transition body, so a date can only arrive by its own write.
 
 - A key the document carries is written; a key it carries empty — `null`, a
   blank string or an empty list — clears the field, sent as an explicit `null`
-  because Jira keeps the stored value of a key a PUT omits; a key it does not
-  carry is left alone.
+  (for `tags`, an empty label list) because Jira keeps the stored value of a key
+  a PUT omits; a key it does not carry is left alone.
 - `title` becomes the summary and is refused empty (`[MUST-3]`). `tags` become
   the labels.
-- The description is rewritten whole: `problem`, `solution` and `out_of_scope`
-  come together or not at all, so one part can never silently replace the rest.
-- `verify_fails_today` is written only beside `verify`, as its last line.
+- The description is rewritten whole: a document carrying any part of it —
+  `problem`, `solution`, `rationale` or `out_of_scope` — must carry
+  `problem`, `solution` and `out_of_scope`, and `rationale` as a list (`[]` for
+  none), or `update` refuses it before writing anything. One part can never
+  silently replace the rest, nor drop the stored Decisions.
+- `verify_fails_today` is written only beside `verify`, as its last line. When
+  `verify` is rewritten and `verify_fails_today` is not carried, the
+  observation the stored `verify` already records is kept; carried empty, it is
+  dropped.
 - `epic` and `blocked_by` are not written here; `update` warns and names
   `parent` and `link`.
 
