@@ -160,7 +160,12 @@ case "$M:$P" in
         else
             echo '{"issues":[],"isLast":true}'
         fi ;;
+    # SYNTHETIC: one complete page, for a reader that pages to the end.
     GET:/search/jql*)
+        if [ "${WO_TEST_SEARCH:-ok}" = "onepage" ]; then
+            echo '{"issues":[{"key":"PROJ-111","fields":{"summary":"Served through issues-api.sh","status":{"name":"Open"},"labels":[],"issuelinks":[],"created":"2026-10-08T09:00:00.000+0000","updated":"2026-10-08T09:00:00.000+0000","issuetype":{"name":"Task","hierarchyLevel":0}}}],"isLast":true}'
+            exit 0
+        fi
         if [ "${WO_TEST_SEARCH:-ok}" = "400-once" ]; then
             SEEN="$WO_TEST_WORK/probe.$(printf '%s' "$P" | cksum | tr -d ' ')"
             if [ ! -f "$SEEN" ]; then
@@ -239,6 +244,13 @@ case "$M:$P" in
                 || printf '%s' "$B" | jq -r '.fields.parent.key' > "$WO_TEST_WORK/parent.${P#/issue/}"
         else
             [ "${WO_TEST_OUTCOME:-}" = "nowrite" ] || printf '%s' "$B" | jq -c '.fields | to_entries[0].value' > "$WO_TEST_WORK/outcome.json"
+            # SYNTHETIC: every field a PUT writes is kept per key and served back
+            # on a GET naming fields; WO_TEST_UPDATE=nowrite keeps nothing.
+            UF="$WO_TEST_WORK/updated.${P#/issue/}.json"
+            if [ "${WO_TEST_UPDATE:-}" != "nowrite" ]; then
+                [ -f "$UF" ] || echo '{}' > "$UF"
+                jq -c --argjson f "$(printf '%s' "$B" | jq -c '.fields')" '. + $f' "$UF" > "$UF.new" && mv "$UF.new" "$UF"
+            fi
         fi
         echo '{}' ;;
     GET:/issue/*fields=customfield_10053)
@@ -255,6 +267,13 @@ case "$M:$P" in
             fx issue.status.json | jq -c --arg s "$WO_TEST_STATUS" '.fields.status.name = $s'
         else
             fx issue.status.json
+        fi ;;
+    GET:/issue/*fields=*)
+        K="${P#/issue/}"; K="${K%%\?*}"
+        if [ -f "$WO_TEST_WORK/updated.$K.json" ]; then
+            jq -c --arg k "$K" '{key: $k, fields: .}' "$WO_TEST_WORK/updated.$K.json"
+        else
+            jq -cn --arg k "$K" '{key: $k, fields: {}}'
         fi ;;
     GET:/issue/*)
         if [ -f "$WO_TEST_WORK/created-issue.json" ]; then
@@ -278,7 +297,7 @@ LOG=""
 reset_log() {
     LOG="$WORK/log.$1"
     : > "$LOG"
-    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.* "$WORK"/parent.*
+    rm -f "$WORK/fieldseq" "$WORK/created" "$WORK/created-issue.json" "$WORK/links.json" "$WORK/transitioned" "$WORK/outcome.json" "$WORK"/probe.* "$WORK"/parent.* "$WORK"/updated.*
 }
 export WO_TEST_FX="$FX"
 export WO_TEST_WORK="$WORK"
@@ -342,6 +361,29 @@ OUT=$(WORK_ORDER_JIRA_BASE_URL="" WORK_ORDER_JIRA_EMAIL=a@b.c \
 eq "jira-http.sh with no base URL fails before reaching curl" "1" "$RC"
 not_contains "  and never prints the token" "sekrit-token-value" "$OUT"
 not_contains "  and never reached curl" "curl was called" "$OUT"
+
+# A curl that answers 200 with a body, so a call runs to completion, and a
+# fresh TMPDIR, so anything a run leaves behind is visible.
+OKBIN="$WORK/okbin"
+mkdir -p "$OKBIN" "$WORK/tmpdir"
+cat > "$OKBIN/curl" <<'CURLEOF'
+#!/bin/sh
+cat >/dev/null
+while [ $# -gt 0 ]; do
+    case "$1" in -o) printf '{"ok":true}' > "$2"; shift 2 ;; *) shift ;; esac
+done
+printf '200'
+CURLEOF
+chmod +x "$OKBIN/curl"
+OUT=$(TMPDIR="$WORK/tmpdir" WORK_ORDER_JIRA_BASE_URL=https://example.atlassian.net \
+      WORK_ORDER_JIRA_EMAIL=a@b.c WORK_ORDER_JIRA_TOKEN=t PATH="$OKBIN:$PATH" \
+      "$HTTPLIB" GET /myself 2>&1); RC=$?
+eq "jira-http.sh returns a 2xx body" '{"ok":true}' "$OUT"
+eq "  and leaves no scratch directory behind" "" "$(ls -A "$WORK/tmpdir")"
+OUT=$(TMPDIR="$WORK/tmpdir" PATH="$OKBIN:$PATH" WORK_ORDER_JIRA_BASE_URL=https://example.atlassian.net \
+      WORK_ORDER_JIRA_EMAIL=a@b.c WORK_ORDER_JIRA_TOKEN=t \
+      "$PROVIDER" parent PROJ-2 --epic PROJ-1 2>&1) || true
+eq "provider.sh, through the real client, leaves no scratch directory behind either" "" "$(ls -A "$WORK/tmpdir")"
 
 # ---- 3. provider.sh -----------------------------------------------------
 
@@ -520,8 +562,10 @@ for name in ("touches", "appends", "human_steps"):
     same(name, want.get(name) or [], got.get(name) or [])
 # Jira serves labels sorted, so tags round-trip as a set, not a sequence.
 same("tags", sorted(want.get("tags") or []), sorted(got.get("tags") or []))
-for name in ("title", "verify", "executor", "outcome"):
+for name in ("title", "executor", "outcome"):
     same(name, want.get(name) or "", got.get(name) or "")
+# [MUST-10]: the base-state observation travels as verify's last line.
+same("verify", want["verify"] + "\n# " + want["verify_fails_today"], got.get("verify") or "")
 same("defer_until", want.get("defer_until"), got.get("defer_until"))
 
 body = got.get("_body") or ""
@@ -856,6 +900,86 @@ OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/epic-ticket.j
 eq "create --ticket --dry-run with an epic exits 0" "0" "$RC"
 contains "  showing the epic lookup" "/rest/api/3/issue/PROJ-1?fields=issuetype" "$OUT"
 contains "  and the parent in the body" '"parent":{"key":"PROJ-1"}' "$OUT"
+
+# ---- update, stdin decisions, verify's observation, a transition already
+# taken, and issues-api.sh (WO-104) -------------------------------------------
+
+OUT=$(printf '{"defer_until":"2026-12-01"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update --ticket - --dry-run exits 0" "0" "$RC"
+contains "  printing the PUT, the field named for the site to resolve" '{"fields":{"<defer_until>":"2026-12-01"}}' "$OUT"
+
+reset_log update-write
+OUT=$(printf '%s' '{"verify":"make check","verify_fails_today":"make check exits 2 today","touches":["a.txt","b.txt"],"executor":"mixed","defer_until":null,"tags":[]}' \
+      | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update writes the fields the decision carries and exits 0" "0" "$RC"
+PUT=$(grep '^PUT /issue/PROJ-1 ' "$LOG" | sed 's/^PUT \/issue\/PROJ-1 //')
+eq "  verify carrying the observation as its last line" "make check
+# make check exits 2 today" "$(printf '%s' "$PUT" | jq -r '[.fields.customfield_10044 | .. | objects | select(.type == "text") | .text] | join("\n")')"
+eq "  clearing defer_until, given empty, with an explicit null" "null" "$(printf '%s' "$PUT" | jq -c '.fields.customfield_10052')"
+eq "  clearing the labels" "[]" "$(printf '%s' "$PUT" | jq -c '.fields.labels')"
+eq "  and sending no key the decision does not carry" "customfield_10043,customfield_10044,customfield_10047,customfield_10052,labels" \
+   "$(printf '%s' "$PUT" | jq -r '.fields | keys | join(",")')"
+contains "  then reading it back and naming what it wrote" "PROJ-1 updated: tags touches executor verify defer_until" "$OUT"
+
+reset_log update-nowrite
+OUT=$(printf '{"verify":"make check"}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_UPDATE=nowrite \
+      "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update exits 1 when the read-back does not show the write" "1" "$RC"
+contains "  naming the field by its name" "does not show what was written for: verify" "$OUT"
+
+reset_log update-far-date
+OUT=$(printf '{"defer_until":"2099-01-01"}' | WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all \
+      "$PROVIDER" --http "$STUB" update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a date Jira's two-digit-year pivot would store a century early" "1" "$RC"
+contains "  naming what Jira would store" "would store it as 1999" "$OUT"
+eq "  and writes nothing" "0" "$(grep -c '^PUT ' "$LOG" || true)"
+OUT=$(printf '{"defer_until":"next week"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a defer_until that is not a full-date" "1" "$RC"
+
+OUT=$(printf '{"problem":"only this"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a description given in part" "1" "$RC"
+contains "  because it rewrites the description whole" "rewrites the description whole" "$OUT"
+OUT=$(jq -c '.decisions[0] | {problem, solution, rationale, out_of_scope}' "$FX/ticket-full.json" \
+      | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update rewrites a description given whole" "0" "$RC"
+contains "  under the same headings create writes" '"text":"Out of scope"' "$OUT"
+OUT=$(printf '{"title":"  "}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses an empty title" "1" "$RC"
+OUT=$(printf '{"verify_fails_today":"x"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses verify_fails_today without verify" "1" "$RC"
+OUT=$(printf '{"id":"X-1"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update refuses a decision carrying nothing it writes" "1" "$RC"
+OUT=$(printf '{"epic":"PROJ-9","blocked_by":["PROJ-3"],"verify":"x"}' | "$PROVIDER" --dry-run update PROJ-1 --ticket - 2>&1); RC=$?
+eq "update writes the rest of a decision that carries epic and blocked_by" "0" "$RC"
+contains "  pointing the epic at parent" "provider.sh parent PROJ-1 --epic EPIC" "$OUT"
+contains "  and blocked_by at link" "provider.sh link PROJ-1 --blocked-by BLOCKER" "$OUT"
+
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket - < "$FX/ticket-minimal.json" 2>&1); RC=$?
+eq "create --ticket - reads the decision from stdin" "0" "$RC"
+contains "  taking its title" '"summary":"The smallest decision create will write"' "$OUT"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$FX/ticket-full.json" 2>&1)
+contains "create writes verify_fails_today as verify's last line ([MUST-10])" \
+    '"text":"# create takes a summary and nothing else, so the dry-run body carries no description."' "$OUT"
+
+reset_log transition-noop
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_STATUS="Open" "$PROVIDER" --http "$STUB" transition PROJ-1 open 2>&1); RC=$?
+eq "transition to the position the issue already holds exits 0" "0" "$RC"
+contains "  saying so" "PROJ-1 is already Open" "$OUT"
+eq "  and posts nothing" "0" "$(grep -c '^POST \|^PUT ' "$LOG" || true)"
+
+ISSUESAPI="$HERE/issues-api.sh"
+reset_log issues-api
+OUT=$(WO_TEST_LOG="$LOG" ISSUES_API_HTTP="$STUB" "$ISSUESAPI" --show-secrets raw GET /field 2>&1); RC=$?
+eq "issues-api.sh forwards a GET to the client" "0" "$RC"
+eq "  as the client's own GET" "GET /field" "$(cat "$LOG")"
+OUT=$(ISSUES_API_HTTP="$STUB" "$ISSUESAPI" raw POST /issue '{}' 2>&1); RC=$?
+eq "issues-api.sh forwards nothing but GET" "1" "$RC"
+reset_log issues-api-board
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_SEARCH=onepage ISSUES_API_HTTP="$STUB" python3 "$HERE/../../reference/issues.py" board \
+      --source jira --jira-api "$ISSUESAPI" --jira-project PROJ 2>&1); RC=$?
+eq "reference/issues.py reads a Space through issues-api.sh" "0" "$RC"
+contains "  listing the issue the search returned" "PROJ-111" "$OUT"
+eq "  having resolved the field ids by name first" "GET /field" "$(head -1 "$LOG")"
 
 # ---- provider transition --outcome and create's duplicate check (WO-96) ---
 

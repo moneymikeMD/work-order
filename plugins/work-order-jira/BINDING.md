@@ -476,7 +476,8 @@ checked here too.
 | `provision.sh` | creates or converges a Space on a tier (`--tier managed`, the default, is a conforming Space), `--dry-run` first; its last step runs the two scripts below |
 | `universal-apply.sh` | converges, from `universal-workflows.json`, the shared workflows of section 3.1, their scheme, and both tiers' screens, screen schemes, issue type screen schemes and issue type schemes of section 3.3; takes no project |
 | `universal-switch.sh` | moves one project onto its tier's workflow scheme, issue type scheme, issue type screen scheme and category, mapping its issues' old statuses onto the tier's, then deletes the workflows, schemes and screens it had |
-| `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create`, `link`, `unlink`, `parent` |
+| `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create`, `update`, `link`, `unlink`, `parent` |
+| `issues-api.sh` | the read-only wrapper `reference/issues.py --source jira` calls, over `lib/jira-http.sh` |
 | `lib/jira-http.sh` | the one credentialed HTTP client, and the seam a test stubs |
 | `selftest.sh` | offline; stubs the client and asserts on the decisions the scripts reach |
 
@@ -485,7 +486,9 @@ transition id, and resolves it against the live issue. That is the lifecycle
 table in section 3 made executable: if the table and the Space disagree, the
 call fails instead of moving the ticket somewhere else. Since transitions are
 directed (`[JIRA-18]`), a position the issue's current status has no transition
-into fails the same way.
+into fails the same way. A position the issue already holds is a no-op, exit 0,
+so a command sequence that files and opens a set can be run again after a
+partial failure.
 
 On the managed tier, `universal-switch.sh` first moves every `To Do` issue that
 already carries `verify` to `Open`, then maps what remains: `To Do` to `Triage`
@@ -499,19 +502,21 @@ a stored rule that differs from `universal-workflows.json`.
 ## 10. Writing a ticket — `provider.sh create`
 
 ```
-provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH] [--allow-duplicate]
+provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH|-] [--allow-duplicate]
 ```
 
 Without `--ticket`, `create` writes a title and nothing else. With it, `PATH` is
 a decision-list document (`decision-list/FORMAT.md`) — one decision object, or a
-list holding exactly one — and the whole ticket is written in that one request:
+list holding exactly one, read from stdin when `PATH` is `-` — and the whole
+ticket is written in that one request:
 
 | Ticket field | Written as |
 | --- | --- |
 | `title` | `fields.summary`. `SUMMARY` wins; leave it empty to use the ticket's |
 | `problem`, `solution`, `rationale`, `out_of_scope` | `fields.description`, one `##` heading per part |
 | `tags` | `fields.labels`, always sent, empty or not |
-| `touches`, `verify`, `human_steps`, `appends`, `outcome` | the custom field of that name, as an ADF document — a `textarea` rejects a plain string |
+| `touches`, `verify`, `human_steps`, `appends`, `outcome`, `blocked_by_external` | the custom field of that name, as an ADF document — a `textarea` rejects a plain string |
+| `verify_fails_today` | the last line of `verify`, as `# <observation>`, the way the file binding's `emit-tickets` writes it: `[MUST-10]` asks `verify` to record it |
 | `executor` | the `executor` field, `{"value": ...}`, checked against the three options |
 | `defer_until` | the `defer_until` field, an RFC 3339 full-date |
 | `epic` | `fields.parent`, when it names an issue that exists at `hierarchyLevel` 1 — see `parent` below |
@@ -563,6 +568,28 @@ unless an inward `Blocks` entry names BLOCKER. `unlink` deletes each matching
 link by the id read from KEY and reads back that it is gone; when only the
 reversed link exists it warns and leaves it alone. Link types other than
 `Blocks` are not handled.
+
+**`update`.** `provider.sh update KEY --ticket PATH|-` rewrites an existing
+issue from a decision document with the encodings `create` uses. It is how a
+ticket filed bare into `triage` receives its contract, how a contract that
+changed is rewritten (`[MUST-32]` permits exactly that), and how `defer_until`
+is set before `defer` and cleared after an early `open`: Jira ignores a field in
+a transition body, so a date can only arrive by its own write.
+
+- A key the document carries is written; a key it carries empty — `null`, a
+  blank string or an empty list — clears the field, sent as an explicit `null`
+  because Jira keeps the stored value of a key a PUT omits; a key it does not
+  carry is left alone.
+- `title` becomes the summary and is refused empty (`[MUST-3]`). `tags` become
+  the labels.
+- The description is rewritten whole: `problem`, `solution` and `out_of_scope`
+  come together or not at all, so one part can never silently replace the rest.
+- `verify_fails_today` is written only beside `verify`, as its last line.
+- `epic` and `blocked_by` are not written here; `update` warns and names
+  `parent` and `link`.
+
+Every written field is read back and compared on its text; a mismatch exits 1
+naming the field. A document that carries nothing `update` writes is refused.
 
 **`parent`.** `provider.sh parent KEY --epic EPIC [--replace]` sets a ticket's
 epic after the fact: for a ticket filed before its epic, or moved between

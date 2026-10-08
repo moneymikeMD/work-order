@@ -73,6 +73,7 @@ done
 need jq
 
 trap tmpclean EXIT
+tmpinit || die "could not create a scratch directory"
 ERRF=$(tmpfile) || die "could not create a scratch file"
 
 http_get()  { "$HTTP" GET "$1" 2>"$ERRF"; }

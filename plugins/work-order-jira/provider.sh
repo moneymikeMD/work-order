@@ -12,7 +12,8 @@
 #                                                [--outcome TEXT]
 #   provider.sh [--dry-run] [--http PATH] comment KEY TEXT
 #   provider.sh [--dry-run] [--http PATH] create PROJECT ISSUETYPE SUMMARY
-#                                                [--ticket PATH] [--allow-duplicate]
+#                                                [--ticket PATH|-] [--allow-duplicate]
+#   provider.sh [--dry-run] [--http PATH] update KEY --ticket PATH|-
 #   provider.sh [--dry-run] [--http PATH] link   KEY --blocked-by BLOCKER
 #                                                [--replace]
 #   provider.sh [--dry-run] [--http PATH] unlink KEY --blocked-by BLOCKER
@@ -27,8 +28,10 @@
 #                  Written in its own PUT before the transition, because Jira
 #                  ignores a field in a transition body here ([JIRA-7]).
 #   --ticket PATH  a decision-list document (decision-list/FORMAT.md): one
-#                  decision object, or a list holding exactly one. Its fields
-#                  become the issue's description, labels and custom fields.
+#                  decision object, or a list holding exactly one; '-' reads
+#                  stdin. Its fields become the issue's description, labels
+#                  and custom fields, and verify_fails_today becomes verify's
+#                  last line, '# <observation>' ([MUST-10]). For create,
 #                  SUMMARY may then be empty, and the title comes from it.
 #   --allow-duplicate  create only: skip the duplicate check below.
 #   --blocked-by   the issue that blocks KEY, named for the direction so the
@@ -55,10 +58,16 @@
 # 0; a KEY under another epic is refused, exit 1, naming it, unless --replace.
 # It then writes fields.parent and exits 1 unless KEY reads back under EPIC.
 #
+# transition to a position the issue already holds is a no-op, exit 0.
 # transition --outcome resolves the transition first, so a refusal writes
 # nothing; then PUTs outcome as an ADF document, reads the field back, takes the
 # transition and reads the status back. A move to cancelled with no --outcome
 # and an empty outcome field exits 1 naming --outcome before any write.
+#
+# update writes each key the decision carries, clears (explicit null) each it
+# carries empty, and leaves the rest alone; the description is rewritten only
+# from problem, solution and out_of_scope together. epic and blocked_by are not
+# written (parent, link). Every written field is read back and compared.
 #
 # create first searches PROJECT for an open issue (statusCategory not Done)
 # whose summary equals SUMMARY exactly. JQL summary matching is fuzzy, so the
@@ -72,8 +81,8 @@
 # back and exits 1 unless an inward Blocks entry names BLOCKER. unlink deletes
 # the matching link by the id read from KEY and reads back that it is gone.
 #
-# transition, comment, create, link, unlink and parent are live writes with no
-# interactive confirmation, so the provider works unattended; --dry-run or
+# transition, comment, create, update, link, unlink and parent are live writes
+# with no interactive confirmation, so the provider works unattended; --dry-run or
 # WORK_ORDER_JIRA_DRY_RUN=1 turns every call into a printed request.
 #
 # Exit status:
@@ -139,10 +148,7 @@ done
 
 need jq
 trap tmpclean EXIT
-# Created here, in the main shell: a tmpfile called inside $( ) would create
-# the directory in the subshell, where the trap never learns of it.
-# shellcheck disable=SC2034  # read by tmpfile and tmpclean in lib/common.sh
-WO_JIRA_TMPDIR=$(mktemp -d) || die "could not create a scratch directory"
+tmpinit || die "could not create a scratch directory"
 
 # http METHOD PATH [BODY] — the client, with --dry-run threaded through.
 http() {
@@ -295,6 +301,167 @@ refuse_duplicate() {
     exit 3
 }
 
+# read_ticket PATH VERB — set TICKET to the one decision PATH holds: a decision
+# object, or a decision list of exactly one ('-' reads stdin).
+read_ticket() {
+    local path="$1" verb="$2" raw count
+    if [ "$path" = "-" ]; then
+        raw=$(cat) || die "could not read the decision from stdin"
+    else
+        [ -f "$path" ] || die "--ticket path is not a readable file: '$path'"
+        raw=$(cat "$path") || die "could not read '$path'"
+    fi
+    printf '%s' "$raw" | jq -e . >/dev/null 2>&1 || die "--ticket '$path' is not valid JSON"
+    count=$(printf '%s' "$raw" | jq -r 'if (type == "object" and has("decisions")) then (.decisions | length) else -1 end') \
+        || die "could not read '$path' as a decision list"
+    case "$count" in
+        -1) TICKET=$(printf '%s' "$raw" | jq -c .) ;;
+        1)  TICKET=$(printf '%s' "$raw" | jq -c '.decisions[0]') ;;
+        *)  die "'$path' is a decision list of $count decisions; $verb writes one issue, so pass one decision object or a one-entry list" ;;
+    esac
+    [ "$(printf '%s' "$TICKET" | jq -r 'type')" = "object" ] || die "'$path' does not hold a decision object"
+}
+
+# check_ticket_values — die on a TICKET value Jira cannot hold: a tag with
+# whitespace, an executor outside the three options.
+check_ticket_values() {
+    local badtag executor
+    badtag=$(printf '%s' "$TICKET" | jq -r '[(.tags // [])[] | select(test("[[:space:]]"))][0] // empty') \
+        || die "could not read 'tags' from the decision"
+    [ -z "$badtag" ] || die "tag '$badtag' contains whitespace and a Jira label cannot — see BINDING.md section 2"
+    executor=$(printf '%s' "$TICKET" | jq -r '.executor // ""') || die "could not read 'executor' from the decision"
+    if [ -n "$executor" ] && ! in_list "$executor" "$WO_JIRA_EXECUTOR_OPTIONS"; then
+        die "executor '$executor' is not one of: $(printf '%s' "$WO_JIRA_EXECUTOR_OPTIONS" | tr '\n' ' ')"
+    fi
+}
+
+# field_state NAME — absent (TICKET has no such key), empty (null, blank, or an
+# empty list) or set.
+field_state() {
+    printf '%s' "$TICKET" | jq -r --arg n "$1" '
+        if has($n) | not then "absent"
+        else .[$n] as $v
+        | if $v == null then "empty"
+          elif ($v | type) == "array" then (if ($v | length) > 0 then "set" else "empty" end)
+          elif ($v | type) == "string" then (if ($v | gsub("[[:space:]]"; "")) == "" then "empty" else "set" end)
+          else "set" end
+        end'
+}
+
+# field_value NAME TYPE — print the JSON value TICKET's NAME takes in a field
+# of lib/common.sh's TYPE. verify carries verify_fails_today as its last line,
+# `# <observation>`, as the file binding's emit-tickets writes it ([MUST-10]).
+field_value() {
+    local text d
+    case "$2" in
+        *:textarea)
+            text=$(printf '%s' "$TICKET" | jq -r --arg n "$1" '
+                . as $t
+                | ($t[$n] | if type == "array" then join("\n") else tostring end)
+                + (if $n == "verify" and (($t.verify_fails_today // "") | tostring | gsub("[[:space:]]"; "")) != ""
+                   then "\n# " + ($t.verify_fails_today | tostring) else "" end)') || return 1
+            jira_adf_doc "$text" ;;
+        *:select)     printf '%s' "$TICKET" | jq -c --arg n "$1" '{value: .[$n]}' ;;
+        *:datepicker)
+            d=$(printf '%s' "$TICKET" | jq -r --arg n "$1" '.[$n] | tostring') || return 1
+            case "$d" in
+                [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]) ;;
+                *) warn "'$1' must be an RFC 3339 full-date, YYYY-MM-DD; got '$d'"; return 1 ;;
+            esac
+            # Measured on Jira Cloud: a date picker parses the year with a
+            # two-digit pivot, and 2046-01-01 reads back as 1946-01-01.
+            if [ "${d%%-*}" -ge $(( $(date +%Y) + 20 )) ]; then
+                warn "'$1' $d is 20 or more years out, and Jira would store it as 19${d:2:2}; refused"
+                return 1
+            fi
+            printf '"%s"' "$d" ;;
+        *) return 1 ;;
+    esac
+}
+
+# ticket_description — print TICKET's problem, solution, decisions and out of
+# scope as one ADF document, one heading per part, or null when it has none.
+ticket_description() {
+    printf '%s' "$TICKET" | jq -c '
+        def para($s): ($s | gsub("\r"; "") | sub("\n+$"; "") | split("\n")
+            | map(if . == "" then {type: "paragraph", content: []}
+                  else {type: "paragraph", content: [{type: "text", text: .}]} end));
+        def head($s): {type: "heading", attrs: {level: 2}, content: [{type: "text", text: $s}]};
+        def section($h; $s): if (($s // "") | gsub("[[:space:]]"; "")) == "" then []
+                             else [head($h)] + para($s) end;
+        def decisions: if ((.rationale // []) | length) == 0 then []
+            else [head("Decisions")] + ([(.rationale // [])[] | para(
+                .choice + (if ((.rejected // []) | length) > 0
+                           then " Rejected: " + ((.rejected // []) | join(" ")) else "" end))] | add)
+            end;
+        (section("Problem"; .problem) + section("Solution"; .solution)
+         + decisions + section("Out of scope"; .out_of_scope)) as $c
+        | if ($c | length) == 0 then null else {type: "doc", version: 1, content: $c} end'
+}
+
+# read_field_list — set FIELD_JSON to this site's GET /field; under --dry-run
+# print the request instead.
+read_field_list() {
+    if [ "$DRY_RUN" = "1" ]; then
+        FIELD_JSON=""
+        http GET "/field"
+    else
+        FIELD_JSON=$(http GET "/field") \
+            || die "could not read this site's field list to resolve the custom field ids by name ([JIRA-8])"
+    fi
+}
+
+# custom_field_id NAME — print the id this site gives the custom field NAME
+# ([JIRA-8]), <NAME> under --dry-run. Call as `x=$(custom_field_id N) || exit 1`.
+custom_field_id() {
+    local id
+    if [ "$DRY_RUN" = "1" ]; then
+        printf '<%s>' "$1"
+        return 0
+    fi
+    id=$(printf '%s' "$FIELD_JSON" | jq -r --arg n "$1" '[.[] | select(.custom == true and .name == $n)][0].id // empty') \
+        || die "could not parse this site's field list"
+    [ -n "$id" ] || die "this site has no custom field named '$1', so the ticket's '$1' cannot be written — run provision.sh ([JIRA-8])"
+    printf '%s' "$id"
+}
+
+# add_contract_fields MODE — add to FIELDS, under its site id, each field of
+# lib/common.sh's table TICKET sets, and append its name to WROTE. MODE update
+# also clears, with an explicit null, a field TICKET gives as empty: Jira keeps
+# the stored value of a key a PUT omits.
+add_contract_fields() {
+    local i=1 name type value fid
+    while IFS= read -r name; do
+        type=$(list_nth "$WO_JIRA_FIELD_TYPE_KEYS" "$i") || die "the field table in lib/common.sh is malformed"
+        i=$((i + 1))
+        case "$1:$(field_state "$name")" in
+            *:set)
+                value=$(field_value "$name" "$type") \
+                    || die "could not encode '$name' as lib/common.sh's '$type'" ;;
+            update:empty) value=null ;;
+            *) continue ;;
+        esac
+        fid=$(custom_field_id "$name") || exit 1
+        FIELDS=$(printf '%s' "$FIELDS" | jq -c --arg k "$fid" --argjson v "$value" '. + {($k): $v}') \
+            || die "could not add '$name' to the request fields"
+        WROTE="$WROTE $name"
+    done <<EOF
+$WO_JIRA_FIELD_NAMES
+EOF
+}
+
+# comparable JSON — a field value as the text a write and its read-back are
+# compared on: an ADF document's text, a select's value, a sorted list, and
+# null as empty.
+comparable() {
+    printf '%s' "$1" | jq -r '
+        if . == null then ""
+        elif type == "object" and .type == "doc" then [.. | objects | select(.type == "text") | .text] | join("\n")
+        elif type == "object" and has("value") then .value
+        elif type == "array" then (map(tostring) | sort | join(","))
+        else tostring end'
+}
+
 verb="${1:-}"
 [ -n "$verb" ] && shift
 
@@ -354,10 +521,17 @@ case "$verb" in
                 WANT_STATUS=$(status_for_position "$TARGET") \
                     || die "'$TARGET' is not a lifecycle position (triage, open, in-progress, awaiting-deployment, deferred, completed, cancelled) and is not a numeric transition id"
                 if [ "$DRY_RUN" = "1" ]; then
+                    http GET "/issue/$TKEY?fields=status"
+                    printf 'WOULD stop there, exit 0, if %s is already %s\n' "$TKEY" "$WANT_STATUS"
                     http GET "/issue/$TKEY/transitions"
                     printf 'WOULD then POST the transition whose .to.name is %s\n' "$WANT_STATUS"
                     TRANSITION_ID="<id>"
                 else
+                    BEFORE=$(http GET "/issue/$TKEY?fields=status") || die "could not read the status of '$TKEY'"
+                    if [ "$(printf '%s' "$BEFORE" | jq -r '.fields.status.name // empty')" = "$WANT_STATUS" ]; then
+                        printf '%s is already %s\n' "$TKEY" "$WANT_STATUS"
+                        exit 0
+                    fi
                     AVAILABLE=$(http GET "/issue/$TKEY/transitions") \
                         || die "could not read the available transitions for '$TKEY'"
                     TRANSITION_ID=$(printf '%s' "$AVAILABLE" | jq -r --arg n "$WANT_STATUS" \
@@ -437,7 +611,7 @@ case "$verb" in
         ;;
 
     create)
-        [ $# -ge 3 ] || die "usage: provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH] [--allow-duplicate]"
+        [ $# -ge 3 ] || die "usage: provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH|-] [--allow-duplicate]"
         PROJ="$1"; ISSUETYPE="$2"; SUMMARY="$3"
         shift 3
         TICKET_PATH=""; ALLOW_DUP=0
@@ -445,7 +619,7 @@ case "$verb" in
             case "$1" in
                 --allow-duplicate) ALLOW_DUP=1; shift ;;
                 --ticket)
-                    [ $# -ge 2 ] || die "--ticket needs a path"
+                    [ $# -ge 2 ] || die "--ticket needs a path ('-' reads stdin)"
                     TICKET_PATH="$2"; shift 2 ;;
                 *) die "unexpected argument '$1' after create's three positional arguments" ;;
             esac
@@ -462,18 +636,7 @@ case "$verb" in
             exit 0
         fi
 
-        [ -f "$TICKET_PATH" ] || die "--ticket path is not a readable file: '$TICKET_PATH'"
-        jq -e . "$TICKET_PATH" >/dev/null 2>&1 \
-            || die "--ticket '$TICKET_PATH' is not valid JSON"
-        COUNT=$(jq -r 'if (type == "object" and has("decisions")) then (.decisions | length) else -1 end' "$TICKET_PATH") \
-            || die "could not read '$TICKET_PATH' as a decision list"
-        case "$COUNT" in
-            -1) TICKET=$(jq -c . "$TICKET_PATH") ;;
-            1)  TICKET=$(jq -c '.decisions[0]' "$TICKET_PATH") ;;
-            *)  die "'$TICKET_PATH' is a decision list of $COUNT decisions; create writes one issue, so pass one decision object or a one-entry list" ;;
-        esac
-        [ -n "$TICKET" ] || die "could not read a decision from '$TICKET_PATH'"
-
+        read_ticket "$TICKET_PATH" create
         if [ -z "$SUMMARY" ]; then
             SUMMARY=$(printf '%s' "$TICKET" | jq -r '.title // ""') \
                 || die "could not read 'title' from '$TICKET_PATH'"
@@ -482,16 +645,7 @@ case "$verb" in
 
         [ "$ALLOW_DUP" = "1" ] || refuse_duplicate "$PROJ" "$SUMMARY"
 
-        BADTAG=$(printf '%s' "$TICKET" | jq -r '[(.tags // [])[] | select(test("[[:space:]]"))][0] // empty') \
-            || die "could not read 'tags' from '$TICKET_PATH'"
-        [ -z "$BADTAG" ] \
-            || die "tag '$BADTAG' contains whitespace and a Jira label cannot — see BINDING.md section 2"
-
-        TEXECUTOR=$(printf '%s' "$TICKET" | jq -r '.executor // ""') \
-            || die "could not read 'executor' from '$TICKET_PATH'"
-        if [ -n "$TEXECUTOR" ] && ! in_list "$TEXECUTOR" "$WO_JIRA_EXECUTOR_OPTIONS"; then
-            die "executor '$TEXECUTOR' is not one of: $(printf '%s' "$WO_JIRA_EXECUTOR_OPTIONS" | tr '\n' ' ')"
-        fi
+        check_ticket_values
 
         NLINKS=$(printf '%s' "$TICKET" | jq -r '(.blocked_by // []) | length') \
             || die "could not read 'blocked_by' from '$TICKET_PATH'"
@@ -520,31 +674,9 @@ case "$verb" in
             fi
         fi
 
-        if [ "$DRY_RUN" = "1" ]; then
-            FIELD_JSON=""
-            http GET "/field"
-        else
-            FIELD_JSON=$(http GET "/field") \
-                || die "could not read this site's field list to resolve the custom field ids by name ([JIRA-8])"
-        fi
+        read_field_list
 
-        DESC=$(printf '%s' "$TICKET" | jq -c '
-            def para($s): ($s | gsub("\r"; "") | sub("\n+$"; "") | split("\n")
-                | map(if . == "" then {type: "paragraph", content: []}
-                      else {type: "paragraph", content: [{type: "text", text: .}]} end));
-            def head($s): {type: "heading", attrs: {level: 2}, content: [{type: "text", text: $s}]};
-            def section($h; $s): if (($s // "") | gsub("[[:space:]]"; "")) == "" then []
-                                 else [head($h)] + para($s) end;
-            def decisions: if ((.rationale // []) | length) == 0 then []
-                else [head("Decisions")] + ([(.rationale // [])[] | para(
-                    .choice + (if ((.rejected // []) | length) > 0
-                               then " Rejected: " + ((.rejected // []) | join(" ")) else "" end))] | add)
-                end;
-            (section("Problem"; .problem) + section("Solution"; .solution)
-             + decisions + section("Out of scope"; .out_of_scope)) as $c
-            | if ($c | length) == 0 then null else {type: "doc", version: 1, content: $c} end') \
-            || die "could not build the description document"
-
+        DESC=$(ticket_description) || die "could not build the description document"
         FIELDS=$(printf '%s' "$TICKET" | jq -c --arg proj "$PROJ" --arg type "$ISSUETYPE" --arg summary "$SUMMARY" \
             '{project: {key: $proj}, issuetype: {name: $type}, summary: $summary, labels: (.tags // [])}') \
             || die "could not build the create-issue fields"
@@ -556,46 +688,8 @@ case "$verb" in
             FIELDS=$(printf '%s' "$FIELDS" | jq -c --arg p "$PARENT" '. + {parent: {key: $p}}') \
                 || die "could not add the epic to the create-issue fields"
         fi
-
-        i=1
-        while IFS= read -r FNAME; do
-            FTYPE=$(list_nth "$WO_JIRA_FIELD_TYPE_KEYS" "$i") || die "the field table in lib/common.sh is malformed"
-            i=$((i + 1))
-            HAS=$(printf '%s' "$TICKET" | jq -r --arg n "$FNAME" '
-                .[$n] as $v
-                | if $v == null then "no"
-                  elif ($v | type) == "array" then (if ($v | length) > 0 then "yes" else "no" end)
-                  elif ($v | type) == "string" then (if ($v | gsub("[[:space:]]"; "")) == "" then "no" else "yes" end)
-                  else "yes" end') \
-                || die "could not read '$FNAME' from '$TICKET_PATH'"
-            [ "$HAS" = "yes" ] || continue
-            case "$FTYPE" in
-                *:textarea)
-                    FTEXT=$(printf '%s' "$TICKET" | jq -r --arg n "$FNAME" '.[$n] | if type == "array" then join("\n") else . end') \
-                        || die "could not read '$FNAME' from '$TICKET_PATH'"
-                    FVALUE=$(jira_adf_doc "$FTEXT") \
-                        || die "could not build the ADF document for '$FNAME'" ;;
-                *:select)
-                    FVALUE=$(printf '%s' "$TICKET" | jq -c --arg n "$FNAME" '{value: .[$n]}') \
-                        || die "could not encode '$FNAME'" ;;
-                *:datepicker)
-                    FVALUE=$(printf '%s' "$TICKET" | jq -c --arg n "$FNAME" '.[$n]') \
-                        || die "could not encode '$FNAME'" ;;
-                *)  die "lib/common.sh gives '$FNAME' the type '$FTYPE', which create has no value encoding for" ;;
-            esac
-            if [ "$DRY_RUN" = "1" ]; then
-                FID="<$FNAME>"
-            else
-                FID=$(printf '%s' "$FIELD_JSON" | jq -r --arg n "$FNAME" '[.[] | select(.custom == true and .name == $n)][0].id // empty') \
-                    || die "could not parse this site's field list"
-                [ -n "$FID" ] \
-                    || die "this site has no custom field named '$FNAME', so the ticket's '$FNAME' cannot be written — run provision.sh ([JIRA-8])"
-            fi
-            FIELDS=$(printf '%s' "$FIELDS" | jq -c --arg k "$FID" --argjson v "$FVALUE" '. + {($k): $v}') \
-                || die "could not add '$FNAME' to the create-issue fields"
-        done <<EOF
-$WO_JIRA_FIELD_NAMES
-EOF
+        WROTE=""
+        add_contract_fields create
 
         BODY=$(printf '%s' "$FIELDS" | jq -c '{fields: .}') \
             || die "could not build the create-issue request body"
@@ -616,6 +710,85 @@ EOF
             [ "$(printf '%s' "$BACK" | jq -r '.fields.parent.key // empty')" = "$PARENT" ] \
                 || die "created '$NEWKEY' but its read-back shows no epic '$PARENT'; run 'provider.sh parent $NEWKEY --epic $PARENT'"
         fi
+        ;;
+
+    update)
+        [ $# -ge 1 ] || die "usage: provider.sh [--dry-run] update KEY --ticket PATH|-"
+        UKEY="$1"; shift
+        require_issue_key "$UKEY" || die "$WO_JIRA_KEY_ERR"
+        TICKET_PATH=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --ticket)
+                    [ $# -ge 2 ] || die "--ticket needs a path ('-' reads stdin)"
+                    TICKET_PATH="$2"; shift 2 ;;
+                *) die "unexpected argument '$1' after update's KEY" ;;
+            esac
+        done
+        [ -n "$TICKET_PATH" ] || die "update needs --ticket PATH|-: the fields to write come from a decision document"
+        read_ticket "$TICKET_PATH" update
+        check_ticket_values
+
+        for k in epic blocked_by; do
+            if [ "$(printf '%s' "$TICKET" | jq -r --arg k "$k" 'has($k)')" = "true" ]; then
+                case "$k" in
+                    epic) warn "update does not write epic; run 'provider.sh parent $UKEY --epic EPIC'" ;;
+                    *)    warn "update does not write blocked_by; run 'provider.sh link $UKEY --blocked-by BLOCKER' or unlink" ;;
+                esac
+            fi
+        done
+        [ "$(field_state verify_fails_today)" = "absent" ] || [ "$(field_state verify)" = "set" ] \
+            || die "verify_fails_today is written as verify's last line, so it needs verify beside it; nothing written"
+
+        FIELDS='{}'
+        WROTE=""
+        case "$(field_state title)" in
+            set)   FIELDS=$(printf '%s' "$TICKET" | jq -c '{summary: .title}') || die "could not encode 'title'"
+                   WROTE=" title" ;;
+            empty) die "a ticket needs a title — 'title' is empty (work-order MUST-3); nothing written" ;;
+        esac
+        if [ "$(field_state tags)" != "absent" ]; then
+            FIELDS=$(printf '%s' "$FIELDS" | jq -c --argjson t "$TICKET" '. + {labels: ($t.tags // [])}') \
+                || die "could not encode 'tags'"
+            WROTE="$WROTE tags"
+        fi
+        DPARTS=$(printf '%s' "$TICKET" | jq -r '. as $t | [("problem", "solution", "rationale", "out_of_scope") | select(. as $k | $t | has($k))] | join(" ")') \
+            || die "could not read the description parts from the decision"
+        if [ -n "$DPARTS" ]; then
+            for k in problem solution out_of_scope; do
+                [ "$(field_state "$k")" = "set" ] \
+                    || die "update rewrites the description whole, so it needs problem, solution and out_of_scope together; '$k' is missing or empty; nothing written"
+            done
+            DESC=$(ticket_description) || die "could not build the description document"
+            FIELDS=$(printf '%s' "$FIELDS" | jq -c --argjson d "$DESC" '. + {description: $d}') \
+                || die "could not add the description"
+            WROTE="$WROTE description"
+        fi
+
+        read_field_list
+        add_contract_fields update
+        [ "$FIELDS" != '{}' ] \
+            || die "the decision carries no field update writes (title, tags, the description parts, or a field of lib/common.sh's table); nothing written"
+
+        BODY=$(printf '%s' "$FIELDS" | jq -c '{fields: .}') || die "could not build the update request body"
+        if [ "$DRY_RUN" = "1" ]; then
+            printf 'WOULD resolve each <name> below to the id this site assigns it, by name, from that listing ([JIRA-8])\n'
+            http PUT "/issue/$UKEY" "$BODY"
+            http GET "/issue/$UKEY?fields=$(printf '%s' "$FIELDS" | jq -r 'keys | join(",")')"
+            exit 0
+        fi
+        http PUT "/issue/$UKEY" "$BODY" >/dev/null || die "could not update '$UKEY'"
+        BACK=$(http GET "/issue/$UKEY?fields=$(printf '%s' "$FIELDS" | jq -r 'keys | join(",")')") \
+            || die "updated '$UKEY' but could not read it back"
+        BAD=""
+        for k in $(printf '%s' "$FIELDS" | jq -r 'keys[]'); do
+            SENT=$(printf '%s' "$FIELDS" | jq -c --arg k "$k" '.[$k]')
+            GOT=$(printf '%s' "$BACK" | jq -c --arg k "$k" '.fields[$k] // null')
+            [ "$(comparable "$SENT")" = "$(comparable "$GOT")" ] \
+                || BAD="$BAD $(printf '%s' "$FIELD_JSON" | jq -r --arg k "$k" '[.[] | select(.id == $k)][0].name // $k')"
+        done
+        [ -z "$BAD" ] || die "read-back of '$UKEY' does not show what was written for:$BAD"
+        printf '%s updated:%s\n' "$UKEY" "$WROTE"
         ;;
 
     link|unlink)
@@ -750,9 +923,9 @@ EOF
         ;;
 
     "")
-        die "usage: provider.sh [--dry-run] VERB [ARG...] (verbs: fetch, position, transition, comment, create, link, unlink, parent)"
+        die "usage: provider.sh [--dry-run] VERB [ARG...] (verbs: fetch, position, transition, comment, create, update, link, unlink, parent)"
         ;;
     *)
-        die "unknown tracker verb '$verb' (fetch, position, transition, comment, create, link, unlink, parent)"
+        die "unknown tracker verb '$verb' (fetch, position, transition, comment, create, update, link, unlink, parent)"
         ;;
 esac
