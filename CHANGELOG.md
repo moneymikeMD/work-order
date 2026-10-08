@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.11.0](https://github.com/moneymikeMD/work-order/compare/v1.10.1...v1.11.0) (2026-10-08)
+
+
+### Features
+
+* **jira:** live acceptance suite runs every golden flow before each release (WO-105) ([#89](https://github.com/moneymikeMD/work-order/issues/89)) ([ab28a45](https://github.com/moneymikeMD/work-order/commit/ab28a45828e8a581ddff2acf8bcdec721ff82536))
+* **jira:** provider.sh parent verb, and create writes the ticket's epic (WO-103) ([#82](https://github.com/moneymikeMD/work-order/issues/82)) ([b80b53c](https://github.com/moneymikeMD/work-order/commit/b80b53c03f55b5ab238debb9bfd7d5f6743db934))
+* **jira:** update verb, and the golden flows with every gap they found closed (WO-104) ([#87](https://github.com/moneymikeMD/work-order/issues/87)) ([4d15910](https://github.com/moneymikeMD/work-order/commit/4d159101dcbc88938c6e5e7293b868481217d797))
+
+
+### Bug Fixes
+
+* **reference:** issues.py reads Jira custom fields under the ids GET /field names (WO-104) ([#86](https://github.com/moneymikeMD/work-order/issues/86)) ([6bf0a4e](https://github.com/moneymikeMD/work-order/commit/6bf0a4eb0813bd47bbce4afebb1e652354a7c327))
+
 ## [1.10.1](https://github.com/moneymikeMD/work-order/compare/v1.10.0...v1.10.1) (2026-10-07)
 
 
