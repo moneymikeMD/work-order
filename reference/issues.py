@@ -191,8 +191,10 @@ def load_files(root):
     return tickets
 
 
-# Placeholder ids — Jira custom field ids are per-site. An adopting project
-# must create these fields itself and update these constants to match.
+# The in-memory names jira_issue_to_ticket() reads. Custom field ids are
+# per-site, so a live fetch resolves each by name from GET /field
+# (BINDING.md [JIRA-8]) and renames the site's ids onto these; only a recorded
+# --fixture, which carries no field listing, is read by them directly.
 JIRA_FIELD_TOUCHES = "customfield_10043"
 JIRA_FIELD_VERIFY = "customfield_10044"
 JIRA_FIELD_HUMAN_STEPS = "customfield_10045"
@@ -201,9 +203,21 @@ JIRA_FIELD_EXECUTOR = "customfield_10047"
 JIRA_FIELD_DEFER_UNTIL = "customfield_10048"
 JIRA_FIELD_BLOCKED_BY_EXTERNAL = "customfield_10049"
 
-JIRA_FIELDS = ",".join([
-    "summary", "status", "labels", "issuelinks", "created", "updated", "parent",
-    "issuetype", "description",
+JIRA_STANDARD_FIELDS = ["summary", "status", "labels", "issuelinks", "created",
+                        "updated", "parent", "issuetype", "description"]
+# The Jira field name of each custom field above: the name provision.sh gives
+# it, and the name a live fetch resolves its site id by.
+JIRA_CUSTOM_FIELD_NAMES = {
+    "touches": "JIRA_FIELD_TOUCHES",
+    "verify": "JIRA_FIELD_VERIFY",
+    "human_steps": "JIRA_FIELD_HUMAN_STEPS",
+    "appends": "JIRA_FIELD_APPENDS",
+    "executor": "JIRA_FIELD_EXECUTOR",
+    "defer_until": "JIRA_FIELD_DEFER_UNTIL",
+    "blocked_by_external": "JIRA_FIELD_BLOCKED_BY_EXTERNAL",
+}
+
+JIRA_FIELDS = ",".join(JIRA_STANDARD_FIELDS + [
     JIRA_FIELD_TOUCHES, JIRA_FIELD_VERIFY, JIRA_FIELD_HUMAN_STEPS,
     JIRA_FIELD_APPENDS, JIRA_FIELD_EXECUTOR, JIRA_FIELD_DEFER_UNTIL,
     JIRA_FIELD_BLOCKED_BY_EXTERNAL,
@@ -270,10 +284,59 @@ def _lines(text):
     return [l.strip() for l in text.splitlines() if l.strip()]
 
 
+def _jira_api_get(jira_api, path, what):
+    """GET path through the jira-api.sh-shaped wrapper and return the parsed
+    body. Dies naming `what` on any failure. --show-secrets: a wrapper that
+    redacts bare "key" fields would blank every issue key; safe only because
+    nothing requested here is credential-shaped."""
+    try:
+        proc = subprocess.run([jira_api, "--show-secrets", "raw", "GET", path],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as e:
+        die(f"could not run '{jira_api}': {e}")
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip()
+        die(f"{what} failed (exit {proc.returncode}): {err or '(no error output)'}")
+    out = (proc.stdout or "").strip()
+    if not out:
+        die(f"{what} returned no output")
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError as e:
+        die(f"{what} did not return valid JSON: {e}")
+
+
+def jira_site_field_ids(field_list):
+    """Constant -> this site's id for each custom field in
+    JIRA_CUSTOM_FIELD_NAMES, resolved by name from a GET /field listing
+    ([JIRA-8]). A field the site does not have maps to None and reads as
+    absent; it is never guessed from a constant."""
+    by_name = {}
+    for entry in field_list if isinstance(field_list, list) else []:
+        if isinstance(entry, dict) and entry.get("custom") and entry.get("id"):
+            by_name.setdefault((entry.get("name") or "").strip(), entry["id"])
+    return {globals()[const]: by_name.get(name)
+            for name, const in JIRA_CUSTOM_FIELD_NAMES.items()}
+
+
+def _canonical_jira_fields(fields, site_ids):
+    """An issue's fields with this site's custom field ids renamed onto the
+    JIRA_FIELD_* constants jira_issue_to_ticket() reads. Built afresh, so a
+    site id that happens to equal another field's constant cannot collide."""
+    fields = fields or {}
+    out = {k: v for k, v in fields.items() if not k.startswith("customfield_")}
+    for const, site_id in site_ids.items():
+        out[const] = fields.get(site_id) if site_id else None
+    return out
+
+
 def fetch_jira_json(jira_api, fixture):
     """Return the parsed JSON body of the one JQL fetch. Dies loudly (see
     die()) on any failure or empty/malformed result — never returns a
-    partial or best-guess result for the caller to limp along with."""
+    partial or best-guess result for the caller to limp along with.
+
+    A live fetch first reads GET /field, so each custom field is requested
+    and read under the id this site gave it, not the placeholder constant."""
     if fixture:
         try:
             with open(fixture) as f:
@@ -295,40 +358,39 @@ def fetch_jira_json(jira_api, fixture):
     if not os.path.exists(jira_api):
         die(f"jira-api script not found at '{jira_api}'")
 
-    # --show-secrets: a wrapper that redacts bare "key" fields would blank every
-    # issue key. Safe only because JIRA_FIELDS names no credential-shaped field.
+    site_ids = jira_site_field_ids(
+        _jira_api_get(jira_api, "/field", "reading this site's field list to resolve "
+                                          "custom field ids by name ([JIRA-8])"))
+    missing = [name for name, const in JIRA_CUSTOM_FIELD_NAMES.items()
+               if not site_ids.get(globals()[const])]
+    if missing:
+        print(f"issues.py: this site has no custom field named {', '.join(missing)}; "
+              f"read as empty (run the binding's provision.sh)", file=sys.stderr)
+    fields = ",".join(JIRA_STANDARD_FIELDS + [i for i in site_ids.values() if i])
+
     issues = []
     token = None
     while True:
         params = {
             "jql": JIRA_JQL,
             "maxResults": JIRA_MAX_RESULTS,
-            "fields": JIRA_FIELDS,
+            "fields": fields,
         }
         if token:
             params["nextPageToken"] = token
         path = f"{JIRA_SEARCH_PATH}?{urllib.parse.urlencode(params)}"
-        try:
-            proc = subprocess.run([jira_api, "--show-secrets", "raw", "GET", path],
-                                   capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.SubprocessError) as e:
-            die(f"could not run '{jira_api}': {e}")
-        if proc.returncode != 0:
-            err = (proc.stderr or "").strip()
-            die(f"jira fetch failed (exit {proc.returncode}): {err or '(no error output)'}")
-        out = (proc.stdout or "").strip()
-        if not out:
-            die("jira fetch returned no output")
-        try:
-            page = json.loads(out)
-        except json.JSONDecodeError as e:
-            die(f"jira fetch did not return valid JSON: {e}")
-        if page.get("issues") is None:
+        page = _jira_api_get(jira_api, path, "jira fetch")
+        if not isinstance(page, dict) or page.get("issues") is None:
             die("jira fetch response has no 'issues' array — unexpected shape "
                 "from /rest/api/3/search/jql")
+        for issue in page["issues"]:
+            issue["fields"] = _canonical_jira_fields(issue.get("fields"), site_ids)
         issues.extend(page["issues"])
         if page.get("isLast", True) or not page.get("nextPageToken"):
             break
+        if page["nextPageToken"] == token:
+            die("jira fetch returned the same nextPageToken twice — refusing to "
+                "page forever over one response")
         token = page["nextPageToken"]
     return {"issues": issues, "isLast": True}
 
@@ -1386,6 +1448,7 @@ def selftest():
     failures.extend(_unittest_selftest())
     failures.extend(_external_blocker_selftest())
     failures.extend(_scalar_epic_selftest())
+    failures.extend(_live_field_ids_selftest())
 
     if failures:
         print("SELFTEST FAILED")
@@ -1408,7 +1471,8 @@ def selftest():
           "Epics and Sub-tasks are groupings, held to no ticket rule; "
           "repo:path and repo/path both strip, matched by basename, path "
           "suffix or remote name, and only the slash form warns; a "
-          "file-binding scalar epic labels board and next rows; the "
+          "file-binding scalar epic labels board and next rows; a live "
+          "Jira fetch reads custom fields under the ids GET /field names; the "
           "unittests under tests/ pass")
     return 0
 
@@ -1900,6 +1964,102 @@ def _scalar_epic_selftest():
         if "epic E-1 (To Do)" not in buf.getvalue():
             failures.append(f"scalar epic: {name} did not label T-401 with "
                             f"epic E-1: {buf.getvalue()!r}")
+    return failures
+
+
+def _live_field_ids_selftest():
+    """A live fetch resolves custom field ids by name from GET /field: a site
+    whose ids differ from the constants, with an unrelated field squatting on
+    the old blocked_by_external constant, must still read blocked_by_external
+    and keep the ticket out of `next`."""
+    import io
+    import contextlib
+    import stat
+
+    failures = []
+    site_fields = [
+        {"id": "customfield_20001", "name": "touches", "custom": True},
+        {"id": "customfield_20002", "name": "verify", "custom": True},
+        {"id": "customfield_20003", "name": "executor", "custom": True},
+        {"id": "customfield_10080", "name": "blocked_by_external", "custom": True},
+        {"id": "customfield_10049", "name": "Story point estimate", "custom": True},
+        {"id": "summary", "name": "Summary", "custom": False},
+    ]
+
+    def adf(text):
+        return {"type": "doc", "version": 1, "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": text}]}]}
+
+    def issue(key, external):
+        fields = {
+            "summary": f"{key} title", "status": {"name": "Open"}, "labels": [],
+            "issuelinks": [], "created": "2026-10-08T09:00:00.000+0000",
+            "updated": "2026-10-08T09:00:00.000+0000",
+            "issuetype": {"name": "Task", "hierarchyLevel": 0},
+            "customfield_20001": adf(f"{key}.txt"), "customfield_20002": adf("true"),
+            "customfield_20003": {"value": "agent"},
+            "customfield_10049": adf("squatter on the old constant"),
+        }
+        if external:
+            fields["customfield_10080"] = adf("vendor release 2.0")
+        return {"key": key, "fields": fields}
+
+    search = {"issues": [issue("LF-1", True), issue("LF-2", False)], "isLast": True}
+    with tempfile.TemporaryDirectory() as tmp:
+        log = os.path.join(tmp, "calls.log")
+        wrapper = os.path.join(tmp, "jira-api.sh")
+        with open(os.path.join(tmp, "field.json"), "w") as f:
+            json.dump(site_fields, f)
+        with open(os.path.join(tmp, "search.json"), "w") as f:
+            json.dump(search, f)
+        with open(wrapper, "w") as f:
+            f.write(f"""#!{sys.executable}
+import sys
+open({log!r}, "a").write(" ".join(sys.argv[1:]) + "\\n")
+path = sys.argv[-1]
+name = "field.json" if path == "/field" else "search.json"
+sys.stdout.write(open({tmp!r} + "/" + name).read())
+""")
+        os.chmod(wrapper, os.stat(wrapper).st_mode | stat.S_IEXEC)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            tickets = [jira_issue_to_ticket(i) for i in fetch_jira_json(wrapper, None)["issues"]]
+        calls = open(log).read()
+
+    search_call = next((l for l in calls.splitlines() if "/search/jql" in l), "")
+    if "customfield_10080" not in search_call or "customfield_10049" in search_call:
+        failures.append(f"live fetch did not request the site's ids by name: {search_call!r}")
+    lf1 = next((t for t in tickets if t["id"] == "LF-1"), {})
+    if lf1.get("blocked_by_external") != ["vendor release 2.0"]:
+        failures.append(f"blocked_by_external not read from the site's field: {lf1.get('blocked_by_external')!r}")
+    if lf1.get("verify") != "true" or lf1.get("executor") != "agent" or lf1.get("touches") != ["LF-1.txt"]:
+        failures.append(f"verify/executor/touches not read under the site's ids: {lf1!r}")
+    for name in ("human_steps", "appends", "defer_until"):
+        if name not in err.getvalue():
+            failures.append(f"a field the site lacks ({name}) was not reported on stderr")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        nxt(tickets, "selftest")
+    if "LF-1" in buf.getvalue() or "LF-2" not in buf.getvalue():
+        failures.append(f"next must hold back LF-1 (waits on external work) and offer LF-2: {buf.getvalue()!r}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        wrapper = os.path.join(tmp, "jira-api.sh")
+        with open(wrapper, "w") as f:
+            f.write(f"""#!{sys.executable}
+import sys
+if sys.argv[-1] == "/field":
+    print("[]")
+else:
+    print('{{"issues": [], "isLast": false, "nextPageToken": "same"}}')
+""")
+        os.chmod(wrapper, os.stat(wrapper).st_mode | stat.S_IEXEC)
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                fetch_jira_json(wrapper, None)
+            failures.append("a fetch handed the same nextPageToken twice did not stop")
+        except SystemExit:
+            pass
     return failures
 
 

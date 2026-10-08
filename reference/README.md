@@ -29,8 +29,12 @@ files two of them would both write, lives one layer down in night-watchman's
 
 `<dir>` is a set root in the file binding: the directory holding `open/`,
 `in-progress/`, `awaiting-deployment/`, `completed/` and `cancelled/`. To read a
-set out of Jira instead, pass `--source jira --jira-api <path>`; the wrapper
-script that talks to the tracker is not shipped here.
+set out of Jira instead, pass `--source jira --jira-api <path> --jira-project
+KEY`. The wrapper is any script answering `<wrapper> --show-secrets raw GET
+<path>`; the Jira binding ships one over its own client,
+`plugins/work-order-jira/issues-api.sh`. A live read first lists the site's
+fields and reads each custom field under the id it has there, resolved by name
+(`[JIRA-8]`), so it never depends on another site's ids.
 
 ```
 python3 reference/issues.py lint bindings/file/examples/
