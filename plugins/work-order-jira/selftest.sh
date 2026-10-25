@@ -1234,6 +1234,22 @@ eq "  exit 3 prints JSON with the same three fields" "true" \
    "$(printf '%s' "$DUPOUT" | jq -r '(.id != null) and (.key != null) and (.self != null)' 2>/dev/null)"
 eq "  so \$(provider.sh create ...) is read with jq -r .key on both paths, exits 0 and 3" "0:3" "$NEWRC:$DUPRC"
 
+# ---- BINDING.md section 3.1 lists the grouping workflow's transitions ----
+
+# Every transition universal-workflows.json defines for the grouping workflow
+# appears as a row of section 3.1's table, and the table has no other row.
+WORKFLOWS="$HERE/universal-workflows.json"
+BINDING="$HERE/BINDING.md"
+want_rows=$(jq -r '.workflows[] | select(.name == "Universal Managed Grouping Workflow")
+    | .transitions[] | "| `\(.name)` | \(if .from then "`\(.from)`" else "—" end) | `\(.to)` |"' \
+    "$WORKFLOWS" | sort)
+have_rows=$(awk '/^### 3\.1 /{s=1; next} /^### /{s=0} s' "$BINDING" \
+    | grep -E '^\| `[^`]+` \| (—|`[^`]+`) \| `[^`]+` \|$' | sort)
+nonempty "universal-workflows.json defines grouping-workflow transitions" "$want_rows"
+eq "BINDING.md section 3.1 lists exactly the grouping workflow's transitions" "$want_rows" "$have_rows"
+contains "  including Stop Progress" '| `Stop Progress` | `In Progress` | `Open` |' "$have_rows"
+contains "  and Continue Progress" '| `Continue Progress` | `Completed` | `In Progress` |' "$have_rows"
+
 # ---- summary ------------------------------------------------------------
 
 echo
