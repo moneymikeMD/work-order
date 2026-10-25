@@ -88,7 +88,7 @@ gave it. Both workflows create issues at `Triage`, the entry state — see
 ./provider.sh transition PROJ-12 cancelled --outcome "Superseded by PROJ-14"
 ./provider.sh comment PROJ-12 -                   # body on stdin
 ./provider.sh create PROJ Task "What will be true when this is done"   # exit 3 if an open issue has this title
-./provider.sh create PROJ Task "" --ticket decision.json   # its epic, when filed, becomes the parent
+./provider.sh create PROJ Task "" --ticket decision.json   # its epic, when filed, becomes the parent; at Open if it carries verify
 ./provider.sh link PROJ-13 --blocked-by PROJ-12
 ./provider.sh parent PROJ-13 --epic PROJ-10             # --replace to move it from another epic
 ./provider.sh update PROJ-13 --ticket contract.json      # rewrite fields; an empty value clears one

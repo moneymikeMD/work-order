@@ -284,7 +284,7 @@ flow "cancel with an outcome"
 decision "$WORK/x.json" "acc $RUN X"
 run pv create "$PROJ" Task '' --ticket "$WORK/x.json"; X=$(key_of "$OUT"); made "$X"
 run pv transition "$X" cancelled
-check "cancel is refused with no outcome, before any write" "1 triage" "$RC $(position "$X")"
+check "cancel is refused with no outcome, before any write" "1 open" "$RC $(position "$X")"
 run pv transition "$X" cancelled --outcome "Superseded in acceptance run $RUN."
 check "cancel with an outcome" "0 cancelled" "$RC $(position "$X")"
 check "  the outcome reads back" "Superseded in acceptance run $RUN." "$(text_of "$X" "$(field_id outcome)")"
@@ -362,6 +362,23 @@ fi
 run pv transition "$E" open;        check "the epic opens" "0" "$RC"
 run pv transition "$E" in-progress; check "the epic starts" "0" "$RC"
 run pv transition "$E" completed;   check "the epic completes" "0 completed" "$RC $(position "$E")"
+end_flow
+
+# ---- flow 6: file a complete ticket ------------------------------------------------
+
+flow "file a complete ticket"
+decision "$WORK/f.json" "acc $RUN F"
+run pv create "$PROJ" Task '' --ticket "$WORK/f.json"; F=$(key_of "$OUT"); made "$F"
+check "a ticket filed with verify is created" "0" "$RC"
+check "  and reads back at open" "open" "$(position "$F")"
+run pv create "$PROJ" Task '' --ticket "$WORK/f.json"
+check "  a second run finds it: exit 3, still open" "3 $F open" "$RC $(key_of "$OUT") $(position "$F")"
+decision "$WORK/g.json" "acc $RUN G"
+run pv create "$PROJ" Task '' --ticket "$WORK/g.json" --triage; G=$(key_of "$OUT"); made "$G"
+check "--triage leaves it at triage" "0 triage" "$RC $(position "$G")"
+decision "$WORK/h.json" "acc $RUN H" 'del(.verify, .verify_fails_today)'
+run pv create "$PROJ" Task '' --ticket "$WORK/h.json"; H=$(key_of "$OUT"); made "$H"
+check "a ticket without verify stays at triage" "0 triage" "$RC $(position "$H")"
 end_flow
 
 finish

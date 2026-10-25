@@ -25,6 +25,7 @@ line, then the body. `.json` files are bodies alone.
 | `issue.create.json` | `POST /issue` response |
 | `issue.fetch.json` | `GET /issue/<key>` response |
 | `issue.transitions.json` | `GET /issue/<key>/transitions` response |
+| `issue.transitions.triage.txt` | `GET /issue/<key>/transitions` for an issue at `Triage` on `Universal Managed Workflow` |
 | `issue.status.json` | `GET /issue/<key>?fields=status` response |
 
 ### `universal/`

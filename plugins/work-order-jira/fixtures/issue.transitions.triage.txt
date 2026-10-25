@@ -1,0 +1,3 @@
+# jira-http.sh GET /issue/MKEY-139/transitions, an issue at Triage on Universal Managed Workflow
+# Captured live 2026-10-25 against example.atlassian.net (read-only); fields not read by provider.sh dropped.
+{"transitions":[{"id":"2","name":"refine to work","hasScreen":false,"isGlobal":false,"isInitial":false,"isAvailable":true,"isConditional":false,"isLooped":false,"to":{"id":"1","name":"Open"}},{"id":"7","name":"defer","hasScreen":false,"isGlobal":false,"isInitial":false,"isAvailable":true,"isConditional":false,"isLooped":false,"to":{"id":"10013","name":"Deferred"}},{"id":"16","name":"cancel","hasScreen":false,"isGlobal":false,"isInitial":false,"isAvailable":true,"isConditional":false,"isLooped":false,"to":{"id":"10015","name":"Cancelled"}}]}
