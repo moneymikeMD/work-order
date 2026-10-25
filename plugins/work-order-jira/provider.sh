@@ -6,7 +6,7 @@
 # documentary.
 #
 # Usage:
-#   provider.sh [--dry-run] [--http PATH] fetch KEY
+#   provider.sh [--dry-run] [--http PATH] fetch [--contract] KEY
 #   provider.sh [--dry-run] [--http PATH] position KEY
 #   provider.sh [--dry-run] [--http PATH] transition KEY POSITION [--outcome TEXT]
 #   provider.sh [--dry-run] [--http PATH] comment KEY TEXT
@@ -44,6 +44,13 @@
 #   --epic EPIC    the epic KEY belongs to: an issue at hierarchyLevel 1.
 #   --http PATH    a jira-http.sh-shaped client. Default: lib/jira-http.sh.
 #   --dry-run      print the requests and exit 0, reaching no network.
+#
+# fetch prints the issue as Jira's JSON. fetch --contract prints it as text,
+# one `name: text` line per line of each field: key, summary, status, every
+# custom field this binding defines under its name, then the description
+# rendered from ADF. An empty field is a bare `name:`, and
+# `sed -n 's/^verify: //p'` gives verify's text back exactly. The field ids
+# are resolved by name from GET /field, as for create ([JIRA-8]).
 #
 # create resolves every custom field id by name from GET /field at run time
 # ([JIRA-8]), over the one field table in lib/common.sh that provision.sh
@@ -558,7 +565,7 @@ custom_field_id() {
     fi
     id=$(printf '%s' "$FIELD_JSON" | jq -r --arg n "$1" '[.[] | select(.custom == true and .name == $n)][0].id // empty') \
         || die "could not parse this site's field list"
-    [ -n "$id" ] || die "this site has no custom field named '$1', so the ticket's '$1' cannot be written — run provision.sh ([JIRA-8])"
+    [ -n "$id" ] || die "this site has no custom field named '$1', so the ticket's '$1' cannot be read or written — run provision.sh ([JIRA-8])"
     printf '%s' "$id"
 }
 
@@ -599,14 +606,76 @@ comparable() {
         else tostring end'
 }
 
+# print_contract KEY — print KEY's key, summary, status, each field of
+# lib/common.sh's table and its description as plain text, every line under
+# its field's name: `name: text`, a field of several lines as several such
+# lines, an empty field as a bare `name:`. `sed -n 's/^verify: //p'` gives
+# back verify's text exactly. The ids come from GET /field by name ([JIRA-8]),
+# as for every write, so no customfield_ id reaches the output.
+print_contract() {
+    local ids='{}' name fid issue
+    read_field_list
+    if [ "$DRY_RUN" = "1" ]; then
+        http GET "/issue/$1"
+        return 0
+    fi
+    while IFS= read -r name; do
+        fid=$(custom_field_id "$name") || exit 1
+        ids=$(printf '%s' "$ids" | jq -c --arg n "$name" --arg f "$fid" '. + {($n): $f}') \
+            || die "could not map '$name' to its field id"
+    done <<EOF
+$WO_JIRA_FIELD_NAMES
+EOF
+    issue=$(http GET "/issue/$1") || die "could not read issue '$1'"
+    printf '%s' "$issue" | jq -r --argjson ids "$ids" --arg names "$WO_JIRA_FIELD_NAMES" '
+        def inline: if .type == "text" then .text
+            elif .type == "hardBreak" then "\n"
+            else [(.content // [])[] | inline] | join("") end;
+        def indent($first; $rest): to_entries | map((if .key == 0 then $first else $rest end) + .value);
+        # An ADF node as lines of text: a heading as "## text", a list item as
+        # "- text" or "1. text", any other block as its text.
+        def lines: if .type == "heading" then
+                [([range(.attrs.level // 1)] | map("#") | join("")) + " " + inline]
+            elif .type == "paragraph" or .type == "codeBlock" then inline | split("\n")
+            elif .type == "bulletList" then [.content[]? | [lines[]] | indent("- "; "  ")[]]
+            elif .type == "orderedList" then
+                (.attrs.order // 1) as $o
+                | [.content | to_entries[] | (.key + $o | tostring) as $n
+                   | .value | [lines[]] | indent($n + ". "; "   ")[]]
+            elif .type == "blockquote" then [.content[]? | lines[] | "> " + .]
+            elif .type == "rule" then ["---"]
+            elif has("content") then [.content[] | lines[]]
+            else [inline] end;
+        def text_lines: if . == null then []
+            elif type == "object" and .type == "doc" then lines
+            elif type == "object" and has("value") then [.value]
+            elif type == "array" then map(if type == "object" then (.value // tostring) else tostring end)
+            else tostring | split("\n") end;
+        def emit($name): if length == 0 then $name + ":"
+            else .[] | $name + ":" + (if . == "" then "" else " " + . end) end;
+        .fields as $f
+        | ([.key] | emit("key")),
+          ([$f.summary // empty] | emit("summary")),
+          ([$f.status.name // empty] | emit("status")),
+          ($names | split("\n")[] as $n | $f[$ids[$n]] | text_lines | emit($n)),
+          ($f.description | text_lines | emit("description"))' \
+        || die "could not render the contract of issue '$1'"
+}
+
 verb="${1:-}"
 [ -n "$verb" ] && shift
 
 case "$verb" in
     fetch)
-        [ $# -eq 1 ] || die "usage: provider.sh [--dry-run] fetch KEY"
+        CONTRACT=0
+        if [ "${1:-}" = "--contract" ]; then CONTRACT=1; shift; fi
+        [ $# -eq 1 ] || die "usage: provider.sh [--dry-run] fetch [--contract] KEY"
         require_issue_key "$1" || die "$WO_JIRA_KEY_ERR"
-        http GET "/issue/$1"
+        if [ "$CONTRACT" = "1" ]; then
+            print_contract "$1"
+        else
+            http GET "/issue/$1"
+        fi
         ;;
 
     position)

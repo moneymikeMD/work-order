@@ -611,6 +611,32 @@ PY
 )
 eq "a ticket survives create then fetch unchanged" "ROUNDTRIP OK" "$ROUNDTRIP"
 
+# fetch --contract (WO-111): the same created issue, read back as text under
+# each field's name, so a caller needs neither the field ids nor an ADF parser.
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all "$PROVIDER" --http "$STUB" fetch --contract ZZPROBE-1 2>&1); RC=$?
+eq "fetch --contract exits 0" "0" "$RC"
+eq "  printing verify's text, the observation as its last line, under 'verify:'" \
+   "$(jq -r '.decisions[0] | .verify + "\n# " + .verify_fails_today' "$FX/ticket-full.json")" \
+   "$(printf '%s\n' "$OUT" | sed -n 's/^verify: //p')"
+eq "  one 'touches:' line per path" "$(jq -r '.decisions[0].touches[]' "$FX/ticket-full.json")" \
+   "$(printf '%s\n' "$OUT" | sed -n 's/^touches: //p')"
+contains "  the executor by its option's value" "executor: mixed" "$OUT"
+contains "  the key and the status" "key: ZZPROBE-1
+summary: Populate every field this binding provisions
+status: Open" "$OUT"
+contains "  the description rendered from ADF, headings kept" "description: ## Problem" "$OUT"
+not_contains "  and no customfield_ id" "customfield_" "$OUT"
+eq "  having resolved the ids by name first" "GET /field" "$(tail -2 "$LOG" | head -1)"
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=live "$PROVIDER" --http "$STUB" fetch --contract ZZPROBE-1 2>&1); RC=$?
+eq "fetch --contract on a site missing a contract field exits 1" "1" "$RC"
+contains "  naming the fix" "run provision.sh" "$OUT"
+OUT=$("$PROVIDER" --dry-run fetch --contract PROJ-1 2>&1); RC=$?
+eq "fetch --contract --dry-run exits 0" "0" "$RC"
+contains "  printing the field list read" "WOULD GET <WORK_ORDER_JIRA_BASE_URL>/rest/api/3/field" "$OUT"
+contains "  and the issue read" "/rest/api/3/issue/PROJ-1" "$OUT"
+OUT=$("$PROVIDER" --dry-run fetch PROJ-1 --contract 2>&1); RC=$?
+eq "fetch takes --contract before the key only" "1" "$RC"
+
 # ---- 5. provision.sh ---------------------------------------------------
 
 # The universal scripts are spies: each records its argv, in call order, and

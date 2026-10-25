@@ -381,4 +381,17 @@ run pv create "$PROJ" Task '' --ticket "$WORK/h.json"; H=$(key_of "$OUT"); made 
 check "a ticket without verify stays at triage" "0 triage" "$RC $(position "$H")"
 end_flow
 
+# ---- flow 7: read a ticket to work it ------------------------------------------------
+
+flow "read a ticket to work it"
+run pv fetch --contract "$F"
+check "fetch --contract reads the ticket" "0" "$RC"
+check "  verify under its name, the observation as its last line" "true
+# the ticket does not exist yet" "$(printf '%s\n' "$OUT" | sed -n 's/^verify: //p')"
+check "  touches under its name" "$(jq -r '.touches[]' "$WORK/f.json")" "$(printf '%s\n' "$OUT" | sed -n 's/^touches: //p')"
+check "  executor by its value" "agent" "$(printf '%s\n' "$OUT" | sed -n 's/^executor: //p')"
+check "  the description's first heading as text" "## Problem" "$(printf '%s\n' "$OUT" | sed -n 's/^description: //p' | head -1)"
+check "  and no customfield_ id" "0" "$(printf '%s\n' "$OUT" | grep -c customfield_)"
+end_flow
+
 finish
