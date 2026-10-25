@@ -168,9 +168,24 @@ many lifecycles as projects.
 A ticket is an issue on `Universal Managed Workflow`. The issue types on the
 grouping workflow are not tickets, per `[JIRA-16]`.
 
-The grouping workflow runs `Triage` → `Open` → `In Progress` → `Completed`, with
-`Cancelled` reachable from `Triage` and `Open`, and carries no validator on any
-transition.
+The grouping workflow carries no validator on any transition. Its transitions
+are exactly those `universal-workflows.json` defines for it:
+
+| Transition | From | To |
+| --- | --- | --- |
+| `Create` | — | `Triage` |
+| `Open` | `Triage` | `Open` |
+| `Start Progress` | `Open` | `In Progress` |
+| `Stop Progress` | `In Progress` | `Open` |
+| `Complete` | `In Progress` | `Completed` |
+| `Cancel` | `Triage` | `Cancelled` |
+| `Cancel` | `Open` | `Cancelled` |
+| `Cancel` | `In Progress` | `Cancelled` |
+| `Continue Progress` | `Completed` | `In Progress` |
+| `Continue Progress` | `Cancelled` | `In Progress` |
+
+An epic can therefore move back from `In Progress` to `Open`, be cancelled after
+it has started, and be reopened from `Completed` or `Cancelled`.
 
 [JIRA-12] Each workflow's **initial transition** — the one Jira runs when an
 issue is created, `"type": "initial"` — MUST target the status bound to the
