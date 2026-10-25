@@ -128,6 +128,21 @@ reads the status back. If the move fails, `create` has still printed the issue,
 and exits 1 naming the key and `provider.sh transition KEY open`. A bare
 `create` with no `--ticket` stays at `Triage`, as in flow 2.
 
+## 7. Read a ticket to work it
+
+A worker reads its ticket's contract by field name, with no field id and no
+ADF parser.
+
+```
+provider.sh fetch --contract KEY                        # key, summary, status, each field, description
+provider.sh fetch --contract KEY | sed -n 's/^verify: //p'   # verify's text, exactly
+```
+
+Read back: each line of a field is `name: text` (an empty field is a bare
+`name:`), `verify` carries the base-state observation as its last line, the
+description is plain text with its headings, and no `customfield_` id appears.
+Plain `fetch KEY` stays Jira's JSON.
+
 ## Frozen
 
 `work-order-jira` 0.9.0 is feature-complete: every flow above passes live

@@ -82,7 +82,8 @@ gave it. Both workflows create issues at `Triage`, the entry state — see
 ## Running tickets
 
 ```sh
-./provider.sh fetch PROJ-12
+./provider.sh fetch PROJ-12                       # the issue as Jira's JSON
+./provider.sh fetch --contract PROJ-12            # verify, touches, executor... as 'name: text' lines
 ./provider.sh position PROJ-12                    # -> in-progress; exit 4 if unmapped
 ./provider.sh transition PROJ-12 awaiting-deployment
 ./provider.sh transition PROJ-12 cancelled --outcome "Superseded by PROJ-14"
@@ -95,6 +96,12 @@ gave it. Both workflows create issues at `Triage`, the entry state — see
 printf '{"defer_until":"2026-12-01"}' | ./provider.sh update PROJ-13 --ticket -
 python3 ../../reference/issues.py next --source jira --jira-api ./issues-api.sh --jira-project PROJ
 ```
+
+`fetch --contract` is how a worker reads its ticket: key, summary, status,
+each contract field under its own name and the description rendered from ADF,
+one `name: text` line per line of a field and a bare `name:` for an empty one,
+so `sed -n 's/^verify: //p'` gives verify back exactly. It needs no field id
+and no ADF parser.
 
 `transition` takes a lifecycle position, not a Jira transition id, and resolves
 it against the live issue. A transition that a validator refuses fails loudly
