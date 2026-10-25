@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.9.0...work-order-jira--v0.10.0) (2026-10-25)
+
+
+### Features
+
+* **jira:** create opens a ticket filed with verify; --triage keeps it at Triage (WO-110) ([#97](https://github.com/moneymikeMD/work-order/issues/97)) ([6cf5544](https://github.com/moneymikeMD/work-order/commit/6cf554413501525f7a25ee3647503958cc39ffb7))
+
 ## [0.9.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.8.0...work-order-jira--v0.9.0) (2026-10-08)
 
 
