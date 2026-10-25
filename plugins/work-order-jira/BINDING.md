@@ -265,7 +265,7 @@ table does not exist on the workflow.
 
 | Transition | From → To | Required | Serves |
 | --- | --- | --- | --- |
-| `Create` (initial) | → `Triage` | nothing — deliberately | `[MUST-46]`, per `[JIRA-12]`, `[JIRA-13]` |
+| `Create` (initial) | → `Triage` | nothing — deliberately; `provider.sh create` then takes `refine to work` itself for a ticket filed with `verify` (section 10) | `[MUST-46]`, per `[JIRA-12]`, `[JIRA-13]` |
 | `refine to work` | `Triage` → `Open` | `verify` | `[MUST-7]`, `[MUST-46]`, per `[JIRA-13]` |
 | `defer` | `Triage`, `Open` → `Deferred` | `defer_until`, `verify` | `[MUST-47]`, `[MUST-7]`, per `[JIRA-14]` |
 | `open` | `Deferred` → `Open` | `verify` | `[MUST-7]`, per `[JIRA-14]` |
@@ -531,7 +531,7 @@ a stored rule that differs from `universal-workflows.json`.
 ## 10. Writing a ticket — `provider.sh create`
 
 ```
-provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH|-] [--allow-duplicate]
+provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH|-] [--allow-duplicate] [--triage]
 ```
 
 Without `--ticket`, `create` writes a title and nothing else. With it, `PATH` is
@@ -559,6 +559,14 @@ none by that name rather than writing an issue missing part of the contract.
 
 The field list is not restated here: `lib/common.sh` holds the one table, and
 `provision.sh` creates exactly the fields `provider.sh` fills.
+
+**Leaving `Triage` at create.** Jira creates every issue at `Triage`. When the
+ticket carries a non-empty `verify`, `create` then takes the transition into
+`Open`, resolved by status name, and reads the status back: a ticket filed with
+its contract is ready to work, and no caller has to remember a second step.
+`--triage` leaves it at `Triage`, and so does a ticket without `verify` or a
+create without `--ticket`. If the move fails, `create` has still printed the
+issue, and it exits 1 naming the key and `provider.sh transition KEY open`.
 
 **Retrying a create.** A create that fails after Jira accepted it, then retried,
 files a second issue. Before its POST, `create` searches PROJECT for an issue

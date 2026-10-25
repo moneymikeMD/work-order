@@ -81,7 +81,7 @@ cat > "$STUB" <<'STUBEOF'
 #!/bin/bash
 # A jira-http.sh-shaped stub. Responses come from fixtures/ except where
 # marked SYNTHETIC. Knobs: WO_TEST_PROJECT, WO_TEST_FIELDS, WO_TEST_SEARCH,
-# WO_TEST_STATUS, WO_TEST_OUTCOME, WO_TEST_DUP.
+# WO_TEST_STATUS, WO_TEST_OUTCOME, WO_TEST_DUP, WO_TEST_TRANSITIONS.
 set -uo pipefail
 FX="$WO_TEST_FX"
 printf '%s\n' "$*" >> "$WO_TEST_LOG"
@@ -93,6 +93,17 @@ M="${1:-}"; P="${2:-}"; B="${3:-}"
 fx() { sed -e '/^#/d' -e '/^HTTP [0-9]*$/d' "$FX/$1"; }
 notfound() { printf 'HTTP 404\n{"errorMessages":["No project could be found"]}\n' >&2; exit 1; }
 badrequest() { printf 'HTTP 400\n' >&2; fx search.jql.not-searchable.txt >&2; exit 1; }
+# WO_TEST_TRANSITIONS=triage serves the transitions of an issue at Triage on
+# Universal Managed Workflow, none an empty list; the default is the project
+# template's.
+transitions() {
+    case "${WO_TEST_TRANSITIONS:-}" in
+        triage) fx issue.transitions.triage.txt ;;
+        # SYNTHETIC
+        none) echo '{"transitions":[]}' ;;
+        *) fx issue.transitions.json ;;
+    esac
+}
 
 if [ "$DRY" = "1" ]; then
     printf 'WOULD %s %s\n' "$M" "$P"
@@ -239,7 +250,7 @@ case "$M:$P" in
     GET:/issue/*/transitions)
         TN=$(cat "$WO_TEST_WORK/transseq" 2>/dev/null || echo 0); TN=$((TN + 1)); echo "$TN" > "$WO_TEST_WORK/transseq"
         if [ "$TN" -le "${WO_TEST_STALE_TRANSITIONS:-0}" ]; then echo '{"transitions":[]}'; exit 0; fi
-        fx issue.transitions.json ;;
+        transitions ;;
     # SYNTHETIC: a transition POST is remembered so the status read-back that
     # follows it reports the status that transition leads to.
     POST:/issue/*/transitions) printf '%s' "$B" | jq -r '.transition.id' > "$WO_TEST_WORK/transitioned"; echo '{}' ;;
@@ -281,7 +292,7 @@ case "$M:$P" in
             if [ -n "$S" ]; then fx issue.status.json | jq -c --arg s "$S" '.fields.status.name = $s'; exit 0; fi
         fi
         if [ -f "$WO_TEST_WORK/transitioned" ]; then
-            fx issue.status.json | jq -c --arg s "$(fx issue.transitions.json | jq -r --arg id "$(cat "$WO_TEST_WORK/transitioned")" '.transitions[] | select(.id == $id) | .to.name')" '.fields.status.name = $s'
+            fx issue.status.json | jq -c --arg s "$(transitions | jq -r --arg id "$(cat "$WO_TEST_WORK/transitioned")" '.transitions[] | select(.id == $id) | .to.name')" '.fields.status.name = $s'
         elif [ -n "${WO_TEST_STATUS:-}" ]; then
             fx issue.status.json | jq -c --arg s "$WO_TEST_STATUS" '.fields.status.name = $s'
         else
@@ -919,6 +930,43 @@ OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/epic-ticket.j
 eq "create --ticket --dry-run with an epic exits 0" "0" "$RC"
 contains "  showing the epic lookup" "/rest/api/3/issue/PROJ-1?fields=issuetype" "$OUT"
 contains "  and the parent in the body" '"parent":{"key":"PROJ-1"}' "$OUT"
+
+# ---- create moves a ticket filed with verify to Open (WO-110) -------------
+
+jq '.verify = ["true"]' "$FX/ticket-minimal.json" > "$WORK/verify-ticket.json"
+
+reset_log create-opens
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_TRANSITIONS=triage \
+      "$PROVIDER" --http "$STUB" create ZZPROBE Task "" --ticket "$WORK/verify-ticket.json" 2>"$WORK/err"); RC=$?
+eq "create --ticket with verify exits 0" "0" "$RC"
+eq "  stdout stays the created issue's JSON" "PROJ-42" "$(printf '%s' "$OUT" | jq -r .key 2>/dev/null)"
+contains "  taking the transition into Open by its live id" 'POST /issue/PROJ-42/transitions {"transition":{"id":"2"}}' "$(cat "$LOG")"
+contains "  and reading Open back" "PROJ-42 is now Open" "$(cat "$WORK/err")"
+
+reset_log create-triage-flag
+WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_TRANSITIONS=triage \
+    "$PROVIDER" --http "$STUB" create ZZPROBE Task "" --ticket "$WORK/verify-ticket.json" --triage >/dev/null 2>&1; RC=$?
+eq "create --triage with verify exits 0" "0" "$RC"
+eq "  and takes no transition" "0" "$(grep -c '/transitions' "$LOG" || true)"
+
+reset_log create-no-verify
+WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_TRANSITIONS=triage \
+    "$PROVIDER" --http "$STUB" create ZZPROBE Task "" --ticket "$FX/ticket-minimal.json" >/dev/null 2>&1; RC=$?
+eq "create --ticket without verify exits 0" "0" "$RC"
+eq "  and leaves the issue at Triage" "0" "$(grep -c '/transitions' "$LOG" || true)"
+
+reset_log create-open-unavailable
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_FIELDS=all WO_TEST_TRANSITIONS=none \
+      "$PROVIDER" --http "$STUB" create ZZPROBE Task "" --ticket "$WORK/verify-ticket.json" 2>&1); RC=$?
+eq "create exits 1 when no transition into Open is available" "1" "$RC"
+contains "  still printing the issue it created" '"key": "PROJ-42"' "$OUT"
+contains "  and naming the command that moves it" "provider.sh transition PROJ-42 open" "$OUT"
+
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/verify-ticket.json" 2>&1); RC=$?
+eq "create --dry-run with verify exits 0" "0" "$RC"
+contains "  showing the move to Open" "WOULD then POST the transition whose .to.name is Open" "$OUT"
+OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" --ticket "$WORK/verify-ticket.json" --triage 2>&1)
+not_contains "  and none with --triage" "/transitions" "$OUT"
 
 # ---- update, stdin decisions, verify's observation, a transition already
 # taken, and issues-api.sh (WO-104) -------------------------------------------

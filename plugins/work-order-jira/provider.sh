@@ -12,6 +12,7 @@
 #   provider.sh [--dry-run] [--http PATH] comment KEY TEXT
 #   provider.sh [--dry-run] [--http PATH] create PROJECT ISSUETYPE SUMMARY
 #                                                [--ticket PATH|-] [--allow-duplicate]
+#                                                [--triage]
 #   provider.sh [--dry-run] [--http PATH] update KEY --ticket PATH|-
 #   provider.sh [--dry-run] [--http PATH] link   KEY --blocked-by BLOCKER
 #                                                [--replace]
@@ -33,6 +34,8 @@
 #                  last line, '# <observation>' ([MUST-10]). For create,
 #                  SUMMARY may then be empty, and the title comes from it.
 #   --allow-duplicate  create only: skip the duplicate check below.
+#   --triage       create only: leave a ticket that carries verify at Triage
+#                  instead of moving it to Open.
 #   --blocked-by   the issue that blocks KEY, named for the direction so the
 #                  call reads like the ticket's blocked_by field.
 #   --replace      link: delete a Blocks link in the reversed direction first,
@@ -69,6 +72,12 @@
 # rewritten without verify_fails_today keeps the observation it already
 # records. epic and blocked_by are not written (parent, link). Every written
 # field is read back and compared.
+#
+# create --ticket with a document carrying a non-empty verify moves the new
+# issue from Triage to Open after creating it, by status name, and reads the
+# status back: a fully filed ticket is ready to work. A bare create, a document
+# without verify, and --triage leave it at Triage. If the move fails, create
+# has still printed the issue it made, and exits 1 naming its key.
 #
 # create first searches PROJECT for an open issue (statusCategory not Done)
 # whose summary equals SUMMARY exactly. JQL summary matching is fuzzy, so the
@@ -747,13 +756,14 @@ case "$verb" in
         ;;
 
     create)
-        [ $# -ge 3 ] || die "usage: provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH|-] [--allow-duplicate]"
+        [ $# -ge 3 ] || die "usage: provider.sh [--dry-run] create PROJECT ISSUETYPE SUMMARY [--ticket PATH|-] [--allow-duplicate] [--triage]"
         PROJ="$1"; ISSUETYPE="$2"; SUMMARY="$3"
         shift 3
-        TICKET_PATH=""; ALLOW_DUP=0
+        TICKET_PATH=""; ALLOW_DUP=0; TRIAGE=0
         while [ $# -gt 0 ]; do
             case "$1" in
                 --allow-duplicate) ALLOW_DUP=1; shift ;;
+                --triage) TRIAGE=1; shift ;;
                 --ticket)
                     [ $# -ge 2 ] || die "--ticket needs a path ('-' reads stdin)"
                     TICKET_PATH="$2"; shift 2 ;;
@@ -827,12 +837,21 @@ case "$verb" in
         WROTE=""
         add_contract_fields create
 
+        OPEN_IT=0
+        [ "$TRIAGE" = "1" ] || [ "$(field_state verify)" != "set" ] || OPEN_IT=1
+        OPEN_STATUS=$(status_for_position open)
+
         BODY=$(printf '%s' "$FIELDS" | jq -c '{fields: .}') \
             || die "could not build the create-issue request body"
         if [ "$DRY_RUN" = "1" ]; then
             printf 'WOULD resolve each <name> below to the id this site assigns it, by name, from that listing ([JIRA-8])\n'
             http POST "/issue" "$BODY"
             [ -z "$PARENT" ] || http GET "/issue/<created key>?fields=parent"
+            if [ "$OPEN_IT" = "1" ]; then
+                http GET "/issue/<created key>/transitions"
+                printf 'WOULD then POST the transition whose .to.name is %s, the ticket carrying verify\n' "$OPEN_STATUS"
+                http GET "/issue/<created key>?fields=status"
+            fi
             exit 0
         fi
         CREATED=$(http POST "/issue" "$BODY") || exit 1
@@ -846,6 +865,26 @@ case "$verb" in
                 0) ;;
                 2) die "created '$NEWKEY' but could not read its epic back; run 'provider.sh parent $NEWKEY --epic $PARENT'" ;;
                 *) die "created '$NEWKEY' but its read-back shows no epic '$PARENT'; run 'provider.sh parent $NEWKEY --epic $PARENT'" ;;
+            esac
+        fi
+        if [ "$OPEN_IT" = "1" ]; then
+            NEWKEY=$(printf '%s' "$CREATED" | jq -r '.key // empty') \
+                || die "could not parse the created issue's key to move it to $OPEN_STATUS"
+            [ -n "$NEWKEY" ] || die "the create response carried no key, so it was not moved to $OPEN_STATUS"
+            REPAIR="run 'provider.sh transition $NEWKEY open'"
+            settled transition_into "$NEWKEY" "$OPEN_STATUS" && rc=0 || rc=$?
+            case "$rc" in
+                0) ;;
+                2) die "created '$NEWKEY' but could not read its transitions, so it stays at Triage; $REPAIR" ;;
+                *) die "created '$NEWKEY' but no transition into '$OPEN_STATUS' is available on it, so it stays at Triage; $REPAIR" ;;
+            esac
+            http POST "/issue/$NEWKEY/transitions" "$(jq -cn --arg id "$TRANSITION_ID" '{transition: {id: $id}}')" >/dev/null \
+                || die "created '$NEWKEY' but the transition to '$OPEN_STATUS' was refused, so it stays at Triage; $REPAIR"
+            settled status_is "$NEWKEY" "$OPEN_STATUS" && rc=0 || rc=$?
+            case "$rc" in
+                0) printf '%s is now %s\n' "$NEWKEY" "$NOW" >&2 ;;
+                2) die "created '$NEWKEY' but could not read its status back after the move to '$OPEN_STATUS'" ;;
+                *) die "created '$NEWKEY' but its read-back shows status '$NOW', not '$OPEN_STATUS'; $REPAIR" ;;
             esac
         fi
         ;;

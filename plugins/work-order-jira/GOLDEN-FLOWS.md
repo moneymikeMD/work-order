@@ -20,9 +20,9 @@ provider.sh create PROJ Epic '' --ticket epic.json      # -> EPIC
 provider.sh create PROJ Task '' --ticket a.json         # "epic": "EPIC" -> A, under EPIC at create
 provider.sh create PROJ Task '' --ticket b.json         # -> B
 provider.sh link B --blocked-by A
-provider.sh transition A open
-provider.sh transition B open
 ```
+
+`a.json` and `b.json` carry `verify`, so `create` leaves each at `Open` (flow 6).
 
 Read back: `provider.sh fetch` shows each ticket's `parent` and `Blocks` links;
 `issues.py board` shows both tickets under `EPIC`, `B` blocked by `A`; `lint`
@@ -112,6 +112,21 @@ blocked by an open ticket, deferred to a future date, or waiting on
 `emit-tickets`, with the epic as a file-binding scalar, gives the same `next`
 through the file binding. night-watchman's `waves.py`, which loads tickets
 through `issues.py`, plans the same startable set.
+
+## 6. File a complete ticket
+
+A ticket filed with its whole contract is ready to work the moment it exists.
+
+```
+provider.sh create PROJ Task '' --ticket a.json         # a.json carries verify -> KEY, at open
+provider.sh create PROJ Task '' --ticket a.json --triage  # -> KEY, at triage
+provider.sh create PROJ Task '' --ticket n.json         # n.json carries no verify -> KEY, at triage
+```
+
+`create` takes the `Triage` → `Open` transition itself, by status name, and
+reads the status back. If the move fails, `create` has still printed the issue,
+and exits 1 naming the key and `provider.sh transition KEY open`. A bare
+`create` with no `--ticket` stays at `Triage`, as in flow 2.
 
 ## Frozen
 
