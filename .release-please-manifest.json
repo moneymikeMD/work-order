@@ -1,4 +1,4 @@
 {
   ".": "1.12.0",
-  "plugins/work-order-jira": "0.10.0"
+  "plugins/work-order-jira": "0.11.0"
 }
