@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/moneymikeMD/work-order/compare/v1.12.0...v1.13.0) (2026-10-26)
+
+
+### Features
+
+* **jira:** fetch --contract prints a ticket's contract by field name (WO-111) ([#101](https://github.com/moneymikeMD/work-order/issues/101)) ([c9be660](https://github.com/moneymikeMD/work-order/commit/c9be6608e3f9acce274afb947b8afee12303574c))
+
 ## [1.12.0](https://github.com/moneymikeMD/work-order/compare/v1.11.0...v1.12.0) (2026-10-25)
 
 
