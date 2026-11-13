@@ -658,6 +658,17 @@ def overlap(a, b):
     return a == b or fnmatch(a, b) or fnmatch(b, a)
 
 
+def is_folder_claim(path):
+    """Does a touches entry name a whole folder ([MUST-49])? Such a claim is
+    guidance, so its overlaps warn instead of blocking."""
+    return path.endswith(("/", "/*", "/**")) or path in ("*", "**")
+
+
+def folder_overlap(a, b):
+    """overlap() with a bare `dir/` read as `dir/**`, for folder claims."""
+    return overlap(a + "**" if a.endswith("/") else a, b + "**" if b.endswith("/") else b)
+
+
 _COLON_FORM = re.compile(r"^([^:*?\[\]\s]{2,}):(?![/\\])(.+)$")
 
 
@@ -1070,12 +1081,21 @@ def lint(tickets, root, scope=None, repo=None):
                          for d in (t.get("blocked_by") or []))]
     for i, a in enumerate(startable):
         for b in startable[i + 1:]:
-            clash = {x for (kx, px), x in keyed(a.get("touches"))
-                     for (ky, py), y in keyed(b.get("touches"))
-                     if kx == ky and overlap(px, py)}
+            clash, guided = set(), set()
+            for (kx, px), x in keyed(a.get("touches")):
+                for (ky, py), y in keyed(b.get("touches")):
+                    if kx != ky or not folder_overlap(px, py):
+                        continue
+                    if is_folder_claim(px) or is_folder_claim(py):
+                        guided.add(x if is_folder_claim(px) else y)
+                    else:
+                        clash.add(x)
             if clash:
                 err((a['id'], b['id']), f"{a['id']} and {b['id']} are both startable and both "
                             f"touch {sorted(clash)} — add a blocked_by or merge them")
+            if guided:
+                warns.append(f"{a['id']} and {b['id']} overlap only through folder claim "
+                             f"{sorted(guided)} — guidance, not blocking ([MUST-49])")
             # Shared append-mostly files are touched by nearly every ticket; hard
             # collisions there would serialise everything, so they are warnings.
             soft = {x for (kx, px), x in keyed(a.get("appends"))
@@ -1798,6 +1818,19 @@ def _repo_qualifier_selftest():
             failures.append(f"repo qualifier: same path in another repo "
                             f"collided: {out!r}")
 
+        wide = dict(tickets["T-301"], id="T-316", touches=["docs/**"])
+        slash = dict(tickets["T-301"], id="T-317", touches=["docs/"])
+        doc = dict(tickets["T-302"], id="T-318", touches=["docs/network.md"])
+        doc2 = dict(tickets["T-302"], id="T-319", touches=["docs/network.md"])
+        for claim in (wide, slash):
+            code, out = run_lint([claim, doc])
+            if code != 0 or "both startable" in out or "folder claim" not in out:
+                failures.append(f"folder claim {claim['touches']}: want a [MUST-49] "
+                                f"warning and exit 0, got {code}: {out!r}")
+        code, out = run_lint([doc, doc2])
+        if code != 1 or "both startable and both touch" not in out:
+            failures.append(f"folder claim: two exact files no longer collide: {out!r}")
+
         git(main, "config", "user.email", "selftest@example.com")
         git(main, "config", "user.name", "selftest")
         git(main, "commit", "-q", "--allow-empty", "-m", "base")
@@ -1854,7 +1887,7 @@ def _lint_scope_selftest():
             "defer_until": None, "_is_epic": False, "_body": "",
             "executor": "agent", "_stage": "open"}
     clean = dict(base, id="ZZ-920", title="contracted", verify="true",
-                 touches=["scratch/zz920/*"], _path="ZZ-920")
+                 touches=["scratch/zz920/a.txt"], _path="ZZ-920")
     broken = dict(base, id="ZZ-921", title="no verify", verify="",
                   touches=["scratch/zz921/*"], _path="ZZ-921")
     tickets = [clean, broken]
@@ -1876,7 +1909,7 @@ def _lint_scope_selftest():
 
     # A pair collision belongs to both tickets, so either id gates on it.
     rival = dict(base, id="ZZ-922", title="collides with the clean one",
-                 verify="true", touches=["scratch/zz920/*"], _path="ZZ-922")
+                 verify="true", touches=["scratch/zz920/a.txt"], _path="ZZ-922")
     code, out = run([clean, rival], scope={"ZZ-920"})
     if code != 1 or "both startable" not in out:
         failures.append(f"lint --scope: a collision error did not gate on one of "

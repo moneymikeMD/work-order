@@ -188,6 +188,12 @@ class TestLintOverlapAcrossSpellings(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("both startable and both touch", out)
 
+    def test_folder_claim_overlap_warns_without_blocking(self):
+        code, out = run_lint([_ticket("T-1", ["docs/**"]),
+                              _ticket("T-2", ["docs/network.md"])])
+        self.assertEqual(code, 0, out)
+        self.assertIn("folder claim", out)
+
     def test_same_path_in_another_repo_does_not_collide(self):
         code, out = run_lint([_ticket("T-1", ["other-repo:SPEC.md"]),
                               _ticket("T-2", ["SPEC.md"])])

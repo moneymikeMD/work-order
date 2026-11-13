@@ -382,8 +382,14 @@ def overlap(a, b):
     return a == b or fnmatch(a, b) or fnmatch(b, a)
 
 
+def is_folder_claim(path):
+    return path.endswith(("/", "/*", "/**")) or path in ("*", "**")
+
+
 def shared_paths(a, b, field="touches"):
-    return sorted({x for x in paths_of(a, field) for y in paths_of(b, field) if overlap(x, y)})
+    """Paths two tickets both own; a folder claim owns nothing ([MUST-49])."""
+    return sorted({x for x in paths_of(a, field) for y in paths_of(b, field)
+                   if overlap(x, y) and not is_folder_claim(x) and not is_folder_claim(y)})
 
 
 def parse_iso(value):
@@ -936,6 +942,9 @@ UNCHECKABLE = {
     "MUST-46": (IMPLEMENTATION,
                 "constrains an implementation; this program never treats a triage "
                 "ticket as startable, and holds it to MUST-1, MUST-3 and MUST-4 only"),
+    "MUST-49": (IMPLEMENTATION,
+                "constrains an implementation; this program drops folder claims "
+                "from the MUST-15 and SHOULD-8 overlap checks"),
     "SHOULD-3": (NOT_CHECKABLE, "whether 'verify' was run at the base state is not recorded in the tree"),
     "SHOULD-5": (NOT_CHECKABLE, "re-running 'verify' is the only way to learn this"),
     "SHOULD-6": (NOT_CHECKABLE, "whether 'touches' is generous enough is a judgement"),

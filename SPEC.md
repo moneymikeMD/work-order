@@ -167,11 +167,26 @@ attempted.
 modifies, as literal paths or globs, relative to a root the set defines.
 
 [MUST-15] `full` — Two tickets that are simultaneously startable MUST NOT share
-a `touches` path. An implementation MUST report such an overlap as an error.
+a `touches` path. An implementation MUST report such an overlap as an error,
+except where `[MUST-49]` makes it a warning.
 
 `touches` means "this ticket owns edits to that path". Two owners of one path,
 both startable, is a merge conflict scheduled in advance, and the cost lands on
 whoever untangles it rather than on whoever created it.
+
+[MUST-49] `full` — A `touches` entry that names a whole folder (it ends in `/`,
+`/*` or `/**`) is a folder claim. An overlap between startable tickets in which
+either path is a folder claim MUST be reported as a warning and MUST NOT block
+either ticket, in lint or in any wave or dispatch plan built from the set.
+
+A folder claim says where a ticket expects to work, not which file it owns. One
+ticket claiming `docs/**` would otherwise serialise every ticket that edits any
+document. Name the files to own them; claim the folder only as guidance.
+
+`MUST-49` is a new requirement inside an existing profile, which section 12
+classes as MAJOR; under the version cap it is released as MINOR (0.4.0), and
+this sentence is the demotion stated in prose. It relaxes `[MUST-15]` only: a
+set that lint passed under 0.3 still passes.
 
 [MUST-16] `full` — `appends` MUST be used only for paths whose concurrent
 modification merges without human reasoning: registers, decision logs,
