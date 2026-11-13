@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/moneymikeMD/work-order/compare/v1.13.0...v1.14.0) (2026-11-13)
+
+
+### Features
+
+* **spec:** a folder claim in touches is guidance, not a blocking overlap ([#104](https://github.com/moneymikeMD/work-order/issues/104)) ([1a511cd](https://github.com/moneymikeMD/work-order/commit/1a511cd50388933f3d2c4cb023103f960aa9f24e))
+
 ## [1.13.0](https://github.com/moneymikeMD/work-order/compare/v1.12.0...v1.13.0) (2026-10-26)
 
 
