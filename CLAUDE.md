@@ -64,13 +64,13 @@ no checks.
 ### No repo here goes past v1.x
 
 Owner decision, 2026-09-20 (WO-060): no repo in this ecosystem moves beyond `v1.x.x` until the owner says the final resting stance has arrived. Nobody outside consumes these repos, and a version
-number in the fives would record indecision rather than compatibility.
+number in the fives would record indecision rather than compatibility. switchtender and night-watchman are outside the cap.
 
 So a change that would be breaking ships as a **minor**, and explains the incompatibility in the commit body as prose. What is banned is the *marker* release-please reads as a major bump — a `!` after
 the type or scope, and a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer — not the change itself. This applies to the pull request title too, because `pr-land.sh` squash-merges and the squash subject
 comes from the title.
 
-The `no-major` job in `.github/workflows/ci.yml` runs on every pull request and on every push to `main`, and is a required status check here, in ai-toolkit, night-watchman and moneymike-plugins, so a
+The `no-major` job in `.github/workflows/ci.yml` runs on every pull request and on every push to `main`, and is a required status check here, in ai-toolkit and moneymike-plugins, so a
 `feat!:` subject or a `BREAKING CHANGE:` footer blocks the merge. Lifting the cap is one commit per repo: delete the job, and drop it from the ruleset's required checks.
 
 ## Dependencies
