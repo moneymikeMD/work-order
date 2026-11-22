@@ -10,6 +10,7 @@
 #   provider.sh [--dry-run] [--http PATH] position KEY
 #   provider.sh [--dry-run] [--http PATH] transition KEY POSITION [--outcome TEXT]
 #   provider.sh [--dry-run] [--http PATH] comment KEY TEXT
+#   provider.sh [--dry-run] [--http PATH] comment-delete KEY COMMENT_ID
 #   provider.sh [--dry-run] [--http PATH] create PROJECT ISSUETYPE SUMMARY
 #                                                [--ticket PATH|-] [--allow-duplicate]
 #                                                [--triage]
@@ -67,6 +68,11 @@
 # 0; a KEY under another epic is refused, exit 1, naming it, unless --replace.
 # It then writes fields.parent and exits 1 unless KEY reads back under EPIC.
 #
+# comment reads the created comment back by the id the POST returned and prints
+# `<id><TAB><created>` on stdout, exit 1 if it cannot be read back. comment-delete
+# deletes one comment by id and reads back that it is gone; a comment already
+# absent is a no-op, exit 0, so a retry is safe.
+#
 # transition to a position the issue already holds is a no-op, exit 0.
 # transition --outcome resolves the transition first, so a refusal writes
 # nothing; then PUTs outcome as an ADF document, reads the field back, takes the
@@ -104,7 +110,7 @@
 # WORK_ORDER_JIRA_SETTLE_DELAY (seconds, default 1) bound the wait, and a
 # transition reported as a no-op has read the target twice, that delay apart.
 #
-# transition, comment, create, update, link, unlink and parent are live writes
+# transition, comment, comment-delete, create, update, link, unlink and parent are live writes
 # with no interactive confirmation, so the provider works unattended; --dry-run or
 # WORK_ORDER_JIRA_DRY_RUN=1 turns every call into a printed request.
 #
@@ -262,6 +268,17 @@ link_count_is() {
         0) [ -z "$ids" ] ;;
         *) [ -n "$ids" ] ;;
     esac
+}
+
+# comment_state KEY ID — read one comment into COMMENT_JSON; 0 when it exists,
+# 1 when Jira answers 404, 2 when the read failed any other way.
+comment_state() {
+    COMMENT_JSON=""
+    local out
+    out=$(http GET "/issue/$1/comment/$2" 2>&1) && rc=0 || rc=$?
+    if [ "$rc" = 0 ]; then COMMENT_JSON="$out"; return 0; fi
+    case "$out" in "HTTP 404"*) return 1 ;; esac
+    return 2
 }
 
 # parent_is KEY EPIC — read KEY's parent into GOT; true when it is EPIC.
@@ -821,7 +838,45 @@ case "$verb" in
         [ -n "$TEXT" ] || die "refusing to post an empty comment on '$1'"
         BODY=$(jira_comment_body "$TEXT") \
             || die "could not build the comment ADF document"
-        http POST "/issue/$1/comment" "$BODY"
+        if [ "$DRY_RUN" = "1" ]; then
+            http POST "/issue/$1/comment" "$BODY"
+            http GET "/issue/$1/comment/<id>"
+            exit 0
+        fi
+        CKEY="$1"
+        POSTED=$(http POST "/issue/$CKEY/comment" "$BODY") || die "could not post the comment on '$CKEY'"
+        CID=$(printf '%s' "$POSTED" | jq -r '.id // empty') || die "could not parse the comment response for '$CKEY'"
+        [ -n "$CID" ] || die "Jira accepted the comment on '$CKEY' but returned no id; check the issue before retrying"
+        settled comment_state "$CKEY" "$CID" && rc=0 || rc=$?
+        [ "$rc" = 0 ] || die "posted comment $CID on '$CKEY' could not be read back; check the issue before retrying"
+        printf '%s' "$COMMENT_JSON" | jq -r '"\(.id)\t\(.created)"' \
+            || die "could not parse comment $CID read back from '$CKEY'"
+        ;;
+
+    comment-delete)
+        [ $# -eq 2 ] || die "usage: provider.sh [--dry-run] comment-delete KEY COMMENT_ID"
+        require_issue_key "$1" || die "$WO_JIRA_KEY_ERR"
+        case "$2" in ''|*[!0-9]*) die "comment id must be digits: '$2'" ;; esac
+        if [ "$DRY_RUN" = "1" ]; then
+            http GET "/issue/$1/comment/$2"
+            http DELETE "/issue/$1/comment/$2"
+            http GET "/issue/$1/comment/$2"
+            exit 0
+        fi
+        comment_state "$1" "$2" && rc=0 || rc=$?
+        case "$rc" in
+            0) ;;
+            1) printf '%s has no comment %s; nothing to delete\n' "$1" "$2"; exit 0 ;;
+            *) die "could not read comment $2 of '$1'" ;;
+        esac
+        http DELETE "/issue/$1/comment/$2" >/dev/null || die "could not delete comment $2 of '$1'"
+        comment_gone() { comment_state "$1" "$2" && return 1; [ "$?" = 1 ] || return 2; }
+        settled comment_gone "$1" "$2" && rc=0 || rc=$?
+        case "$rc" in
+            0) printf 'deleted comment %s from %s\n' "$2" "$1" ;;
+            2) die "could not read '$1' back after deleting comment $2" ;;
+            *) die "read-back of '$1' still shows comment $2 after the delete" ;;
+        esac
         ;;
 
     create)
@@ -1178,9 +1233,9 @@ case "$verb" in
         ;;
 
     "")
-        die "usage: provider.sh [--dry-run] VERB [ARG...] (verbs: fetch, position, transition, comment, create, update, link, unlink, parent)"
+        die "usage: provider.sh [--dry-run] VERB [ARG...] (verbs: fetch, position, transition, comment, comment-delete, create, update, link, unlink, parent)"
         ;;
     *)
-        die "unknown tracker verb '$verb' (fetch, position, transition, comment, create, update, link, unlink, parent)"
+        die "unknown tracker verb '$verb' (fetch, position, transition, comment, comment-delete, create, update, link, unlink, parent)"
         ;;
 esac

@@ -491,7 +491,7 @@ checked here too.
 | `provision.sh` | creates or converges a Space on a tier (`--tier managed`, the default, is a conforming Space), `--dry-run` first; its last step runs the two scripts below |
 | `universal-apply.sh` | converges, from `universal-workflows.json`, the shared workflows of section 3.1, their scheme, and both tiers' screens, screen schemes, issue type screen schemes and issue type schemes of section 3.3; takes no project |
 | `universal-switch.sh` | moves one project onto its tier's workflow scheme, issue type scheme, issue type screen scheme and category, mapping its issues' old statuses onto the tier's, then deletes the workflows, schemes and screens it had |
-| `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `create`, `update`, `link`, `unlink`, `parent` |
+| `provider.sh` | the tracker verbs — `fetch`, `position`, `transition`, `comment`, `comment-delete`, `create`, `update`, `link`, `unlink`, `parent` |
 | `issues-api.sh` | the read-only wrapper `reference/issues.py --source jira` calls, over `lib/jira-http.sh` |
 | `lib/jira-http.sh` | the one credentialed HTTP client, and the seam a test stubs |
 | `selftest.sh` | offline; stubs the client and asserts on the decisions the scripts reach |
