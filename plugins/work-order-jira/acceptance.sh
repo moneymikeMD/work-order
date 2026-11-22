@@ -157,6 +157,26 @@ open_keys() {
     jql=$(printf '%s' "project = \"$PROJ\" AND statusCategory != Done ORDER BY key ASC" | jq -sRr @uri)
     api GET "/search/jql?jql=$jql&fields=key&maxResults=100" | jq -r '.issues[].key'
 }
+# JQL search lags writes, so a read made just after one can show the world
+# from before it; these retry under the provider's own settle variables.
+SETTLE_TRIES="${WORK_ORDER_JIRA_SETTLE_TRIES:-5}"
+SETTLE_DELAY="${WORK_ORDER_JIRA_SETTLE_DELAY:-1}"
+settled_open_count() {
+    local n=1 c
+    while :; do
+        c=$(open_count)
+        [ "$c" = "0" ] && { printf '0'; return 0; }
+        [ "$n" -lt "$SETTLE_TRIES" ] || { printf '%s' "$c"; return 0; }
+        n=$((n + 1)); sleep "$SETTLE_DELAY"
+    done
+}
+wait_searchable() {
+    local n=1
+    while ! open_keys | grep -qx "$1"; do
+        [ "$n" -lt "$SETTLE_TRIES" ] || return 1
+        n=$((n + 1)); sleep "$SETTLE_DELAY"
+    done
+}
 sorted() { printf '%s\n' "$@" | sort | tr '\n' ' ' | sed 's/ $//'; }
 
 # close KEY WHY — delete KEY when this credential may, else cancel it with WHY
@@ -190,7 +210,7 @@ printf 'acceptance: project %s, run %s, closing issues by %s\n' "$PROJ" "$RUN" \
 for k in $(open_keys); do
     close "$k" "Left open by an earlier acceptance run; closed by run $RUN."
 done
-[ "$(open_count)" = "0" ] || { warn "could not close the issues an earlier run left open in '$PROJ'"; exit 2; }
+[ "$(settled_open_count)" = "0" ] || { warn "could not close the issues an earlier run left open in '$PROJ'"; exit 2; }
 
 finish() {
     local k
@@ -199,7 +219,7 @@ finish() {
     else
         for k in $MADE; do close "$k" "Filed by acceptance run $RUN; closed by the run itself."; done
         flow "leave nothing open in $PROJ"
-        check "no issue in $PROJ is left open" "0" "$(open_count)"
+        check "no issue in $PROJ is left open" "0" "$(settled_open_count)"
         end_flow
     fi
     printf '%s flows, %s passed\n' "$N_FLOWS" "$N_PASSED"
@@ -371,6 +391,7 @@ decision "$WORK/f.json" "acc $RUN F"
 run pv create "$PROJ" Task '' --ticket "$WORK/f.json"; F=$(key_of "$OUT"); made "$F"
 check "a ticket filed with verify is created" "0" "$RC"
 check "  and reads back at open" "open" "$(position "$F")"
+wait_searchable "$F" || true
 run pv create "$PROJ" Task '' --ticket "$WORK/f.json"
 check "  a second run finds it: exit 3, still open" "3 $F open" "$RC $(key_of "$OUT") $(position "$F")"
 decision "$WORK/g.json" "acc $RUN G"
