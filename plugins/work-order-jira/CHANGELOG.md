@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.11.0...work-order-jira--v0.12.0) (2026-11-22)
+
+
+### Features
+
+* **work-order-jira:** comment prints the created id and time, add comment-delete ([#107](https://github.com/moneymikeMD/work-order/issues/107)) ([3bf7100](https://github.com/moneymikeMD/work-order/commit/3bf7100664c35ab93053141776462506eddf5519))
+
+
+### Bug Fixes
+
+* **work-order-jira:** acceptance flows settle on Jira's JQL index lag ([#110](https://github.com/moneymikeMD/work-order/issues/110)) ([50dbd50](https://github.com/moneymikeMD/work-order/commit/50dbd5009e935cff07bc24a2ee25735f1eab07c9))
+
 ## [0.11.0](https://github.com/moneymikeMD/work-order/compare/work-order-jira--v0.10.0...work-order-jira--v0.11.0) (2026-10-25)
 
 
