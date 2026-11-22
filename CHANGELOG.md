@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/moneymikeMD/work-order/compare/v1.14.0...v1.15.0) (2026-11-22)
+
+
+### Features
+
+* **work-order-jira:** comment prints the created id and time, add comment-delete ([#107](https://github.com/moneymikeMD/work-order/issues/107)) ([3bf7100](https://github.com/moneymikeMD/work-order/commit/3bf7100664c35ab93053141776462506eddf5519))
+
 ## [1.14.0](https://github.com/moneymikeMD/work-order/compare/v1.13.0...v1.14.0) (2026-11-13)
 
 
