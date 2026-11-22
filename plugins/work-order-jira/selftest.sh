@@ -277,7 +277,23 @@ case "$M:$P" in
             V='{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"prior reason"}]}]}'
         else V=null; fi
         jq -cn --argjson v "$V" '{key: "PROJ-1", fields: {customfield_10053: $v}}' ;;
-    POST:/issue/*/comment) echo '{}' ;;
+    # SYNTHETIC: comments kept in comments.json; WO_TEST_COMMENT=nowrite makes a
+    # DELETE accept and remove nothing.
+    POST:/issue/*/comment)
+        CF="$WO_TEST_WORK/comments.json"; [ -f "$CF" ] || echo '[]' > "$CF"
+        CN=$(jq 'length + 10001' "$CF")
+        jq -c --arg id "$CN" '. + [{id: $id, created: "2026-11-21T22:22:01.000-0500"}]' "$CF" > "$CF.new" && mv "$CF.new" "$CF"
+        jq -cn --arg id "$CN" '{id: $id, created: "2026-11-21T22:22:01.000-0500"}' ;;
+    GET:/issue/*/comment/*)
+        CF="$WO_TEST_WORK/comments.json"; [ -f "$CF" ] || echo '[]' > "$CF"
+        C=$(jq -c --arg id "${P##*/}" '.[] | select(.id == $id)' "$CF")
+        if [ -z "$C" ]; then printf 'HTTP 404\n{"errorMessages":["Can not find a comment."]}\n' >&2; exit 1; fi
+        echo "$C" ;;
+    DELETE:/issue/*/comment/*)
+        CF="$WO_TEST_WORK/comments.json"
+        if [ "${WO_TEST_COMMENT:-}" != "nowrite" ]; then
+            jq -c --arg id "${P##*/}" 'map(select(.id != $id))' "$CF" > "$CF.new" && mv "$CF.new" "$CF"
+        fi ;;
     GET:/issue/*fields=status)
         # SYNTHETIC: WO_TEST_STATUS_FAIL=1 refuses the read, as a 403 would.
         if [ "${WO_TEST_STATUS_FAIL:-0}" = "1" ]; then
@@ -502,6 +518,28 @@ WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" comment PROJ-1 "line one
 line two" >/dev/null 2>&1
 contains "provider comment posts an ADF document" '"type":"doc"' "$(cat "$LOG")"
 contains "  with one paragraph per line" '"text":"line two"' "$(cat "$LOG")"
+
+reset_log comment-id
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" comment PROJ-1 "hello" 2>&1); RC=$?
+CID=${OUT%%	*}
+eq "provider comment exits 0" "0" "$RC"
+eq "  printing the created id and time, read back" "$CID	2026-11-21T22:22:01.000-0500" "$OUT"
+nonempty "  the id being the stub's created comment" "$CID"
+contains "  by a GET of that comment" "GET /issue/PROJ-1/comment/$CID" "$(cat "$LOG")"
+
+OUT=$(WO_TEST_LOG="$LOG" WO_TEST_COMMENT=nowrite WORK_ORDER_JIRA_SETTLE_DELAY=0 WORK_ORDER_JIRA_SETTLE_TRIES=2 "$PROVIDER" --http "$STUB" comment-delete PROJ-1 "$CID" 2>&1); RC=$?
+eq "provider comment-delete fails when the comment is still there" "1" "$RC"
+contains "  naming the comment" "still shows comment $CID" "$OUT"
+
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" comment-delete PROJ-1 "$CID" 2>&1); RC=$?
+eq "provider comment-delete exits 0" "0" "$RC"
+contains "  reporting the delete" "deleted comment $CID from PROJ-1" "$OUT"
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" comment-delete PROJ-1 "$CID" 2>&1); RC=$?
+eq "  a second delete is a no-op, exit 0" "0" "$RC"
+contains "  saying nothing was there" "nothing to delete" "$OUT"
+
+OUT=$(WO_TEST_LOG="$LOG" "$PROVIDER" --http "$STUB" comment-delete PROJ-1 abc 2>&1); RC=$?
+eq "provider comment-delete refuses a non-numeric id" "1" "$RC"
 
 OUT=$("$PROVIDER" --dry-run create ZZPROBE Task "" 2>&1); RC=$?
 eq "provider create refuses an empty title" "1" "$RC"

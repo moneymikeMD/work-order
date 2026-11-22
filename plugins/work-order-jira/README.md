@@ -15,7 +15,7 @@ re-release because an endpoint moved.
   satisfy.
 - **`provision.sh`** — create or converge a Space on a tier; the default,
   `--tier managed`, is a conforming Space.
-- **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `create`, `update`, `link`, `unlink`, `parent`.
+- **`provider.sh`** — `fetch`, `position`, `transition`, `comment`, `comment-delete`, `create`, `update`, `link`, `unlink`, `parent`.
 - **[GOLDEN-FLOWS.md](GOLDEN-FLOWS.md)** — the closed list of jobs this binding does, each as the commands that do it. Feature-complete means all of them pass live.
 - **`issues-api.sh`** — the read-only wrapper `reference/issues.py --source jira` calls, over `lib/jira-http.sh`.
 - **`universal-apply.sh`** — converge the site-wide Universal workflows, their
@@ -88,6 +88,7 @@ gave it. Both workflows create issues at `Triage`, the entry state — see
 ./provider.sh transition PROJ-12 awaiting-deployment
 ./provider.sh transition PROJ-12 cancelled --outcome "Superseded by PROJ-14"
 ./provider.sh comment PROJ-12 -                   # body on stdin
+./provider.sh comment-delete PROJ-12 10001          # remove one comment by id
 ./provider.sh create PROJ Task "What will be true when this is done"   # exit 3 if an open issue has this title
 ./provider.sh create PROJ Task "" --ticket decision.json   # its epic, when filed, becomes the parent; at Open if it carries verify
 ./provider.sh link PROJ-13 --blocked-by PROJ-12
