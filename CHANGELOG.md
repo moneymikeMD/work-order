@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/moneymikeMD/work-order/compare/v1.15.0...v1.15.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **work-order-jira:** acceptance flows settle on Jira's JQL index lag ([#110](https://github.com/moneymikeMD/work-order/issues/110)) ([50dbd50](https://github.com/moneymikeMD/work-order/commit/50dbd5009e935cff07bc24a2ee25735f1eab07c9))
+
 ## [1.15.0](https://github.com/moneymikeMD/work-order/compare/v1.14.0...v1.15.0) (2026-11-22)
 
 
